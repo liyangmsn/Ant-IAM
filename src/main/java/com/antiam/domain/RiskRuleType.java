@@ -1,0 +1,10 @@
+package com.antiam.domain;
+
+public enum RiskRuleType {
+    IP_CONTAINS,
+    USER_AGENT_CONTAINS,
+    FAILED_LOGIN_COUNT,
+    DEVICE_FINGERPRINT_CONTAINS,
+    DEVICE_FINGERPRINT_CHANGED,
+    GEO_LOCATION_NOT_ALLOWED
+}

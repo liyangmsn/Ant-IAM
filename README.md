@@ -1,0 +1,129 @@
+# Ant IAM
+
+Ant IAM is a fresh Spring Boot 4 implementation of an enterprise IAM / IDaaS backend inspired by TOPIAM's functional scope: organization directory, user lifecycle management, groups, RBAC, application access, identity sources and audit.
+
+## Stack
+
+- Java 25
+- Spring Boot 4.0.6
+- Spring WebMVC, Spring Security, Spring Data JPA
+- PostgreSQL
+- Liquibase database migrations
+- Lombok
+
+## Current Modules
+
+- Organization directory, profiles, tree, user list and updates: `/api/v1/organizations`, `/api/v1/organizations/{organizationId}`, `/api/v1/organizations/tree`, `/api/v1/organizations/{organizationId}/users`
+- Users, profiles, directory search and lifecycle actions: `/api/v1/users`, `/api/v1/users/{userId}`, `/api/v1/users/me` with optional `tenantId`, `organizationId`, `status` and `keyword` filters on the list endpoint
+- User effective roles and permissions: `/api/v1/users/{userId}/effective-access`
+- Group membership list: `/api/v1/access/groups/{groupId}/members`
+- Group effective roles and permissions: `/api/v1/access/groups/{groupId}/effective-access`
+- Permission impact analysis: `/api/v1/access/permissions/{permissionId}/impact`
+- Role impact analysis: `/api/v1/access/roles/{roleId}/impact`
+- Groups, roles, permissions, access resource search/profiles/updates, application role bindings and application lifecycle: `/api/v1/access/**`; applications support optional `tenantId`, `enabled` and `keyword` filters
+- Application SSO config and assignment lifecycle, including optional assignment expiry: `/api/v1/access/applications/{applicationId}/**`
+- Application access decisions across direct, group and application-role sources: `/api/v1/access/applications/{applicationId}/access-decisions?userId=...`
+- User application portal list: `/api/v1/access/users/{userId}/applications`
+- Current user application portal list: `/api/v1/access/me/applications`
+- Current user requestable application list: `/api/v1/access/me/requestable-applications`
+- Application access request and approval workflow: `/api/v1/access/application-access-requests`
+- Current user application access requests: `/api/v1/access/me/application-access-requests`
+- Application access review list: `/api/v1/access/applications/{applicationId}/access-review`
+- User suspend, lock and depart actions automatically disable direct application assignments, end active authentication sessions and revoke active OAuth2 tokens.
+- Identity sources with profiles, search, updates and lifecycle controls: `/api/v1/identity-sources`, `/api/v1/identity-sources/{identitySourceId}`; list supports optional `tenantId`, `type`, `enabled` and `keyword` filters
+- Identity source connectors with lifecycle controls, and sync jobs with job profiles, updates and lifecycle controls: `/api/v1/identity-sources/{identitySourceId}/connector`, `/api/v1/identity-sources/{identitySourceId}/sync-jobs`, `/api/v1/identity-sources/sync-jobs/{syncJobId}`
+- Manual identity sync runs with JSON payload import and run profiles: `/api/v1/identity-sources/sync-jobs/{syncJobId}/runs`, `/api/v1/identity-sources/sync-runs/{syncRunId}`
+- Authentication policies with lifecycle controls, configurable MFA, enrollment, step-up, deny, password minimum-length, failed-login lockout, password expiry and password history enforcement: `/api/v1/authentication-policies`
+- Authentication policy evaluation: `/api/v1/authentication-policies/evaluations`
+- Login risk rules with search/profiles/updates/lifecycle controls and searchable assessment profiles with device fingerprint and geo-location context: `/api/v1/risk/rules`, `/api/v1/risk/rules/{ruleId}`, `/api/v1/risk/assessments`, `/api/v1/risk/assessments/{assessmentId}`
+- Dashboard summary and metrics: `/api/v1/dashboard/summary`, `/api/v1/dashboard/metrics`
+- System settings with search/filtering, profiles and deletion: `/api/v1/settings`, `/api/v1/settings/{settingKey}`
+- Tenants and tenant settings with setting search/profiles/deletion: `/api/v1/tenants`, `/api/v1/tenants/{tenantId}/settings`, `/api/v1/tenants/{tenantId}/settings/{settingKey}`
+- Authentication sessions with active/history filtering, force logout and searchable events, including login risk and logout events: `/api/v1/authentication/**`
+- Password credentials, MFA factors with profiles/updates/lifecycle controls and TOTP verification: `/api/v1/users/**`
+- Password reset tickets with search, profiles and revocation: `/api/v1/users/password-reset-tickets`, `/api/v1/users/password-reset-tickets/{ticketId}`
+- Self-service password change: `/api/v1/users/me/password`
+- MFA challenges with search/profiles and recovery codes: `/api/v1/users/{userId}/mfa-challenges`, `/api/v1/users/mfa-challenges`, `/api/v1/users/{userId}/mfa-recovery-codes`, `/api/v1/users/mfa-challenge-verifications`
+- SCIM 2.0 users, groups and organizations with list/create/profile endpoints plus filter and pagination support: `/scim/v2/Users`, `/scim/v2/Groups`, `/scim/v2/Organizations`
+- SCIM 2.0 discovery: `/scim/v2/ServiceProviderConfig`, `/scim/v2/ResourceTypes`, `/scim/v2/Schemas`
+- OAuth2 authorization endpoint: `/oauth2/authorize`
+- OAuth2 token endpoint: `/oauth2/token`
+- OIDC discovery and userinfo: `/.well-known/openid-configuration`, `/oauth2/userinfo`
+- OIDC JWKS and RS256 ID token signing: `/oauth2/jwks`
+- OIDC ID token claim policies on application SSO config
+- JWT signing key management with filtering, profiles, rotation and guarded retirement: `/api/v1/jwt-signing-keys`, `/api/v1/jwt-signing-keys/{keyId}`
+- OAuth2 PKCE and refresh token support
+- OAuth2 refresh token rotation and revocation: `/oauth2/revocations`
+- OAuth2 token introspection and client-authenticated revocation: `/oauth2/introspect`, `/oauth2/revoke`
+- OAuth2 access/refresh token inventory, profiles and admin revocation: `/api/v1/oauth/tokens`, `/api/v1/oauth/tokens/{tokenType}/{tokenId}`
+- OAuth2 consent management with filtering, profiles and revocation: `/oauth2/consents`, `/oauth2/consents/{consentId}`
+- SAML2 metadata and SSO assertions with XML responses: `/saml2/metadata`, `/saml2/metadata.xml`, `/saml2/sso`, `/saml2/sso/xml`
+- CAS login and service validation with XML response support: `/cas/login`, `/cas/serviceValidate`, `/cas/p3/serviceValidate`
+- Audit event profile, search with keyword filtering and CSV export: `/api/v1/audit-events`, `/api/v1/audit-events/{auditEventId}`, `/api/v1/audit-events/export`
+- Public catalog: `/api/v1/catalog`
+- OpenAPI JSON documentation: `/v3/api-docs`
+- Health check: `/actuator/health`
+
+## Run Locally
+
+Start PostgreSQL:
+
+```bash
+docker compose up -d postgres
+```
+
+Run the API:
+
+```bash
+mvnd spring-boot:run
+```
+
+If Maven Daemon is not present, use Maven Wrapper or local Maven:
+
+```bash
+./mvnw spring-boot:run
+mvn spring-boot:run
+```
+
+Default Basic Auth credentials:
+
+```text
+admin / admin123456
+```
+
+Override them with `ANT_IAM_ADMIN_USERNAME` and `ANT_IAM_ADMIN_PASSWORD`.
+
+## Example
+
+```bash
+curl -u admin:admin123456 \
+  -H 'Content-Type: application/json' \
+  -d '{"code":"hq","name":"Headquarters"}' \
+  http://localhost:8080/api/v1/organizations
+```
+
+Identity source connector configuration can import directory data from JSON:
+
+```json
+{
+  "organizations": [
+    {"code": "engineering", "name": "Engineering"}
+  ],
+  "users": [
+    {"username": "alice", "displayName": "Alice", "email": "alice@example.com", "organizationCode": "engineering"}
+  ],
+  "groups": [
+    {"code": "admins", "name": "Administrators", "members": ["alice"]}
+  ]
+}
+```
+
+## Roadmap
+
+- Harden OAuth2/OIDC endpoints with consent UI pages.
+- Harden SAML2/CAS adapters with XML signatures and richer protocol binding validation.
+- Add guided user-facing MFA enrollment and recovery screens.
+- Add background connectors for DingTalk, WeChat Work, Feishu, LDAP and AD.
+- Add native LDAP/AD/DingTalk/WeChat Work/Feishu connector adapters on top of the JSON sync executor.
+- Replace SMS, email and WebAuthn MFA prototype challenge codes with production verifiers.
+- Expand risk rules with geo-velocity and richer adaptive MFA actions.
