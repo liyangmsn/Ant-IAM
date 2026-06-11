@@ -20,6 +20,7 @@ import com.antiam.domain.Organization;
 import com.antiam.domain.Tenant;
 import com.antiam.domain.UserAccount;
 import com.antiam.domain.UserGroup;
+import com.antiam.mapper.IdentitySourceMapper;
 import com.antiam.repository.IdentitySourceConnectorRepository;
 import com.antiam.repository.IdentitySourceRepository;
 import com.antiam.repository.IdentitySyncJobRepository;
@@ -46,6 +47,7 @@ public class IdentitySourceService {
     private final OrganizationRepository organizations;
     private final UserAccountRepository users;
     private final UserGroupRepository groups;
+    private final IdentitySourceMapper identitySourceMapper;
     private final TenantService tenantService;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
@@ -56,7 +58,7 @@ public class IdentitySourceService {
         Tenant tenant = request.tenantId() == null ? null : tenantService.getEntity(request.tenantId());
         IdentitySource saved = identitySources.save(new IdentitySource(request.code(), request.name(), request.type(), tenant));
         auditService.record(actor, "identity_source.create", "identity_source", saved.getId().toString(), saved.getCode());
-        return toResponse(saved);
+        return identitySourceMapper.toResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -68,14 +70,14 @@ public class IdentitySourceService {
             .filter(source -> type == null || source.getType() == type)
             .filter(source -> enabled == null || source.isEnabled() == enabled)
             .filter(source -> normalizedKeyword == null || matchesKeyword(source, normalizedKeyword))
-            .map(this::toResponse)
+            .map(identitySourceMapper::toResponse)
             .toList();
     }
 
     @Transactional(readOnly = true)
     // 查询身份源详情。
     public IdentitySourceResponse get(UUID identitySourceId) {
-        return toResponse(getSource(identitySourceId));
+        return identitySourceMapper.toResponse(getSource(identitySourceId));
     }
 
     @Transactional
@@ -84,7 +86,7 @@ public class IdentitySourceService {
         IdentitySource source = getSource(identitySourceId);
         source.rename(request.name());
         auditService.record(actor, "identity_source.update", "identity_source", identitySourceId.toString(), source.getCode());
-        return toResponse(source);
+        return identitySourceMapper.toResponse(source);
     }
 
     @Transactional
@@ -93,7 +95,7 @@ public class IdentitySourceService {
         IdentitySource source = getSource(identitySourceId);
         source.enable();
         auditService.record(actor, "identity_source.enable", "identity_source", identitySourceId.toString(), source.getCode());
-        return toResponse(source);
+        return identitySourceMapper.toResponse(source);
     }
 
     @Transactional
@@ -102,7 +104,7 @@ public class IdentitySourceService {
         IdentitySource source = getSource(identitySourceId);
         source.disable();
         auditService.record(actor, "identity_source.disable", "identity_source", identitySourceId.toString(), source.getCode());
-        return toResponse(source);
+        return identitySourceMapper.toResponse(source);
     }
 
     @Transactional
@@ -116,13 +118,13 @@ public class IdentitySourceService {
             })
             .orElseGet(() -> connectors.save(new IdentitySourceConnector(source, request.configuration(), request.secretRef())));
         auditService.record(actor, "identity_source.connector.configure", "identity_source", identitySourceId.toString(), source.getCode());
-        return toResponse(saved);
+        return identitySourceMapper.toResponse(saved);
     }
 
     @Transactional(readOnly = true)
     // 查询身份源连接器配置。
     public ConnectorResponse getConnector(UUID identitySourceId) {
-        return toResponse(getConnectorEntity(identitySourceId));
+        return identitySourceMapper.toResponse(getConnectorEntity(identitySourceId));
     }
 
     @Transactional
@@ -131,7 +133,7 @@ public class IdentitySourceService {
         IdentitySourceConnector connector = getConnectorEntity(identitySourceId);
         connector.enable();
         auditService.record(actor, "identity_source.connector.enable", "identity_source", identitySourceId.toString(), connector.getIdentitySource().getCode());
-        return toResponse(connector);
+        return identitySourceMapper.toResponse(connector);
     }
 
     @Transactional
@@ -140,7 +142,7 @@ public class IdentitySourceService {
         IdentitySourceConnector connector = getConnectorEntity(identitySourceId);
         connector.disable();
         auditService.record(actor, "identity_source.connector.disable", "identity_source", identitySourceId.toString(), connector.getIdentitySource().getCode());
-        return toResponse(connector);
+        return identitySourceMapper.toResponse(connector);
     }
 
     @Transactional
@@ -149,20 +151,20 @@ public class IdentitySourceService {
         IdentitySource source = getSource(identitySourceId);
         IdentitySyncJob saved = syncJobs.save(new IdentitySyncJob(source, request.name(), request.mode(), request.cronExpression()));
         auditService.record(actor, "identity_sync_job.create", "identity_source", identitySourceId.toString(), saved.getName());
-        return toResponse(saved);
+        return identitySourceMapper.toResponse(saved);
     }
 
     @Transactional(readOnly = true)
     // 查询指定身份源下的同步任务。
     public List<SyncJobResponse> listSyncJobs(UUID identitySourceId) {
         getSource(identitySourceId);
-        return syncJobs.findByIdentitySourceId(identitySourceId).stream().map(this::toResponse).toList();
+        return syncJobs.findByIdentitySourceId(identitySourceId).stream().map(identitySourceMapper::toResponse).toList();
     }
 
     @Transactional(readOnly = true)
     // 查询同步任务详情。
     public SyncJobResponse getSyncJob(UUID syncJobId) {
-        return toResponse(getSyncJobEntity(syncJobId));
+        return identitySourceMapper.toResponse(getSyncJobEntity(syncJobId));
     }
 
     @Transactional
@@ -171,7 +173,7 @@ public class IdentitySourceService {
         IdentitySyncJob job = getSyncJobEntity(syncJobId);
         job.update(request.name(), request.mode(), request.cronExpression());
         auditService.record(actor, "identity_sync_job.update", "identity_sync_job", syncJobId.toString(), job.getName());
-        return toResponse(job);
+        return identitySourceMapper.toResponse(job);
     }
 
     @Transactional
@@ -180,7 +182,7 @@ public class IdentitySourceService {
         IdentitySyncJob job = getSyncJobEntity(syncJobId);
         job.enable();
         auditService.record(actor, "identity_sync_job.enable", "identity_sync_job", syncJobId.toString(), job.getName());
-        return toResponse(job);
+        return identitySourceMapper.toResponse(job);
     }
 
     @Transactional
@@ -189,7 +191,7 @@ public class IdentitySourceService {
         IdentitySyncJob job = getSyncJobEntity(syncJobId);
         job.disable();
         auditService.record(actor, "identity_sync_job.disable", "identity_sync_job", syncJobId.toString(), job.getName());
-        return toResponse(job);
+        return identitySourceMapper.toResponse(job);
     }
 
     @Transactional
@@ -217,27 +219,22 @@ public class IdentitySourceService {
             run.fail(ex.getMessage());
             auditService.record(actor, "identity_sync_job.run", "identity_sync_job", syncJobId.toString(), "failed");
         }
-        return toResponse(run);
+        return identitySourceMapper.toResponse(run);
     }
 
     @Transactional(readOnly = true)
     // 查询同步任务最近运行记录。
     public List<SyncRunResponse> listSyncRuns(UUID syncJobId) {
         getSyncJobEntity(syncJobId);
-        return syncRuns.findTop50BySyncJobIdOrderByCreatedAtDesc(syncJobId).stream().map(this::toResponse).toList();
+        return syncRuns.findTop50BySyncJobIdOrderByCreatedAtDesc(syncJobId).stream().map(identitySourceMapper::toResponse).toList();
     }
 
     @Transactional(readOnly = true)
     // 查询单次同步运行详情。
     public SyncRunResponse getSyncRun(UUID syncRunId) {
         return syncRuns.findById(syncRunId)
-            .map(this::toResponse)
+            .map(identitySourceMapper::toResponse)
             .orElseThrow(() -> new NotFoundException("Identity sync run not found: " + syncRunId));
-    }
-
-    private IdentitySourceResponse toResponse(IdentitySource source) {
-        UUID tenantId = source.getTenant() == null ? null : source.getTenant().getId();
-        return new IdentitySourceResponse(source.getId(), source.getCode(), source.getName(), source.getType(), source.isEnabled(), tenantId);
     }
 
     private IdentitySource getSource(UUID identitySourceId) {
@@ -270,39 +267,6 @@ public class IdentitySourceService {
 
     private boolean contains(String value, String keyword) {
         return value != null && value.toLowerCase().contains(keyword);
-    }
-
-    private ConnectorResponse toResponse(IdentitySourceConnector connector) {
-        return new ConnectorResponse(
-            connector.getId(),
-            connector.getIdentitySource().getId(),
-            connector.getConfiguration(),
-            connector.getSecretRef(),
-            connector.isEnabled());
-    }
-
-    private SyncJobResponse toResponse(IdentitySyncJob job) {
-        return new SyncJobResponse(
-            job.getId(),
-            job.getIdentitySource().getId(),
-            job.getName(),
-            job.getMode(),
-            job.getCronExpression(),
-            job.isEnabled());
-    }
-
-    private SyncRunResponse toResponse(IdentitySyncRun run) {
-        return new SyncRunResponse(
-            run.getId(),
-            run.getSyncJob().getId(),
-            run.getStatus(),
-            run.getStartedAt(),
-            run.getFinishedAt(),
-            run.getUsersCreated(),
-            run.getUsersUpdated(),
-            run.getGroupsCreated(),
-            run.getGroupsUpdated(),
-            run.getMessage());
     }
 
     private int safeLength(String value) {

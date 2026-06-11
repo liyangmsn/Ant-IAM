@@ -10,6 +10,7 @@ import com.antiam.common.NotFoundException;
 import com.antiam.domain.SettingValueType;
 import com.antiam.domain.Tenant;
 import com.antiam.domain.TenantSetting;
+import com.antiam.mapper.TenantMapper;
 import com.antiam.repository.TenantRepository;
 import com.antiam.repository.TenantSettingRepository;
 import java.util.List;
@@ -24,6 +25,7 @@ public class TenantService {
 
     private final TenantRepository tenants;
     private final TenantSettingRepository settings;
+    private final TenantMapper tenantMapper;
     private final AuditService auditService;
 
     @Transactional
@@ -31,7 +33,7 @@ public class TenantService {
     public TenantResponse create(CreateTenantRequest request, String actor) {
         Tenant saved = tenants.save(new Tenant(request.code(), request.name(), request.domain()));
         auditService.record(actor, "tenant.create", "tenant", saved.getId().toString(), saved.getCode());
-        return toResponse(saved);
+        return tenantMapper.toResponse(saved);
     }
 
     @Transactional
@@ -40,7 +42,7 @@ public class TenantService {
         Tenant tenant = getEntity(tenantId);
         tenant.rename(request.name(), request.domain());
         auditService.record(actor, "tenant.update", "tenant", tenantId.toString(), tenant.getCode());
-        return toResponse(tenant);
+        return tenantMapper.toResponse(tenant);
     }
 
     @Transactional
@@ -49,7 +51,7 @@ public class TenantService {
         Tenant tenant = getEntity(tenantId);
         tenant.activate();
         auditService.record(actor, "tenant.activate", "tenant", tenantId.toString(), tenant.getCode());
-        return toResponse(tenant);
+        return tenantMapper.toResponse(tenant);
     }
 
     @Transactional
@@ -58,19 +60,19 @@ public class TenantService {
         Tenant tenant = getEntity(tenantId);
         tenant.suspend();
         auditService.record(actor, "tenant.suspend", "tenant", tenantId.toString(), tenant.getCode());
-        return toResponse(tenant);
+        return tenantMapper.toResponse(tenant);
     }
 
     @Transactional(readOnly = true)
     // 查询全部租户。
     public List<TenantResponse> list() {
-        return tenants.findAll().stream().map(this::toResponse).toList();
+        return tenants.findAll().stream().map(tenantMapper::toResponse).toList();
     }
 
     @Transactional(readOnly = true)
     // 查询租户详情。
     public TenantResponse get(UUID tenantId) {
-        return toResponse(getEntity(tenantId));
+        return tenantMapper.toResponse(getEntity(tenantId));
     }
 
     @Transactional(readOnly = true)
@@ -97,7 +99,7 @@ public class TenantService {
                 request.description(),
                 request.sensitive())));
         auditService.record(actor, "tenant_setting.upsert", "tenant", tenantId.toString(), saved.getSettingKey());
-        return toResponse(saved);
+        return tenantMapper.toResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -118,7 +120,7 @@ public class TenantService {
             .filter(setting -> valueType == null || setting.getValueType() == valueType)
             .filter(setting -> sensitive == null || setting.isSensitive() == sensitive)
             .filter(setting -> normalizedKeyword == null || matchesKeyword(setting, normalizedKeyword))
-            .map(this::toResponse)
+            .map(tenantMapper::toResponse)
             .toList();
     }
 
@@ -126,7 +128,7 @@ public class TenantService {
     // 查询单个租户级配置。
     public TenantSettingResponse getSetting(UUID tenantId, String settingKey) {
         return settings.findByTenantIdAndSettingKey(tenantId, settingKey)
-            .map(this::toResponse)
+            .map(tenantMapper::toResponse)
             .orElseThrow(() -> new NotFoundException("Tenant setting not found: " + settingKey));
     }
 
@@ -137,23 +139,6 @@ public class TenantService {
             .orElseThrow(() -> new NotFoundException("Tenant setting not found: " + settingKey));
         settings.delete(setting);
         auditService.record(actor, "tenant_setting.delete", "tenant", tenantId.toString(), setting.getSettingKey());
-    }
-
-    private TenantResponse toResponse(Tenant tenant) {
-        return new TenantResponse(tenant.getId(), tenant.getCode(), tenant.getName(), tenant.getDomain(), tenant.getStatus());
-    }
-
-    private TenantSettingResponse toResponse(TenantSetting setting) {
-        String value = setting.isSensitive() && setting.getSettingValue() != null ? "******" : setting.getSettingValue();
-        return new TenantSettingResponse(
-            setting.getId(),
-            setting.getTenant().getId(),
-            setting.getSettingKey(),
-            setting.getCategory(),
-            setting.getValueType(),
-            value,
-            setting.getDescription(),
-            setting.isSensitive());
     }
 
     private String normalizeKeyword(String keyword) {

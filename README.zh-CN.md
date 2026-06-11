@@ -1,6 +1,6 @@
 # Ant IAM
 
-Ant IAM 是一套基于 Spring Boot 4 全新开发的企业级 IAM / IDaaS 后端项目，功能范围参考 TOPIAM，覆盖组织目录、用户生命周期、用户组、RBAC、应用访问、身份源同步和审计等能力。
+Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS 后端项目，覆盖组织目录、用户生命周期、用户组、RBAC、应用访问、身份源同步和审计等能力。
 
 ## 技术栈
 
@@ -61,10 +61,13 @@ Ant IAM 是一套基于 Spring Boot 4 全新开发的企业级 IAM / IDaaS 后�
 - CAS 登录和服务票据校验，支持 XML 响应：`/cas/login`、`/cas/serviceValidate`、`/cas/p3/serviceValidate`
 - 审计事件详情、搜索，支持关键字过滤和 CSV 导出：`/api/v1/audit-events`、`/api/v1/audit-events/{auditEventId}`、`/api/v1/audit-events/export`
 - 公共能力目录：`/api/v1/catalog`
-- OpenAPI JSON 文档：`/v3/api-docs`
+- OpenAPI JSON 文档，便于集成工具直接读取：`/v3/api-docs`
+- Swagger UI 交互式接口文档：`/swagger-ui/index.html`
 - 健康检查：`/actuator/health`
 
 ## 本地运行
+
+方式一：只用 Docker 启动 PostgreSQL，然后在本机运行 API。
 
 启动 PostgreSQL：
 
@@ -78,12 +81,37 @@ docker compose up -d postgres
 mvnd spring-boot:run
 ```
 
-如果本机没有 Maven Daemon，也可以使用 Maven Wrapper 或本地 Maven：
+如果本机没有 Maven Daemon，也可以使用本地 Maven：
 
 ```bash
-./mvnw spring-boot:run
 mvn spring-boot:run
 ```
+
+方式二：使用 Docker Compose 同时运行 PostgreSQL 和 API。
+
+先构建应用 jar：
+
+```bash
+mvnd package -DskipTests
+```
+
+再启动 `api` profile：
+
+```bash
+docker compose --profile api up --build
+```
+
+当 API 容器进入 healthy 状态时，`http://localhost:8080/actuator/health` 会返回 `UP`。
+
+默认 PostgreSQL 配置和 `docker-compose.yml` 保持一致：
+
+```text
+ANT_IAM_DATASOURCE_URL=jdbc:postgresql://localhost:5432/ant_iam
+ANT_IAM_DATASOURCE_USERNAME=ant_iam
+ANT_IAM_DATASOURCE_PASSWORD=ant_iam
+```
+
+容器内 API 会使用 `jdbc:postgresql://postgres:5432/ant_iam` 连接 compose 网络中的 PostgreSQL。
 
 默认 Basic Auth 账号：
 
@@ -92,6 +120,31 @@ admin / admin123456
 ```
 
 可以通过 `ANT_IAM_ADMIN_USERNAME` 和 `ANT_IAM_ADMIN_PASSWORD` 覆盖默认账号密码。
+
+OpenAPI JSON、Swagger UI、健康检查、OIDC discovery、JWKS、SAML metadata、CAS validation 以及 OAuth2 token/introspection/revocation 端点不需要 Basic Auth，方便协议客户端直接访问；管理类 API 仍需要 Basic Auth。
+
+## 前端控制台
+
+前端项目位于 `frontend/`，使用 Vite、React、TypeScript、Tailwind CSS 和 lucide-react 构建。默认连接 `http://localhost:8080` 后端，并使用默认 Basic Auth 账号 `admin / admin123456`，可在控制台顶部修改。
+
+安装依赖：
+
+```bash
+cd frontend
+pnpm install
+```
+
+启动开发服务：
+
+```bash
+pnpm run dev
+```
+
+生产构建：
+
+```bash
+pnpm run build
+```
 
 ## 示例
 

@@ -1,0 +1,13 @@
+.git
+.agents
+.codex
+.idea
+.mvn
+*.iml
+
+target/*
+!target/ant-iam-0.1.0-SNAPSHOT.jar
+!target/ant-iam-0.1.0-SNAPSHOT.jar.original
+
+README.md
+README.zh-CN.md

@@ -14,6 +14,7 @@ import com.antiam.domain.RiskLevel;
 import com.antiam.domain.RiskRule;
 import com.antiam.domain.RiskRuleType;
 import com.antiam.domain.UserAccount;
+import com.antiam.mapper.RiskMapper;
 import com.antiam.repository.AuthenticationEventRepository;
 import com.antiam.repository.RiskAssessmentRepository;
 import com.antiam.repository.RiskRuleRepository;
@@ -36,6 +37,7 @@ public class RiskService {
     private final RiskAssessmentRepository assessments;
     private final UserAccountRepository users;
     private final AuthenticationEventRepository authenticationEvents;
+    private final RiskMapper riskMapper;
     private final AuditService auditService;
 
     @Transactional
@@ -49,7 +51,7 @@ public class RiskService {
             request.threshold(),
             request.riskLevel()));
         auditService.record(actor, "risk_rule.create", "risk_rule", saved.getId().toString(), saved.getCode());
-        return toResponse(saved);
+        return riskMapper.toResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -60,14 +62,14 @@ public class RiskService {
             .filter(rule -> type == null || rule.getType() == type)
             .filter(rule -> enabled == null || rule.isEnabled() == enabled)
             .filter(rule -> normalizedKeyword == null || matchesKeyword(rule, normalizedKeyword))
-            .map(this::toResponse)
+            .map(riskMapper::toResponse)
             .toList();
     }
 
     @Transactional(readOnly = true)
     // 查询风险规则详情。
     public RiskRuleResponse getRule(UUID ruleId) {
-        return toResponse(getRuleEntity(ruleId));
+        return riskMapper.toResponse(getRuleEntity(ruleId));
     }
 
     @Transactional
@@ -76,7 +78,7 @@ public class RiskService {
         RiskRule rule = getRuleEntity(ruleId);
         rule.update(request.name(), request.type(), request.conditionValue(), request.threshold(), request.riskLevel());
         auditService.record(actor, "risk_rule.update", "risk_rule", ruleId.toString(), rule.getCode());
-        return toResponse(rule);
+        return riskMapper.toResponse(rule);
     }
 
     @Transactional
@@ -85,7 +87,7 @@ public class RiskService {
         RiskRule rule = getRuleEntity(ruleId);
         rule.enable();
         auditService.record(actor, "risk_rule.enable", "risk_rule", ruleId.toString(), rule.getCode());
-        return toResponse(rule);
+        return riskMapper.toResponse(rule);
     }
 
     @Transactional
@@ -94,7 +96,7 @@ public class RiskService {
         RiskRule rule = getRuleEntity(ruleId);
         rule.disable();
         auditService.record(actor, "risk_rule.disable", "risk_rule", ruleId.toString(), rule.getCode());
-        return toResponse(rule);
+        return riskMapper.toResponse(rule);
     }
 
     @Transactional
@@ -132,7 +134,7 @@ public class RiskService {
                 + ";matchedRules=" + saved.getMatchedRules()
                 + ";deviceFingerprint=" + nullToEmpty(request.deviceFingerprint())
                 + ";geoLocation=" + nullToEmpty(request.geoLocation())));
-        return toResponse(saved);
+        return riskMapper.toResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -153,7 +155,7 @@ public class RiskService {
             .filter(assessment -> normalizedDecision == null || contains(assessment.getDecision(), normalizedDecision))
             .filter(assessment -> normalizedKeyword == null || matchesAssessmentKeyword(assessment, normalizedKeyword))
             .limit(cappedLimit)
-            .map(this::toResponse)
+            .map(riskMapper::toResponse)
             .toList();
     }
 
@@ -161,7 +163,7 @@ public class RiskService {
     // 查询单次风险评估详情。
     public RiskAssessmentResponse getAssessment(UUID assessmentId) {
         return assessments.findById(assessmentId)
-            .map(this::toResponse)
+            .map(riskMapper::toResponse)
             .orElseThrow(() -> new NotFoundException("Risk assessment not found: " + assessmentId));
     }
 
@@ -253,32 +255,4 @@ public class RiskService {
             .orElseThrow(() -> new NotFoundException("Risk rule not found: " + ruleId));
     }
 
-    private RiskRuleResponse toResponse(RiskRule rule) {
-        return new RiskRuleResponse(
-            rule.getId(),
-            rule.getCode(),
-            rule.getName(),
-            rule.getType(),
-            rule.getConditionValue(),
-            rule.getThreshold(),
-            rule.getRiskLevel(),
-            rule.isEnabled());
-    }
-
-    private RiskAssessmentResponse toResponse(RiskAssessment assessment) {
-        List<String> matchedRules = assessment.getMatchedRules() == null || assessment.getMatchedRules().isBlank()
-            ? List.of()
-            : java.util.Arrays.asList(assessment.getMatchedRules().split(","));
-        return new RiskAssessmentResponse(
-            assessment.getId(),
-            assessment.getUser().getId(),
-            assessment.getCreatedAt(),
-            assessment.getIpAddress(),
-            assessment.getUserAgent(),
-            assessment.getDeviceFingerprint(),
-            assessment.getGeoLocation(),
-            assessment.getRiskLevel(),
-            matchedRules,
-            assessment.getDecision());
-    }
 }

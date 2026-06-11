@@ -1,4 +1,29 @@
 services:
+  api:
+    profiles:
+      - api
+    build:
+      context: .
+      args:
+        JAR_FILE: target/ant-iam-0.1.0-SNAPSHOT.jar
+    environment:
+      ANT_IAM_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ant_iam
+      ANT_IAM_DATASOURCE_USERNAME: ant_iam
+      ANT_IAM_DATASOURCE_PASSWORD: ant_iam
+      ANT_IAM_ADMIN_USERNAME: admin
+      ANT_IAM_ADMIN_PASSWORD: admin123456
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/actuator/health | grep -q 'UP'"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
   postgres:
     image: postgres:18
     environment:

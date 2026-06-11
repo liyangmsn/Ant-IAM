@@ -6,6 +6,7 @@ import static com.antiam.dto.SettingDtos.UpsertSettingRequest;
 import com.antiam.common.NotFoundException;
 import com.antiam.domain.SettingValueType;
 import com.antiam.domain.SystemSetting;
+import com.antiam.mapper.SettingMapper;
 import com.antiam.repository.SystemSettingRepository;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SystemSettingService {
 
     private final SystemSettingRepository settings;
+    private final SettingMapper settingMapper;
     private final AuditService auditService;
 
     @Transactional
@@ -36,7 +38,7 @@ public class SystemSettingService {
                 request.description(),
                 request.sensitive())));
         auditService.record(actor, "system_setting.upsert", "system_setting", saved.getId().toString(), saved.getSettingKey());
-        return toResponse(saved);
+        return settingMapper.toResponse(saved);
     }
 
     @Transactional(readOnly = true)
@@ -50,7 +52,7 @@ public class SystemSettingService {
             .filter(setting -> valueType == null || setting.getValueType() == valueType)
             .filter(setting -> sensitive == null || setting.isSensitive() == sensitive)
             .filter(setting -> normalizedKeyword == null || matchesKeyword(setting, normalizedKeyword))
-            .map(this::toResponse)
+            .map(settingMapper::toResponse)
             .toList();
     }
 
@@ -58,7 +60,7 @@ public class SystemSettingService {
     // 查询单个全局系统配置。
     public SettingResponse get(String settingKey) {
         return settings.findBySettingKey(settingKey)
-            .map(this::toResponse)
+            .map(settingMapper::toResponse)
             .orElseThrow(() -> new NotFoundException("System setting not found: " + settingKey));
     }
 
@@ -69,18 +71,6 @@ public class SystemSettingService {
             .orElseThrow(() -> new NotFoundException("System setting not found: " + settingKey));
         settings.delete(setting);
         auditService.record(actor, "system_setting.delete", "system_setting", setting.getId().toString(), setting.getSettingKey());
-    }
-
-    private SettingResponse toResponse(SystemSetting setting) {
-        String value = setting.isSensitive() && setting.getSettingValue() != null ? "******" : setting.getSettingValue();
-        return new SettingResponse(
-            setting.getId(),
-            setting.getSettingKey(),
-            setting.getCategory(),
-            setting.getValueType(),
-            value,
-            setting.getDescription(),
-            setting.isSensitive());
     }
 
     private String normalizeKeyword(String keyword) {

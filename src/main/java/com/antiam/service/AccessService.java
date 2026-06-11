@@ -747,11 +747,13 @@ public class AccessService {
     }
 
     @Transactional(readOnly = true)
+    // 按租户查询应用列表，兼容早期只按租户过滤的调用场景。
     public List<ApplicationResponse> listApplications(UUID tenantId) {
         return listApplications(tenantId, null, null);
     }
 
     @Transactional(readOnly = true)
+    // 查询应用列表，支持租户、启用状态和关键字组合过滤。
     public List<ApplicationResponse> listApplications(UUID tenantId, Boolean enabled, String keyword) {
         String normalizedKeyword = normalizeKeyword(keyword);
         List<Application> values = tenantId == null ? applications.findAll() : applications.findByTenantId(tenantId);
@@ -763,6 +765,7 @@ public class AccessService {
     }
 
     @Transactional(readOnly = true)
+    // 查询应用详情响应，供控制器返回应用基础资料。
     public ApplicationResponse getApplicationResponse(UUID applicationId) {
         return toResponse(getApplication(applicationId));
     }

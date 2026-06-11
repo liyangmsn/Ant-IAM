@@ -5,6 +5,7 @@ import static com.antiam.dto.AuditDtos.AuditEventResponse;
 
 import com.antiam.common.NotFoundException;
 import com.antiam.domain.AuditEvent;
+import com.antiam.mapper.AuditMapper;
 import com.antiam.repository.AuditEventRepository;
 import jakarta.persistence.criteria.Predicate;
 import java.time.Instant;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuditService {
 
     private final AuditEventRepository auditEvents;
+    private final AuditMapper auditMapper;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     // 记录审计事件，使用独立事务尽量避免被业务事务回滚影响。
@@ -35,7 +37,7 @@ public class AuditService {
     public AuditEventResponse get(java.util.UUID auditEventId) {
         AuditEvent event = auditEvents.findById(auditEventId)
             .orElseThrow(() -> new NotFoundException("Audit event not found: " + auditEventId));
-        return toResponse(event);
+        return auditMapper.toResponse(event);
     }
 
     @Transactional(readOnly = true)
@@ -54,7 +56,7 @@ public class AuditService {
         List<AuditEventResponse> resources = auditEvents
             .findAll(specification(actor, action, targetType, targetId, from, to, keyword), PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "createdAt")))
             .stream()
-            .map(this::toResponse)
+            .map(auditMapper::toResponse)
             .toList();
         return new AuditEventListResponse(resources.size(), size, resources);
     }
@@ -122,17 +124,6 @@ public class AuditService {
             }
             return builder.and(predicates.toArray(Predicate[]::new));
         };
-    }
-
-    private AuditEventResponse toResponse(AuditEvent event) {
-        return new AuditEventResponse(
-            event.getId(),
-            event.getActor(),
-            event.getAction(),
-            event.getTargetType(),
-            event.getTargetId(),
-            event.getDetail(),
-            event.getCreatedAt());
     }
 
     private String csv(String value) {

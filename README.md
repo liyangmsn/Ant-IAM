@@ -1,6 +1,6 @@
 # Ant IAM
 
-Ant IAM is a fresh Spring Boot 4 implementation of an enterprise IAM / IDaaS backend inspired by TOPIAM's functional scope: organization directory, user lifecycle management, groups, RBAC, application access, identity sources and audit.
+Ant IAM is a standalone enterprise IAM / IDaaS backend built with Spring Boot 4. It covers organization directory, user lifecycle management, groups, RBAC, application access, identity sources and audit.
 
 ## Stack
 
@@ -61,10 +61,13 @@ Ant IAM is a fresh Spring Boot 4 implementation of an enterprise IAM / IDaaS bac
 - CAS login and service validation with XML response support: `/cas/login`, `/cas/serviceValidate`, `/cas/p3/serviceValidate`
 - Audit event profile, search with keyword filtering and CSV export: `/api/v1/audit-events`, `/api/v1/audit-events/{auditEventId}`, `/api/v1/audit-events/export`
 - Public catalog: `/api/v1/catalog`
-- OpenAPI JSON documentation: `/v3/api-docs`
+- OpenAPI JSON documentation, publicly readable for integration tooling: `/v3/api-docs`
+- Swagger UI interactive API documentation: `/swagger-ui/index.html`
 - Health check: `/actuator/health`
 
 ## Run Locally
+
+Option 1: start only PostgreSQL with Docker, then run the API on the host.
 
 Start PostgreSQL:
 
@@ -78,12 +81,37 @@ Run the API:
 mvnd spring-boot:run
 ```
 
-If Maven Daemon is not present, use Maven Wrapper or local Maven:
+If Maven Daemon is not present, use local Maven:
 
 ```bash
-./mvnw spring-boot:run
 mvn spring-boot:run
 ```
+
+Option 2: run PostgreSQL and the API with Docker Compose.
+
+Build the application jar first:
+
+```bash
+mvnd package -DskipTests
+```
+
+Then start the `api` profile:
+
+```bash
+docker compose --profile api up --build
+```
+
+When the API container is healthy, `http://localhost:8080/actuator/health` returns `UP`.
+
+The default PostgreSQL settings match `docker-compose.yml`:
+
+```text
+ANT_IAM_DATASOURCE_URL=jdbc:postgresql://localhost:5432/ant_iam
+ANT_IAM_DATASOURCE_USERNAME=ant_iam
+ANT_IAM_DATASOURCE_PASSWORD=ant_iam
+```
+
+Inside Docker Compose, the API uses `jdbc:postgresql://postgres:5432/ant_iam` to reach PostgreSQL on the compose network.
 
 Default Basic Auth credentials:
 
@@ -92,6 +120,31 @@ admin / admin123456
 ```
 
 Override them with `ANT_IAM_ADMIN_USERNAME` and `ANT_IAM_ADMIN_PASSWORD`.
+
+OpenAPI JSON, Swagger UI, health checks, OIDC discovery, JWKS, SAML metadata, CAS validation and OAuth2 token/introspection/revocation endpoints are exposed without Basic Auth so protocol clients can call them directly; management APIs still require Basic Auth.
+
+## Frontend Console
+
+The frontend project lives in `frontend/` and is built with Vite, React, TypeScript, Tailwind CSS and lucide-react. It connects to `http://localhost:8080` by default and uses the default Basic Auth credentials `admin / admin123456`; both can be changed from the console header.
+
+Install dependencies:
+
+```bash
+cd frontend
+pnpm install
+```
+
+Start the development server:
+
+```bash
+pnpm run dev
+```
+
+Build for production:
+
+```bash
+pnpm run build
+```
 
 ## Example
 

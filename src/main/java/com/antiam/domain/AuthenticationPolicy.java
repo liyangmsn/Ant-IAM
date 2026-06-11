@@ -1,6 +1,8 @@
 package com.antiam.domain;
 
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -18,7 +20,9 @@ public class AuthenticationPolicy extends BaseEntity {
     private boolean mfaRequired;
     private boolean mfaEnrollmentRequired;
     private int passwordMinLength;
+    @Enumerated(EnumType.STRING)
     private RiskLevel stepUpRiskLevel;
+    @Enumerated(EnumType.STRING)
     private RiskLevel denyRiskLevel;
     private int passwordMaxFailureAttempts;
     private int passwordExpiresInDays;

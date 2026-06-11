@@ -8,6 +8,7 @@ import com.antiam.common.NotFoundException;
 import com.antiam.common.TokenSupport;
 import com.antiam.domain.JwtSigningKey;
 import com.antiam.domain.UserAccount;
+import com.antiam.mapper.JwtMapper;
 import com.antiam.repository.JwtSigningKeyRepository;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -36,6 +37,7 @@ public class JwtService {
 
     private final JwtSigningKeyRepository signingKeys;
     private final TokenSupport tokens;
+    private final JwtMapper jwtMapper;
     private final AuditService auditService;
 
     @Transactional
@@ -91,7 +93,7 @@ public class JwtService {
         return signingKeys.findAllByOrderByActivatedAtDesc().stream()
             .filter(key -> active == null || key.isActive() == active)
             .filter(key -> normalizedKeyword == null || key.getKeyId().toLowerCase().contains(normalizedKeyword))
-            .map(this::toResponse)
+            .map(jwtMapper::toResponse)
             .toList();
     }
 
@@ -99,7 +101,7 @@ public class JwtService {
     // 查询单个 JWT 签名密钥元数据。
     public SigningKeyResponse getKey(java.util.UUID keyId) {
         return signingKeys.findById(keyId)
-            .map(this::toResponse)
+            .map(jwtMapper::toResponse)
             .orElseThrow(() -> new NotFoundException("JWT signing key not found: " + keyId));
     }
 
@@ -108,7 +110,7 @@ public class JwtService {
     public SigningKeyResponse rotateKey(String actor) {
         JwtSigningKey key = generateKey();
         auditService.record(actor, "jwt_signing_key.rotate", "jwt_signing_key", key.getId().toString(), key.getKeyId());
-        return toResponse(key);
+        return jwtMapper.toResponse(key);
     }
 
     @Transactional
@@ -121,7 +123,7 @@ public class JwtService {
         }
         key.retire();
         auditService.record(actor, "jwt_signing_key.retire", "jwt_signing_key", key.getId().toString(), key.getKeyId());
-        return toResponse(key);
+        return jwtMapper.toResponse(key);
     }
 
     private String normalizeKeyword(String keyword) {
@@ -140,10 +142,6 @@ public class JwtService {
             "RS256",
             unsignedInteger(publicKey.getModulus().toByteArray()),
             unsignedInteger(publicKey.getPublicExponent().toByteArray()));
-    }
-
-    private SigningKeyResponse toResponse(JwtSigningKey key) {
-        return new SigningKeyResponse(key.getId(), key.getKeyId(), key.isActive(), key.getActivatedAt(), key.getRetiredAt());
     }
 
     private JwtSigningKey activeKey() {

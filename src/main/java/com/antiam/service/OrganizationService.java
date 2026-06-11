@@ -9,6 +9,7 @@ import static com.antiam.dto.OrganizationDtos.UpdateOrganizationRequest;
 import com.antiam.common.NotFoundException;
 import com.antiam.domain.Organization;
 import com.antiam.domain.UserAccount;
+import com.antiam.mapper.OrganizationMapper;
 import com.antiam.repository.OrganizationRepository;
 import com.antiam.repository.UserAccountRepository;
 import java.util.ArrayList;
@@ -29,6 +30,7 @@ public class OrganizationService {
 
     private final OrganizationRepository organizations;
     private final UserAccountRepository users;
+    private final OrganizationMapper organizationMapper;
     private final AuditService auditService;
 
     /**
@@ -39,7 +41,7 @@ public class OrganizationService {
         Organization parent = request.parentId() == null ? null : getEntity(request.parentId());
         Organization saved = organizations.save(new Organization(request.code(), request.name(), parent));
         auditService.record(actor, "organization.create", "organization", saved.getId().toString(), saved.getCode());
-        return toResponse(saved);
+        return organizationMapper.toResponse(saved);
     }
 
     /**
@@ -52,7 +54,7 @@ public class OrganizationService {
         validateParent(organization, parent);
         organization.update(request.name(), parent);
         auditService.record(actor, "organization.update", "organization", organizationId.toString(), organization.getCode());
-        return toResponse(organization);
+        return organizationMapper.toResponse(organization);
     }
 
     /**
@@ -63,7 +65,7 @@ public class OrganizationService {
         Organization parent = parentId == null ? null : getEntity(parentId);
         Organization saved = organizations.save(new Organization(code, name, parent));
         auditService.record(actor, "scim.organization.create", "organization", saved.getId().toString(), saved.getCode());
-        return toResponse(saved);
+        return organizationMapper.toResponse(saved);
     }
 
     /**
@@ -71,7 +73,7 @@ public class OrganizationService {
      */
     @Transactional(readOnly = true)
     public List<OrganizationResponse> list() {
-        return organizations.findAll().stream().map(this::toResponse).toList();
+        return organizations.findAll().stream().map(organizationMapper::toResponse).toList();
     }
 
     /**
@@ -79,7 +81,7 @@ public class OrganizationService {
      */
     @Transactional(readOnly = true)
     public OrganizationResponse get(UUID organizationId) {
-        return toResponse(getEntity(organizationId));
+        return organizationMapper.toResponse(getEntity(organizationId));
     }
 
     /**
@@ -112,7 +114,7 @@ public class OrganizationService {
         return organizationIds.stream()
             .flatMap(id -> users.findByOrganizationId(id).stream())
             .sorted(Comparator.comparing(UserAccount::getUsername))
-            .map(this::toUserResponse)
+            .map(organizationMapper::toUserResponse)
             .toList();
     }
 
@@ -129,8 +131,7 @@ public class OrganizationService {
      * 将组织实体转换为外部响应 DTO。
      */
     public OrganizationResponse toResponse(Organization organization) {
-        UUID parentId = organization.getParent() == null ? null : organization.getParent().getId();
-        return new OrganizationResponse(organization.getId(), organization.getCode(), organization.getName(), parentId);
+        return organizationMapper.toResponse(organization);
     }
 
     private Set<UUID> collectOrganizationSubtreeIds(UUID organizationId) {
@@ -155,20 +156,6 @@ public class OrganizationService {
             .forEach(child -> collectOrganizationSubtreeIds(child.getId(), childrenByParent, result));
     }
 
-    private OrganizationUserResponse toUserResponse(UserAccount user) {
-        UUID organizationId = user.getOrganization() == null ? null : user.getOrganization().getId();
-        UUID tenantId = user.getTenant() == null ? null : user.getTenant().getId();
-        return new OrganizationUserResponse(
-            user.getId(),
-            user.getUsername(),
-            user.getDisplayName(),
-            user.getEmail(),
-            user.getMobile(),
-            user.getStatus(),
-            organizationId,
-            tenantId);
-    }
-
     private void validateParent(Organization organization, Organization parent) {
         Organization cursor = parent;
         while (cursor != null) {
@@ -180,15 +167,9 @@ public class OrganizationService {
     }
 
     private OrganizationTreeResponse toTreeResponse(Organization organization, Map<UUID, List<Organization>> childrenByParent) {
-        UUID parentId = organization.getParent() == null ? null : organization.getParent().getId();
         List<OrganizationTreeResponse> children = childrenByParent.getOrDefault(organization.getId(), List.of()).stream()
             .map(child -> toTreeResponse(child, childrenByParent))
             .toList();
-        return new OrganizationTreeResponse(
-            organization.getId(),
-            organization.getCode(),
-            organization.getName(),
-            parentId,
-            children);
+        return organizationMapper.toTreeResponse(organization, children);
     }
 }

@@ -10,6 +10,7 @@ import static com.antiam.dto.RiskDtos.EvaluateRiskRequest;
 import com.antiam.domain.AuthenticationPolicy;
 import com.antiam.common.NotFoundException;
 import com.antiam.dto.RiskDtos.RiskAssessmentResponse;
+import com.antiam.mapper.AuthenticationPolicyMapper;
 import com.antiam.repository.AuthenticationPolicyRepository;
 import com.antiam.repository.MfaFactorRepository;
 import com.antiam.repository.UserAccountRepository;
@@ -28,6 +29,7 @@ public class AuthenticationPolicyService {
     private final AuthenticationPolicyRepository policies;
     private final UserAccountRepository users;
     private final MfaFactorRepository mfaFactors;
+    private final AuthenticationPolicyMapper authenticationPolicyMapper;
     private final RiskService riskService;
     private final AuditService auditService;
 
@@ -47,7 +49,7 @@ public class AuthenticationPolicyService {
         saved.updatePasswordExpiryPolicy(normalizePasswordExpiresInDays(request.passwordExpiresInDays()));
         saved.updatePasswordHistoryPolicy(normalizePasswordHistoryCount(request.passwordHistoryCount()));
         auditService.record(actor, "auth_policy.create", "auth_policy", saved.getId().toString(), saved.getCode());
-        return toResponse(saved);
+        return authenticationPolicyMapper.toResponse(saved);
     }
 
     @Transactional
@@ -66,7 +68,7 @@ public class AuthenticationPolicyService {
         policy.updatePasswordExpiryPolicy(normalizePasswordExpiresInDays(request.passwordExpiresInDays()));
         policy.updatePasswordHistoryPolicy(normalizePasswordHistoryCount(request.passwordHistoryCount()));
         auditService.record(actor, "auth_policy.update", "auth_policy", policyId.toString(), policy.getCode());
-        return toResponse(policy);
+        return authenticationPolicyMapper.toResponse(policy);
     }
 
     @Transactional
@@ -75,7 +77,7 @@ public class AuthenticationPolicyService {
         AuthenticationPolicy policy = getPolicy(policyId);
         policy.enable();
         auditService.record(actor, "auth_policy.enable", "auth_policy", policyId.toString(), policy.getCode());
-        return toResponse(policy);
+        return authenticationPolicyMapper.toResponse(policy);
     }
 
     @Transactional
@@ -84,13 +86,13 @@ public class AuthenticationPolicyService {
         AuthenticationPolicy policy = getPolicy(policyId);
         policy.disable();
         auditService.record(actor, "auth_policy.disable", "auth_policy", policyId.toString(), policy.getCode());
-        return toResponse(policy);
+        return authenticationPolicyMapper.toResponse(policy);
     }
 
     @Transactional(readOnly = true)
     // 查询全部认证策略。
     public List<AuthenticationPolicyResponse> list() {
-        return policies.findAll().stream().map(this::toResponse).toList();
+        return policies.findAll().stream().map(authenticationPolicyMapper::toResponse).toList();
     }
 
     @Transactional(readOnly = true)
@@ -173,23 +175,6 @@ public class AuthenticationPolicyService {
     private AuthenticationPolicy getPolicy(UUID policyId) {
         return policies.findById(policyId)
             .orElseThrow(() -> new NotFoundException("Authentication policy not found: " + policyId));
-    }
-
-    private AuthenticationPolicyResponse toResponse(AuthenticationPolicy policy) {
-        return new AuthenticationPolicyResponse(
-            policy.getId(),
-            policy.getCode(),
-            policy.getName(),
-            policy.getPriority(),
-            policy.isMfaRequired(),
-            policy.isMfaEnrollmentRequired(),
-            policy.getStepUpRiskLevel(),
-            policy.getDenyRiskLevel(),
-            policy.getPasswordMinLength(),
-            policy.getPasswordMaxFailureAttempts(),
-            policy.getPasswordExpiresInDays(),
-            policy.getPasswordHistoryCount(),
-            policy.isEnabled());
     }
 
     private int normalizeMaxFailureAttempts(int value) {

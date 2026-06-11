@@ -13,16 +13,22 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
     @Bean
+    // 配置管理接口默认需要 Basic Auth；协议发现、token 端点和公开元数据按标准放行到业务层处理。
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers(HttpMethod.GET, "/.well-known/openid-configuration").permitAll()
                 .requestMatchers(HttpMethod.GET, "/oauth2/jwks").permitAll()
                 .requestMatchers(HttpMethod.GET, "/saml2/metadata").permitAll()
+                .requestMatchers(HttpMethod.GET, "/saml2/metadata.xml").permitAll()
                 .requestMatchers(HttpMethod.GET, "/cas/serviceValidate").permitAll()
+                .requestMatchers(HttpMethod.GET, "/cas/p3/serviceValidate").permitAll()
                 .requestMatchers(HttpMethod.POST, "/oauth2/token").permitAll()
+                .requestMatchers(HttpMethod.POST, "/oauth2/introspect").permitAll()
+                .requestMatchers(HttpMethod.POST, "/oauth2/revoke").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/users/password-reset-tickets/consumptions").permitAll()
                 .requestMatchers(HttpMethod.GET, "/oauth2/userinfo").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/catalog").permitAll()

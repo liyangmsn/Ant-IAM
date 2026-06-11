@@ -1,6 +1,7 @@
 target/
+.agents/
+skills-lock.json
 .idea/
 .vscode/
 *.iml
 .DS_Store
-postgres-data/
