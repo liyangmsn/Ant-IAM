@@ -123,14 +123,19 @@ admin / admin123456
 
 OpenAPI JSON、Swagger UI、健康检查、OIDC discovery、JWKS、SAML metadata、CAS validation 以及 OAuth2 token/introspection/revocation 端点不需要 Basic Auth，方便协议客户端直接访问；管理类 API 仍需要 Basic Auth。
 
-## 前端控制台
+## 前端项目
 
-前端项目位于 `frontend/`，使用 Vite、React、TypeScript、Tailwind CSS 和 lucide-react 构建。默认连接 `http://localhost:8080` 后端，并使用默认 Basic Auth 账号 `admin / admin123456`，可在控制台顶部修改。
+前端与后端分开维护，两个项目都位于 `ant-iam` 同级目录：
+
+- 管理员控制台：`../ant-iam-console`
+- 用户门户：`../ant-iam-portal`
+
+两个前端项目都使用 Vite、React、TypeScript、Tailwind CSS 和 Ant Design 构建。默认连接 `http://localhost:8080` 后端，并使用默认 Basic Auth 账号 `admin / admin123456`，可在页面顶部修改。
 
 安装依赖：
 
 ```bash
-cd frontend
+cd ../ant-iam-console
 pnpm install
 ```
 
@@ -139,6 +144,8 @@ pnpm install
 ```bash
 pnpm run dev
 ```
+
+管理员控制台默认运行在 `http://localhost:5173/`，用户门户默认运行在 `http://localhost:5174/`。如需启动用户门户，将目录切换为 `../ant-iam-portal` 后执行同样命令。
 
 生产构建：
 

@@ -123,14 +123,19 @@ Override them with `ANT_IAM_ADMIN_USERNAME` and `ANT_IAM_ADMIN_PASSWORD`.
 
 OpenAPI JSON, Swagger UI, health checks, OIDC discovery, JWKS, SAML metadata, CAS validation and OAuth2 token/introspection/revocation endpoints are exposed without Basic Auth so protocol clients can call them directly; management APIs still require Basic Auth.
 
-## Frontend Console
+## Frontend Projects
 
-The frontend project lives in `frontend/` and is built with Vite, React, TypeScript, Tailwind CSS and lucide-react. It connects to `http://localhost:8080` by default and uses the default Basic Auth credentials `admin / admin123456`; both can be changed from the console header.
+The frontend is maintained outside this backend project. Both frontend projects live next to `ant-iam`:
+
+- Admin console: `../ant-iam-console`
+- User portal: `../ant-iam-portal`
+
+Both projects are built with Vite, React, TypeScript, Tailwind CSS and Ant Design. They connect to `http://localhost:8080` by default and use the default Basic Auth credentials `admin / admin123456`; both can be changed from the page header.
 
 Install dependencies:
 
 ```bash
-cd frontend
+cd ../ant-iam-console
 pnpm install
 ```
 
@@ -139,6 +144,8 @@ Start the development server:
 ```bash
 pnpm run dev
 ```
+
+The admin console uses `http://localhost:5173/` by default. The user portal uses `http://localhost:5174/`; switch to `../ant-iam-portal` and run the same command to start it.
 
 Build for production:
 
