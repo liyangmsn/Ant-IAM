@@ -47,3 +47,5 @@ databaseChangeLog:
       file: db/changelog/023-application-access-request-schema.sql
   - include:
       file: db/changelog/024-application-assignment-expiry-schema.sql
+  - include:
+      file: db/changelog/025-user-group-description-schema.sql

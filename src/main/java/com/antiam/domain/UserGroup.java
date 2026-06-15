@@ -19,6 +19,7 @@ public class UserGroup extends BaseEntity {
 
     private String code;
     private String name;
+    private String description;
 
     @ManyToMany
     @JoinTable(
@@ -28,8 +29,18 @@ public class UserGroup extends BaseEntity {
     private Set<Role> roles = new LinkedHashSet<>();
 
     public UserGroup(String code, String name) {
+        this(code, name, null);
+    }
+
+    public UserGroup(String code, String name, String description) {
         this.code = code;
         this.name = name;
+        this.description = description;
+    }
+
+    public void update(String name, String description) {
+        this.name = name;
+        this.description = description;
     }
 
     public void rename(String name) {

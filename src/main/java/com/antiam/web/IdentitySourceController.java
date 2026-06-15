@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -104,6 +105,16 @@ public class IdentitySourceController {
     @PostMapping("/{identitySourceId}/disable")
     IdentitySourceResponse disable(@Parameter(description = "身份源 UUID") @PathVariable UUID identitySourceId, Principal principal) {
         return identitySources.disable(identitySourceId, principal.getName());
+    }
+
+    /**
+     * 删除身份源。
+     */
+    @Operation(summary = "删除身份源", description = "删除身份源，并级联清理连接器、同步任务和同步运行历史。")
+    @DeleteMapping("/{identitySourceId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void delete(@Parameter(description = "身份源 UUID") @PathVariable UUID identitySourceId, Principal principal) {
+        identitySources.delete(identitySourceId, principal.getName());
     }
 
     /**

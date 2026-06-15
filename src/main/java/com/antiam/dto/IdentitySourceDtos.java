@@ -25,7 +25,16 @@ public final class IdentitySourceDtos {
     ) {
     }
 
-    public record IdentitySourceResponse(UUID id, String code, String name, IdentitySourceType type, boolean enabled, UUID tenantId) {
+    public record IdentitySourceResponse(
+        UUID id,
+        String code,
+        String name,
+        IdentitySourceType type,
+        boolean enabled,
+        UUID tenantId,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
     }
 
     public record UpdateIdentitySourceRequest(

@@ -58,6 +58,23 @@ public class OrganizationService {
     }
 
     /**
+     * 删除空组织节点；存在子组织或成员时拒绝删除，避免破坏组织树和用户归属。
+     */
+    @Transactional
+    public void delete(UUID organizationId, String actor) {
+        Organization organization = getEntity(organizationId);
+        if (organizations.existsByParentId(organizationId)) {
+            throw new IllegalArgumentException("Organization has child organizations");
+        }
+        if (users.existsByOrganizationId(organizationId)) {
+            throw new IllegalArgumentException("Organization has users");
+        }
+        String code = organization.getCode();
+        organizations.delete(organization);
+        auditService.record(actor, "organization.delete", "organization", organizationId.toString(), code);
+    }
+
+    /**
      * 通过 SCIM 创建组织节点，复用内部组织目录模型。
      */
     @Transactional

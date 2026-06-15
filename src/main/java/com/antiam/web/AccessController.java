@@ -9,6 +9,7 @@ import static com.antiam.dto.AccessDtos.ApplicationAssignmentRequest;
 import static com.antiam.dto.AccessDtos.ApplicationAssignmentResponse;
 import static com.antiam.dto.AccessDtos.ApplicationSsoConfigResponse;
 import static com.antiam.dto.AccessDtos.ConfigureApplicationSsoRequest;
+import static com.antiam.dto.AccessDtos.AddGroupMemberRequest;
 import static com.antiam.dto.AccessDtos.CreateApplicationAccessRequest;
 import static com.antiam.dto.AccessDtos.CreateApplicationRequest;
 import static com.antiam.dto.AccessDtos.CreateGroupRequest;
@@ -242,6 +243,19 @@ public class AccessController {
     }
 
     /**
+     * 删除用户组。
+     */
+    @Operation(summary = "删除用户组", description = "删除用户组，并级联清理该组的成员关系和角色关系。")
+    @DeleteMapping("/groups/{groupId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deleteGroup(
+        @Parameter(description = "用户组 UUID") @PathVariable UUID groupId,
+        Principal principal
+    ) {
+        access.deleteGroup(groupId, principal.getName());
+    }
+
+    /**
      * 查询用户组最终生效权限。
      */
     @Operation(summary = "查询用户组有效权限", description = "聚合用户组角色，返回用户组最终生效权限。")
@@ -257,6 +271,34 @@ public class AccessController {
     @GetMapping("/groups/{groupId}/members")
     List<GroupMemberResponse> groupMembers(@Parameter(description = "用户组 UUID") @PathVariable UUID groupId) {
         return access.listGroupMembers(groupId);
+    }
+
+    /**
+     * 向用户组添加成员。
+     */
+    @Operation(summary = "添加用户组成员", description = "将指定用户加入用户组。")
+    @PostMapping("/groups/{groupId}/members")
+    @ResponseStatus(HttpStatus.CREATED)
+    GroupMemberResponse addGroupMember(
+        @Parameter(description = "用户组 UUID") @PathVariable UUID groupId,
+        @Parameter(description = "用户组成员添加请求") @Valid @RequestBody AddGroupMemberRequest request,
+        Principal principal
+    ) {
+        return access.addGroupMember(groupId, request.userId(), principal.getName());
+    }
+
+    /**
+     * 从用户组移除成员。
+     */
+    @Operation(summary = "移除用户组成员", description = "将指定用户移出用户组。")
+    @DeleteMapping("/groups/{groupId}/members/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void removeGroupMember(
+        @Parameter(description = "用户组 UUID") @PathVariable UUID groupId,
+        @Parameter(description = "用户 UUID") @PathVariable UUID userId,
+        Principal principal
+    ) {
+        access.removeGroupMember(groupId, userId, principal.getName());
     }
 
     /**

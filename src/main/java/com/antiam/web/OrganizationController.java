@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -98,5 +99,18 @@ public class OrganizationController {
         Principal principal
     ) {
         return organizations.update(organizationId, request, principal.getName());
+    }
+
+    /**
+     * 删除空组织节点。
+     */
+    @Operation(summary = "删除组织", description = "删除没有子组织且没有成员的组织节点。")
+    @DeleteMapping("/{organizationId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void delete(
+        @Parameter(description = "组织 UUID") @PathVariable UUID organizationId,
+        Principal principal
+    ) {
+        organizations.delete(organizationId, principal.getName());
     }
 }

@@ -39,7 +39,9 @@ public final class AccessDtos {
         @Schema(description = "用户组编码", example = "engineering")
         @NotBlank String code,
         @Schema(description = "用户组名称", example = "研发部")
-        @NotBlank String name
+        @NotBlank String name,
+        @Schema(description = "用户组备注")
+        String description
     ) {
     }
 
@@ -61,7 +63,9 @@ public final class AccessDtos {
 
     public record UpdateGroupRequest(
         @Schema(description = "用户组名称", example = "研发部")
-        @NotBlank String name
+        @NotBlank String name,
+        @Schema(description = "用户组备注")
+        String description
     ) {
     }
 
@@ -122,6 +126,12 @@ public final class AccessDtos {
         @NotNull UUID subjectId,
         @Schema(description = "授权目标 UUID，例如权限或角色")
         @NotNull UUID targetId
+    ) {
+    }
+
+    public record AddGroupMemberRequest(
+        @Schema(description = "用户 UUID")
+        @NotNull UUID userId
     ) {
     }
 
@@ -194,7 +204,16 @@ public final class AccessDtos {
     ) {
     }
 
-    public record GroupResponse(UUID id, String code, String name, Set<String> roles) {
+    public record GroupResponse(
+        UUID id,
+        String code,
+        String name,
+        String description,
+        Set<String> roles,
+        int userCount,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
     }
 
     public record GroupMemberResponse(

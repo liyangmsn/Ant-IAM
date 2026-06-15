@@ -108,6 +108,15 @@ public class IdentitySourceService {
     }
 
     @Transactional
+    // 删除身份源，数据库外键会级联清理连接器、同步任务和运行历史。
+    public void delete(UUID identitySourceId, String actor) {
+        IdentitySource source = getSource(identitySourceId);
+        String code = source.getCode();
+        identitySources.delete(source);
+        auditService.record(actor, "identity_source.delete", "identity_source", identitySourceId.toString(), code);
+    }
+
+    @Transactional
     // 保存身份源连接器配置，包含连接参数和密钥引用。
     public ConnectorResponse configureConnector(UUID identitySourceId, ConfigureConnectorRequest request, String actor) {
         IdentitySource source = getSource(identitySourceId);

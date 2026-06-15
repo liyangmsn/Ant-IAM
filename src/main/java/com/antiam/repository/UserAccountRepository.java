@@ -12,6 +12,8 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> 
 
     java.util.List<UserAccount> findByOrganizationId(UUID organizationId);
 
+    boolean existsByOrganizationId(UUID organizationId);
+
     java.util.List<UserAccount> findByGroupsId(UUID groupId);
 
     java.util.List<UserAccount> findByRolesId(UUID roleId);

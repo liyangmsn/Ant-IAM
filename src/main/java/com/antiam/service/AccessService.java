@@ -108,7 +108,7 @@ public class AccessService {
      */
     @Transactional
     public GroupResponse createGroup(CreateGroupRequest request, String actor) {
-        UserGroup saved = groups.save(new UserGroup(request.code(), request.name()));
+        UserGroup saved = groups.save(new UserGroup(request.code(), request.name(), request.description()));
         auditService.record(actor, "group.create", "group", saved.getId().toString(), saved.getCode());
         return toResponse(saved);
     }
@@ -689,11 +689,11 @@ public class AccessService {
     }
 
     @Transactional(readOnly = true)
-    // 按关键字筛选用户组，支持通过组编码和名称检索。
+    // 按关键字筛选用户组，支持通过组编码、名称和备注检索。
     public List<GroupResponse> listGroups(String keyword) {
         String normalizedKeyword = normalizeKeyword(keyword);
         return groups.findAll().stream()
-            .filter(group -> matchesKeyword(group.getCode(), group.getName(), null, normalizedKeyword))
+            .filter(group -> matchesKeyword(group.getCode(), group.getName(), group.getDescription(), normalizedKeyword))
             .map(this::toResponse)
             .toList();
     }
@@ -707,13 +707,23 @@ public class AccessService {
     }
 
     @Transactional
-    // 更新用户组名称，组编码保持不变以便同步和审计追踪。
+    // 更新用户组名称和备注，组编码保持不变以便同步和审计追踪。
     public GroupResponse updateGroup(UUID groupId, UpdateGroupRequest request, String actor) {
         UserGroup group = groups.findById(groupId)
             .orElseThrow(() -> new NotFoundException("User group not found: " + groupId));
-        group.rename(request.name());
+        group.update(request.name(), request.description());
         auditService.record(actor, "group.update", "group", groupId.toString(), group.getCode());
         return toResponse(group);
+    }
+
+    @Transactional
+    // 删除用户组，数据库外键会级联清理成员关系和角色关系。
+    public void deleteGroup(UUID groupId, String actor) {
+        UserGroup group = groups.findById(groupId)
+            .orElseThrow(() -> new NotFoundException("User group not found: " + groupId));
+        String code = group.getCode();
+        groups.delete(group);
+        auditService.record(actor, "group.delete", "group", groupId.toString(), code);
     }
 
     @Transactional(readOnly = true)
@@ -724,6 +734,29 @@ public class AccessService {
         return users.findByGroupsId(groupId).stream()
             .map(this::toGroupMemberResponse)
             .toList();
+    }
+
+    @Transactional
+    // 向用户组添加成员，供用户组详情页直接维护成员关系。
+    public GroupMemberResponse addGroupMember(UUID groupId, UUID userId, String actor) {
+        UserGroup group = groups.findById(groupId)
+            .orElseThrow(() -> new NotFoundException("User group not found: " + groupId));
+        UserAccount user = users.findById(userId)
+            .orElseThrow(() -> new NotFoundException("User not found: " + userId));
+        user.join(group);
+        auditService.record(actor, "group.member.add", "group", groupId.toString(), user.getUsername());
+        return toGroupMemberResponse(user);
+    }
+
+    @Transactional
+    // 从用户组移除成员。
+    public void removeGroupMember(UUID groupId, UUID userId, String actor) {
+        UserGroup group = groups.findById(groupId)
+            .orElseThrow(() -> new NotFoundException("User group not found: " + groupId));
+        UserAccount user = users.findById(userId)
+            .orElseThrow(() -> new NotFoundException("User not found: " + userId));
+        user.leave(group);
+        auditService.record(actor, "group.member.remove", "group", groupId.toString(), user.getUsername());
     }
 
     @Transactional(readOnly = true)
@@ -819,7 +852,15 @@ public class AccessService {
 
     private GroupResponse toResponse(UserGroup group) {
         Set<String> roleCodes = group.getRoles().stream().map(Role::getCode).collect(java.util.stream.Collectors.toSet());
-        return new GroupResponse(group.getId(), group.getCode(), group.getName(), roleCodes);
+        return new GroupResponse(
+            group.getId(),
+            group.getCode(),
+            group.getName(),
+            group.getDescription(),
+            roleCodes,
+            users.findByGroupsId(group.getId()).size(),
+            group.getCreatedAt(),
+            group.getUpdatedAt());
     }
 
     private GroupMemberResponse toGroupMemberResponse(UserAccount user) {
