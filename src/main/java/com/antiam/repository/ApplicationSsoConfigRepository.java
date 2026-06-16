@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ApplicationSsoConfigRepository extends JpaRepository<ApplicationSsoConfig, UUID> {
     Optional<ApplicationSsoConfig> findByApplicationId(UUID applicationId);
 
+    void deleteByApplicationId(UUID applicationId);
+
     Optional<ApplicationSsoConfig> findByClientId(String clientId);
 
     Optional<ApplicationSsoConfig> findBySamlEntityId(String samlEntityId);

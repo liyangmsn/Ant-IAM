@@ -13,12 +13,15 @@ public final class DashboardDtos {
 
     public record DashboardSummaryResponse(
         long users,
+        long activeUsers,
+        long organizations,
         long applications,
         long identitySources,
         long activeSessions,
         long recentAuthenticationEvents,
         long highRiskAssessments,
-        long failedSyncRuns
+        long failedSyncRuns,
+        long pendingAccessRequests
     ) {
     }
 

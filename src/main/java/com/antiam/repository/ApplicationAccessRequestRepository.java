@@ -8,9 +8,13 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ApplicationAccessRequestRepository extends JpaRepository<ApplicationAccessRequest, UUID> {
+    long countByStatus(ApplicationAccessRequestStatus status);
+
     List<ApplicationAccessRequest> findByStatusOrderByCreatedAtDesc(ApplicationAccessRequestStatus status);
 
     List<ApplicationAccessRequest> findByUserIdOrderByCreatedAtDesc(UUID userId);
+
+    void deleteByApplicationId(UUID applicationId);
 
     Optional<ApplicationAccessRequest> findByApplicationIdAndUserIdAndStatus(
         UUID applicationId,

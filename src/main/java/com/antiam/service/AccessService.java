@@ -7,8 +7,10 @@ import static com.antiam.dto.AccessDtos.ApplicationAccessRequestResponse;
 import static com.antiam.dto.AccessDtos.ApplicationAccessDecisionResponse;
 import static com.antiam.dto.AccessDtos.ApplicationAssignmentRequest;
 import static com.antiam.dto.AccessDtos.ApplicationAssignmentResponse;
+import static com.antiam.dto.AccessDtos.ApplicationGroupResponse;
 import static com.antiam.dto.AccessDtos.ApplicationSsoConfigResponse;
 import static com.antiam.dto.AccessDtos.ConfigureApplicationSsoRequest;
+import static com.antiam.dto.AccessDtos.CreateApplicationGroupRequest;
 import static com.antiam.dto.AccessDtos.CreateApplicationAccessRequest;
 import static com.antiam.dto.AccessDtos.CreateApplicationRequest;
 import static com.antiam.dto.AccessDtos.CreateGroupRequest;
@@ -30,6 +32,7 @@ import static com.antiam.dto.AccessDtos.RoleImpactGroupResponse;
 import static com.antiam.dto.AccessDtos.RoleImpactResponse;
 import static com.antiam.dto.AccessDtos.RoleImpactUserResponse;
 import static com.antiam.dto.AccessDtos.SelfServiceApplicationAccessRequest;
+import static com.antiam.dto.AccessDtos.UpdateApplicationGroupRequest;
 import static com.antiam.dto.AccessDtos.UpdateApplicationRequest;
 import static com.antiam.dto.AccessDtos.UpdateGroupRequest;
 import static com.antiam.dto.AccessDtos.UpdatePermissionRequest;
@@ -42,6 +45,7 @@ import com.antiam.domain.Application;
 import com.antiam.domain.ApplicationAccessRequest;
 import com.antiam.domain.ApplicationAccessRequestStatus;
 import com.antiam.domain.ApplicationAssignment;
+import com.antiam.domain.ApplicationGroup;
 import com.antiam.domain.ApplicationSsoConfig;
 import com.antiam.domain.Permission;
 import com.antiam.domain.Role;
@@ -50,10 +54,19 @@ import com.antiam.domain.UserAccount;
 import com.antiam.domain.UserGroup;
 import com.antiam.repository.ApplicationAccessRequestRepository;
 import com.antiam.repository.ApplicationAssignmentRepository;
+import com.antiam.repository.ApplicationGroupRepository;
 import com.antiam.repository.ApplicationRepository;
 import com.antiam.repository.ApplicationSsoConfigRepository;
+import com.antiam.repository.AuthenticationEventRepository;
+import com.antiam.repository.AuthenticationSessionRepository;
+import com.antiam.repository.CasServiceTicketRepository;
+import com.antiam.repository.OAuthAccessTokenRepository;
+import com.antiam.repository.OAuthAuthorizationCodeRepository;
+import com.antiam.repository.OAuthConsentRepository;
+import com.antiam.repository.OAuthRefreshTokenRepository;
 import com.antiam.repository.PermissionRepository;
 import com.antiam.repository.RoleRepository;
+import com.antiam.repository.SamlAssertionRepository;
 import com.antiam.repository.UserAccountRepository;
 import com.antiam.repository.UserGroupRepository;
 import java.util.List;
@@ -74,10 +87,19 @@ public class AccessService {
     private final PermissionRepository permissions;
     private final RoleRepository roles;
     private final UserGroupRepository groups;
+    private final ApplicationGroupRepository applicationGroups;
     private final ApplicationRepository applications;
     private final ApplicationSsoConfigRepository ssoConfigs;
     private final ApplicationAccessRequestRepository accessRequests;
     private final ApplicationAssignmentRepository applicationAssignments;
+    private final OAuthAccessTokenRepository oauthAccessTokens;
+    private final OAuthRefreshTokenRepository oauthRefreshTokens;
+    private final OAuthAuthorizationCodeRepository oauthAuthorizationCodes;
+    private final OAuthConsentRepository oauthConsents;
+    private final SamlAssertionRepository samlAssertions;
+    private final CasServiceTicketRepository casServiceTickets;
+    private final AuthenticationSessionRepository authenticationSessions;
+    private final AuthenticationEventRepository authenticationEvents;
     private final UserAccountRepository users;
     private final TenantService tenantService;
     private final AuditService auditService;
@@ -117,12 +139,14 @@ public class AccessService {
     // 创建接入应用，应用后续可配置 SSO、角色范围和访问授权。
     public ApplicationResponse createApplication(CreateApplicationRequest request, String actor) {
         Tenant tenant = request.tenantId() == null ? null : tenantService.getEntity(request.tenantId());
+        ApplicationGroup group = request.groupId() == null ? null : getApplicationGroup(request.groupId());
         Application saved = applications.save(new Application(
             request.code(),
             request.name(),
             request.protocol(),
             request.loginUrl(),
-            tenant));
+            tenant,
+            group));
         auditService.record(actor, "application.create", "application", saved.getId().toString(), saved.getCode());
         return toResponse(saved);
     }
@@ -131,7 +155,8 @@ public class AccessService {
     // 更新应用基础资料，保留应用编码和既有授权关系。
     public ApplicationResponse updateApplication(UUID applicationId, UpdateApplicationRequest request, String actor) {
         Application application = getApplication(applicationId);
-        application.update(request.name(), request.protocol(), request.loginUrl());
+        ApplicationGroup group = request.groupId() == null ? null : getApplicationGroup(request.groupId());
+        application.update(request.name(), request.protocol(), request.loginUrl(), group);
         auditService.record(actor, "application.update", "application", applicationId.toString(), application.getCode());
         return toResponse(application);
     }
@@ -152,6 +177,58 @@ public class AccessService {
         application.disable();
         auditService.record(actor, "application.disable", "application", applicationId.toString(), application.getCode());
         return toResponse(application);
+    }
+
+    @Transactional
+    // 删除应用及其协议配置、授权、访问申请和已签发凭据，供控制台应用管理执行硬删除。
+    public void deleteApplication(UUID applicationId, String actor) {
+        Application application = getApplication(applicationId);
+        String code = application.getCode();
+        cleanupApplicationReferences(applicationId);
+        application.getRoles().clear();
+        applications.delete(application);
+        auditService.record(actor, "application.delete", "application", applicationId.toString(), code);
+    }
+
+    @Transactional(readOnly = true)
+    // 查询应用分组列表，支持按分组编码、名称和备注关键字过滤。
+    public List<ApplicationGroupResponse> listApplicationGroups(String keyword) {
+        String normalizedKeyword = normalizeKeyword(keyword);
+        return applicationGroups.findAll().stream()
+            .filter(group -> matchesKeyword(group.getCode(), group.getName(), group.getDescription(), normalizedKeyword))
+            .map(this::toApplicationGroupResponse)
+            .toList();
+    }
+
+    @Transactional
+    // 创建应用分组，用于控制台按业务场景组织应用。
+    public ApplicationGroupResponse createApplicationGroup(CreateApplicationGroupRequest request, String actor) {
+        ApplicationGroup saved = applicationGroups.save(new ApplicationGroup(request.code(), request.name(), request.description(), false));
+        auditService.record(actor, "application_group.create", "application_group", saved.getId().toString(), saved.getCode());
+        return toApplicationGroupResponse(saved);
+    }
+
+    @Transactional
+    // 更新应用分组名称和备注，保留分组编码及已有应用归属。
+    public ApplicationGroupResponse updateApplicationGroup(UUID groupId, UpdateApplicationGroupRequest request, String actor) {
+        ApplicationGroup group = getApplicationGroup(groupId);
+        group.update(request.name(), request.description());
+        auditService.record(actor, "application_group.update", "application_group", groupId.toString(), group.getCode());
+        return toApplicationGroupResponse(group);
+    }
+
+    @Transactional
+    // 删除应用分组，分组下应用会自动回到未分组状态。
+    public void deleteApplicationGroup(UUID groupId, String actor) {
+        ApplicationGroup group = getApplicationGroup(groupId);
+        String code = group.getCode();
+        applications.findByGroupId(groupId).forEach(application -> application.update(
+            application.getName(),
+            application.getProtocol(),
+            application.getLoginUrl(),
+            null));
+        applicationGroups.delete(group);
+        auditService.record(actor, "application_group.delete", "application_group", groupId.toString(), code);
     }
 
     @Transactional(readOnly = true)
@@ -195,6 +272,16 @@ public class AccessService {
             request.clientId(),
             secretHash,
             joinValues(request.redirectUris()),
+            joinValues(defaultSet(request.grantTypes(), Set.of("authorization_code", "refresh_token"))),
+            request.pkceRequired(),
+            joinValues(request.postLogoutRedirectUris()),
+            request.loginInitiationUri(),
+            positiveOrDefault(request.accessTokenTtlMinutes(), 20),
+            positiveOrDefault(request.authorizationCodeTtlMinutes(), 5),
+            positiveOrDefault(request.refreshTokenTtlMinutes(), 43_200),
+            positiveOrDefault(request.idTokenTtlMinutes(), 30),
+            request.reuseRefreshTokens() != null && request.reuseRefreshTokens(),
+            defaultString(request.idTokenSignatureAlgorithm(), "RS256"),
             joinValues(request.scopes()),
             request.samlEntityId(),
             request.samlAcsUrl(),
@@ -803,9 +890,28 @@ public class AccessService {
         return toResponse(getApplication(applicationId));
     }
 
+    private void cleanupApplicationReferences(UUID applicationId) {
+        oauthAuthorizationCodes.deleteByApplicationId(applicationId);
+        oauthAccessTokens.deleteByApplicationId(applicationId);
+        oauthRefreshTokens.deleteByApplicationId(applicationId);
+        oauthConsents.deleteByApplicationId(applicationId);
+        samlAssertions.deleteByApplicationId(applicationId);
+        casServiceTickets.deleteByApplicationId(applicationId);
+        authenticationEvents.deleteByApplicationId(applicationId);
+        authenticationSessions.deleteByApplicationId(applicationId);
+        accessRequests.deleteByApplicationId(applicationId);
+        applicationAssignments.deleteByApplicationId(applicationId);
+        ssoConfigs.deleteByApplicationId(applicationId);
+    }
+
     private Application getApplication(UUID applicationId) {
         return applications.findById(applicationId)
             .orElseThrow(() -> new NotFoundException("Application not found: " + applicationId));
+    }
+
+    private ApplicationGroup getApplicationGroup(UUID groupId) {
+        return applicationGroups.findById(groupId)
+            .orElseThrow(() -> new NotFoundException("Application group not found: " + groupId));
     }
 
     private ApplicationAccessRequest getAccessRequest(UUID requestId) {
@@ -949,7 +1055,21 @@ public class AccessService {
             application.getProtocol(),
             application.getLoginUrl(),
             application.getTenant() == null ? null : application.getTenant().getId(),
+            application.getGroup() == null ? null : application.getGroup().getId(),
+            application.isEnabled(),
             application.isEnabled());
+    }
+
+    private ApplicationGroupResponse toApplicationGroupResponse(ApplicationGroup group) {
+        return new ApplicationGroupResponse(
+            group.getId(),
+            group.getCode(),
+            group.getName(),
+            group.getDescription(),
+            group.isBuiltIn(),
+            Math.toIntExact(applications.countByGroupId(group.getId())),
+            group.getCreatedAt(),
+            group.getUpdatedAt());
     }
 
     private ApplicationRoleResponse toApplicationRoleResponse(Role role) {
@@ -967,6 +1087,16 @@ public class AccessService {
             config.getProtocol(),
             config.getClientId(),
             splitValues(config.getRedirectUris()),
+            splitValues(config.getGrantTypes()),
+            config.isPkceRequired(),
+            splitValues(config.getPostLogoutRedirectUris()),
+            config.getLoginInitiationUri(),
+            config.getAccessTokenTtlMinutes(),
+            config.getAuthorizationCodeTtlMinutes(),
+            config.getRefreshTokenTtlMinutes(),
+            config.getIdTokenTtlMinutes(),
+            config.isReuseRefreshTokens(),
+            config.getIdTokenSignatureAlgorithm(),
             splitValues(config.getScopes()),
             config.getSamlEntityId(),
             config.getSamlAcsUrl(),
@@ -1159,6 +1289,18 @@ public class AccessService {
             return null;
         }
         return String.join("\n", values);
+    }
+
+    private Set<String> defaultSet(Set<String> values, Set<String> defaults) {
+        return values == null || values.isEmpty() ? defaults : values;
+    }
+
+    private int positiveOrDefault(Integer value, int fallback) {
+        return value == null || value <= 0 ? fallback : value;
+    }
+
+    private String defaultString(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private Set<String> splitValues(String value) {

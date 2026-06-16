@@ -9,5 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface OAuthAccessTokenRepository extends JpaRepository<OAuthAccessToken, UUID> {
     Optional<OAuthAccessToken> findByTokenHash(String tokenHash);
 
+    void deleteByApplicationId(UUID applicationId);
+
     List<OAuthAccessToken> findByUserId(UUID userId);
 }

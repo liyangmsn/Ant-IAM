@@ -79,7 +79,9 @@ public final class AccessDtos {
         @Schema(description = "应用登录地址", example = "https://console.example.com/login")
         String loginUrl,
         @Schema(description = "所属租户 UUID；为空表示系统级应用")
-        UUID tenantId
+        UUID tenantId,
+        @Schema(description = "应用分组 UUID；为空表示未分组")
+        UUID groupId
     ) {
     }
 
@@ -89,7 +91,27 @@ public final class AccessDtos {
         @Schema(description = "应用协议类型")
         @NotNull ApplicationProtocol protocol,
         @Schema(description = "应用登录地址", example = "https://console.example.com/login")
-        String loginUrl
+        String loginUrl,
+        @Schema(description = "应用分组 UUID；为空表示未分组")
+        UUID groupId
+    ) {
+    }
+
+    public record CreateApplicationGroupRequest(
+        @Schema(description = "应用分组编码", example = "standard")
+        @NotBlank String code,
+        @Schema(description = "应用分组名称", example = "标准应用")
+        @NotBlank String name,
+        @Schema(description = "应用分组备注")
+        String description
+    ) {
+    }
+
+    public record UpdateApplicationGroupRequest(
+        @Schema(description = "应用分组名称", example = "标准应用")
+        @NotBlank String name,
+        @Schema(description = "应用分组备注")
+        String description
     ) {
     }
 
@@ -102,6 +124,26 @@ public final class AccessDtos {
         String clientSecret,
         @Schema(description = "允许的 OAuth/OIDC 回调地址")
         Set<String> redirectUris,
+        @Schema(description = "OAuth/OIDC 授权模式")
+        Set<String> grantTypes,
+        @Schema(description = "是否要求 PKCE")
+        boolean pkceRequired,
+        @Schema(description = "允许的登出回调地址")
+        Set<String> postLogoutRedirectUris,
+        @Schema(description = "登录发起地址")
+        String loginInitiationUri,
+        @Schema(description = "Access Token 有效期，单位分钟")
+        Integer accessTokenTtlMinutes,
+        @Schema(description = "Authorization Code 有效期，单位分钟")
+        Integer authorizationCodeTtlMinutes,
+        @Schema(description = "Refresh Token 有效期，单位分钟")
+        Integer refreshTokenTtlMinutes,
+        @Schema(description = "ID Token 有效期，单位分钟")
+        Integer idTokenTtlMinutes,
+        @Schema(description = "是否重用刷新令牌")
+        Boolean reuseRefreshTokens,
+        @Schema(description = "ID Token 签名算法")
+        String idTokenSignatureAlgorithm,
         @Schema(description = "允许授权的 scope 集合")
         Set<String> scopes,
         @Schema(description = "SAML 服务提供方 Entity ID")
@@ -251,7 +293,21 @@ public final class AccessDtos {
         ApplicationProtocol protocol,
         String loginUrl,
         UUID tenantId,
-        boolean enabled
+        UUID groupId,
+        boolean enabled,
+        boolean selfServiceAccessRequestEnabled
+    ) {
+    }
+
+    public record ApplicationGroupResponse(
+        UUID id,
+        String code,
+        String name,
+        String description,
+        boolean builtIn,
+        int appCount,
+        Instant createdAt,
+        Instant updatedAt
     ) {
     }
 
@@ -269,6 +325,16 @@ public final class AccessDtos {
         ApplicationProtocol protocol,
         String clientId,
         Set<String> redirectUris,
+        Set<String> grantTypes,
+        boolean pkceRequired,
+        Set<String> postLogoutRedirectUris,
+        String loginInitiationUri,
+        int accessTokenTtlMinutes,
+        int authorizationCodeTtlMinutes,
+        int refreshTokenTtlMinutes,
+        int idTokenTtlMinutes,
+        boolean reuseRefreshTokens,
+        String idTokenSignatureAlgorithm,
         Set<String> scopes,
         String samlEntityId,
         String samlAcsUrl,

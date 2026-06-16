@@ -34,6 +34,23 @@ public class ApplicationSsoConfig extends BaseEntity {
     private String redirectUris;
 
     @Column(columnDefinition = "text")
+    private String grantTypes;
+
+    private boolean pkceRequired;
+
+    @Column(columnDefinition = "text")
+    private String postLogoutRedirectUris;
+
+    private String loginInitiationUri;
+
+    private int accessTokenTtlMinutes;
+    private int authorizationCodeTtlMinutes;
+    private int refreshTokenTtlMinutes;
+    private int idTokenTtlMinutes;
+    private boolean reuseRefreshTokens;
+    private String idTokenSignatureAlgorithm;
+
+    @Column(columnDefinition = "text")
     private String scopes;
 
     private String samlEntityId;
@@ -58,6 +75,16 @@ public class ApplicationSsoConfig extends BaseEntity {
         String clientId,
         String clientSecretHash,
         String redirectUris,
+        String grantTypes,
+        boolean pkceRequired,
+        String postLogoutRedirectUris,
+        String loginInitiationUri,
+        int accessTokenTtlMinutes,
+        int authorizationCodeTtlMinutes,
+        int refreshTokenTtlMinutes,
+        int idTokenTtlMinutes,
+        boolean reuseRefreshTokens,
+        String idTokenSignatureAlgorithm,
         String scopes,
         String samlEntityId,
         String samlAcsUrl,
@@ -72,6 +99,16 @@ public class ApplicationSsoConfig extends BaseEntity {
         this.clientId = clientId;
         this.clientSecretHash = clientSecretHash;
         this.redirectUris = redirectUris;
+        this.grantTypes = grantTypes;
+        this.pkceRequired = pkceRequired;
+        this.postLogoutRedirectUris = postLogoutRedirectUris;
+        this.loginInitiationUri = loginInitiationUri;
+        this.accessTokenTtlMinutes = accessTokenTtlMinutes;
+        this.authorizationCodeTtlMinutes = authorizationCodeTtlMinutes;
+        this.refreshTokenTtlMinutes = refreshTokenTtlMinutes;
+        this.idTokenTtlMinutes = idTokenTtlMinutes;
+        this.reuseRefreshTokens = reuseRefreshTokens;
+        this.idTokenSignatureAlgorithm = idTokenSignatureAlgorithm;
         this.scopes = scopes;
         this.samlEntityId = samlEntityId;
         this.samlAcsUrl = samlAcsUrl;
@@ -88,6 +125,16 @@ public class ApplicationSsoConfig extends BaseEntity {
         this.clientId = replacement.clientId;
         this.clientSecretHash = replacement.clientSecretHash;
         this.redirectUris = replacement.redirectUris;
+        this.grantTypes = replacement.grantTypes;
+        this.pkceRequired = replacement.pkceRequired;
+        this.postLogoutRedirectUris = replacement.postLogoutRedirectUris;
+        this.loginInitiationUri = replacement.loginInitiationUri;
+        this.accessTokenTtlMinutes = replacement.accessTokenTtlMinutes;
+        this.authorizationCodeTtlMinutes = replacement.authorizationCodeTtlMinutes;
+        this.refreshTokenTtlMinutes = replacement.refreshTokenTtlMinutes;
+        this.idTokenTtlMinutes = replacement.idTokenTtlMinutes;
+        this.reuseRefreshTokens = replacement.reuseRefreshTokens;
+        this.idTokenSignatureAlgorithm = replacement.idTokenSignatureAlgorithm;
         this.scopes = replacement.scopes;
         this.samlEntityId = replacement.samlEntityId;
         this.samlAcsUrl = replacement.samlAcsUrl;

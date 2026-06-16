@@ -9,5 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface OAuthRefreshTokenRepository extends JpaRepository<OAuthRefreshToken, UUID> {
     Optional<OAuthRefreshToken> findByTokenHash(String tokenHash);
 
+    void deleteByApplicationId(UUID applicationId);
+
     List<OAuthRefreshToken> findByUserId(UUID userId);
 }

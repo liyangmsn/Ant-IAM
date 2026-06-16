@@ -9,5 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface OAuthConsentRepository extends JpaRepository<OAuthConsent, UUID> {
     Optional<OAuthConsent> findByClientIdAndUserId(String clientId, UUID userId);
 
+    void deleteByApplicationId(UUID applicationId);
+
     List<OAuthConsent> findByUserId(UUID userId);
 }

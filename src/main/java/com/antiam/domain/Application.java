@@ -33,6 +33,10 @@ public class Application extends BaseEntity {
     @JoinColumn(name = "tenant_id")
     private Tenant tenant;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "group_id")
+    private ApplicationGroup group;
+
     @ManyToMany
     @JoinTable(
         name = "application_roles",
@@ -40,19 +44,21 @@ public class Application extends BaseEntity {
         inverseJoinColumns = @JoinColumn(name = "role_id"))
     private Set<Role> roles = new LinkedHashSet<>();
 
-    public Application(String code, String name, ApplicationProtocol protocol, String loginUrl, Tenant tenant) {
+    public Application(String code, String name, ApplicationProtocol protocol, String loginUrl, Tenant tenant, ApplicationGroup group) {
         this.code = code;
         this.name = name;
         this.protocol = protocol;
         this.loginUrl = loginUrl;
         this.tenant = tenant;
+        this.group = group;
         this.enabled = true;
     }
 
-    public void update(String name, ApplicationProtocol protocol, String loginUrl) {
+    public void update(String name, ApplicationProtocol protocol, String loginUrl, ApplicationGroup group) {
         this.name = name;
         this.protocol = protocol;
         this.loginUrl = loginUrl;
+        this.group = group;
     }
 
     public void enable() {

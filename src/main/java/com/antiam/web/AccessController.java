@@ -7,9 +7,11 @@ import static com.antiam.dto.AccessDtos.ApplicationAccessRequestResponse;
 import static com.antiam.dto.AccessDtos.ApplicationAccessDecisionResponse;
 import static com.antiam.dto.AccessDtos.ApplicationAssignmentRequest;
 import static com.antiam.dto.AccessDtos.ApplicationAssignmentResponse;
+import static com.antiam.dto.AccessDtos.ApplicationGroupResponse;
 import static com.antiam.dto.AccessDtos.ApplicationSsoConfigResponse;
 import static com.antiam.dto.AccessDtos.ConfigureApplicationSsoRequest;
 import static com.antiam.dto.AccessDtos.AddGroupMemberRequest;
+import static com.antiam.dto.AccessDtos.CreateApplicationGroupRequest;
 import static com.antiam.dto.AccessDtos.CreateApplicationAccessRequest;
 import static com.antiam.dto.AccessDtos.CreateApplicationRequest;
 import static com.antiam.dto.AccessDtos.CreateGroupRequest;
@@ -26,6 +28,7 @@ import static com.antiam.dto.AccessDtos.RequestableApplicationResponse;
 import static com.antiam.dto.AccessDtos.RoleResponse;
 import static com.antiam.dto.AccessDtos.RoleImpactResponse;
 import static com.antiam.dto.AccessDtos.SelfServiceApplicationAccessRequest;
+import static com.antiam.dto.AccessDtos.UpdateApplicationGroupRequest;
 import static com.antiam.dto.AccessDtos.UpdateApplicationRequest;
 import static com.antiam.dto.AccessDtos.UpdateGroupRequest;
 import static com.antiam.dto.AccessDtos.UpdatePermissionRequest;
@@ -389,6 +392,63 @@ public class AccessController {
     @PostMapping("/applications/{applicationId}/disable")
     ApplicationResponse disableApplication(@Parameter(description = "应用 UUID") @PathVariable UUID applicationId, Principal principal) {
         return access.disableApplication(applicationId, principal.getName());
+    }
+
+    /**
+     * 删除应用。
+     */
+    @Operation(summary = "删除应用", description = "删除应用及其协议配置、授权、访问申请和已签发凭据。")
+    @DeleteMapping("/applications/{applicationId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deleteApplication(@Parameter(description = "应用 UUID") @PathVariable UUID applicationId, Principal principal) {
+        access.deleteApplication(applicationId, principal.getName());
+    }
+
+    /**
+     * 查询应用分组列表。
+     */
+    @Operation(summary = "查询应用分组", description = "查询控制台应用分组，支持按编码、名称或备注关键字过滤。")
+    @GetMapping("/application-groups")
+    List<ApplicationGroupResponse> applicationGroups(
+        @Parameter(description = "关键字，匹配分组编码、名称或备注") @RequestParam(required = false) String keyword
+    ) {
+        return access.listApplicationGroups(keyword);
+    }
+
+    /**
+     * 创建应用分组。
+     */
+    @Operation(summary = "创建应用分组", description = "创建用于组织应用列表的控制台应用分组。")
+    @PostMapping("/application-groups")
+    @ResponseStatus(HttpStatus.CREATED)
+    ApplicationGroupResponse createApplicationGroup(
+        @Parameter(description = "应用分组创建请求") @Valid @RequestBody CreateApplicationGroupRequest request,
+        Principal principal
+    ) {
+        return access.createApplicationGroup(request, principal.getName());
+    }
+
+    /**
+     * 更新应用分组。
+     */
+    @Operation(summary = "更新应用分组", description = "更新应用分组名称和备注。")
+    @PutMapping("/application-groups/{groupId}")
+    ApplicationGroupResponse updateApplicationGroup(
+        @Parameter(description = "应用分组 UUID") @PathVariable UUID groupId,
+        @Parameter(description = "应用分组更新请求") @Valid @RequestBody UpdateApplicationGroupRequest request,
+        Principal principal
+    ) {
+        return access.updateApplicationGroup(groupId, request, principal.getName());
+    }
+
+    /**
+     * 删除应用分组。
+     */
+    @Operation(summary = "删除应用分组", description = "删除应用分组，分组下应用会回到未分组状态。")
+    @DeleteMapping("/application-groups/{groupId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deleteApplicationGroup(@Parameter(description = "应用分组 UUID") @PathVariable UUID groupId, Principal principal) {
+        access.deleteApplicationGroup(groupId, principal.getName());
     }
 
     /**

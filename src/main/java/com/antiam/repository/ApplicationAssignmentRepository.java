@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ApplicationAssignmentRepository extends JpaRepository<ApplicationAssignment, UUID> {
     List<ApplicationAssignment> findByApplicationId(UUID applicationId);
 
+    void deleteByApplicationId(UUID applicationId);
+
     List<ApplicationAssignment> findByUserId(UUID userId);
 
     Optional<ApplicationAssignment> findByApplicationIdAndUserId(UUID applicationId, UUID userId);

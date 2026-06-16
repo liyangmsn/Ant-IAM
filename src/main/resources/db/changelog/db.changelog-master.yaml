@@ -49,3 +49,7 @@ databaseChangeLog:
       file: db/changelog/024-application-assignment-expiry-schema.sql
   - include:
       file: db/changelog/025-user-group-description-schema.sql
+  - include:
+      file: db/changelog/026-application-group-schema.sql
+  - include:
+      file: db/changelog/027-application-sso-protocol-settings.sql

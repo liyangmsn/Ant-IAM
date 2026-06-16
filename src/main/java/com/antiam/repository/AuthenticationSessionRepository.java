@@ -12,5 +12,7 @@ public interface AuthenticationSessionRepository extends JpaRepository<Authentic
 
     List<AuthenticationSession> findByApplicationIdAndActive(UUID applicationId, boolean active);
 
+    void deleteByApplicationId(UUID applicationId);
+
     List<AuthenticationSession> findByUserIdAndApplicationIdAndActive(UUID userId, UUID applicationId, boolean active);
 }

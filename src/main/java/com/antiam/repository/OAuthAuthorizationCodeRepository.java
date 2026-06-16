@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface OAuthAuthorizationCodeRepository extends JpaRepository<OAuthAuthorizationCode, UUID> {
     Optional<OAuthAuthorizationCode> findByCodeHash(String codeHash);
+
+    void deleteByApplicationId(UUID applicationId);
 }

@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface CasServiceTicketRepository extends JpaRepository<CasServiceTicket, UUID> {
     Optional<CasServiceTicket> findByTicketHash(String ticketHash);
+
+    void deleteByApplicationId(UUID applicationId);
 }

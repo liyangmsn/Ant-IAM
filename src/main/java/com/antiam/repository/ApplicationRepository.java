@@ -9,4 +9,8 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID> 
     Optional<Application> findByCode(String code);
 
     java.util.List<Application> findByTenantId(UUID tenantId);
+
+    java.util.List<Application> findByGroupId(UUID groupId);
+
+    long countByGroupId(UUID groupId);
 }

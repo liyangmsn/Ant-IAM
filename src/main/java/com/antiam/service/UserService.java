@@ -122,7 +122,7 @@ public class UserService {
             tenant,
             organization));
         if (request.initialPassword() != null && !request.initialPassword().isBlank()) {
-            validatePasswordPolicy(request.initialPassword());
+            validatePasswordPolicy(saved, request.initialPassword());
             credentials.save(new UserCredential(
                 saved,
                 CredentialType.PASSWORD,
@@ -793,11 +793,20 @@ public class UserService {
         return value != null && value.toLowerCase().contains(keyword);
     }
 
-    private void validatePasswordPolicy(String password) {
+    private void validatePasswordPolicy(UserAccount user, String password) {
         int minLength = authenticationPolicyService.currentPasswordMinLength();
         if (password.length() < minLength) {
             throw new IllegalArgumentException("Password must be at least " + minLength + " characters");
         }
+        int maxLength = authenticationPolicyService.currentPasswordMaxLength();
+        if (password.length() > maxLength) {
+            throw new IllegalArgumentException("Password must be at most " + maxLength + " characters");
+        }
+        validatePasswordComplexity(password, authenticationPolicyService.currentPasswordComplexity());
+        validateRepeatedChars(password, authenticationPolicyService.currentPasswordMaxRepeatedChars());
+        validateUserInfoPassword(user, password);
+        validateWeakPassword(password);
+        validatePasswordExtensionRules(password);
     }
 
     private void collectRolePermissions(Role role, String source, Map<String, PermissionAccumulator> permissions) {
@@ -909,7 +918,7 @@ public class UserService {
     }
 
     private void rotatePassword(UserAccount user, String rawPassword, boolean temporary) {
-        validatePasswordPolicy(rawPassword);
+        validatePasswordPolicy(user, rawPassword);
         UserCredential credential = credentials.findByUserAndType(user, CredentialType.PASSWORD)
             .orElseGet(() -> new UserCredential(user, CredentialType.PASSWORD, "", temporary));
         validatePasswordHistory(user, credential, rawPassword);
@@ -964,6 +973,126 @@ public class UserService {
 
     private int normalizeResetTicketMinutes(Integer expiresInMinutes) {
         return expiresInMinutes == null || expiresInMinutes <= 0 ? DEFAULT_PASSWORD_RESET_TICKET_MINUTES : expiresInMinutes;
+    }
+
+    private void validatePasswordComplexity(String password, String complexity) {
+        int categories = 0;
+        boolean hasDigit = password.chars().anyMatch(Character::isDigit);
+        boolean hasLower = password.chars().anyMatch(Character::isLowerCase);
+        boolean hasUpper = password.chars().anyMatch(Character::isUpperCase);
+        boolean hasLetter = password.chars().anyMatch(Character::isLetter);
+        boolean hasSpecial = password.chars().anyMatch(ch -> !Character.isLetterOrDigit(ch));
+        if (hasDigit) {
+            categories++;
+        }
+        if (hasLower) {
+            categories++;
+        }
+        if (hasUpper) {
+            categories++;
+        }
+        if (hasSpecial) {
+            categories++;
+        }
+        switch (complexity == null ? "three" : complexity) {
+            case "any" -> {
+            }
+            case "number-letter" -> require(hasDigit && hasLetter, "Password must contain both numbers and letters");
+            case "number-upper" -> require(hasDigit && hasUpper, "Password must contain both numbers and uppercase letters");
+            case "all" -> require(hasDigit && hasUpper && hasLower && hasSpecial, "Password must contain numbers, uppercase letters, lowercase letters and special characters");
+            case "two" -> require(categories >= 2, "Password must contain at least two character categories");
+            default -> require(categories >= 3, "Password must contain at least three character categories");
+        }
+    }
+
+    private void validateRepeatedChars(String password, int maxRepeatedChars) {
+        if (maxRepeatedChars <= 0) {
+            return;
+        }
+        int runLength = 0;
+        int previous = -1;
+        for (int index = 0; index < password.length(); index++) {
+            int current = password.charAt(index);
+            runLength = current == previous ? runLength + 1 : 1;
+            previous = current;
+            if (runLength > maxRepeatedChars) {
+                throw new IllegalArgumentException("Password contains too many repeated characters");
+            }
+        }
+    }
+
+    private void validateUserInfoPassword(UserAccount user, String password) {
+        if (!authenticationPolicyService.currentPasswordCheckUserInfo()) {
+            return;
+        }
+        String normalizedPassword = password.toLowerCase();
+        if (containsSensitiveUserValue(normalizedPassword, user.getUsername())
+            || containsSensitiveUserValue(normalizedPassword, user.getMobile())
+            || containsSensitiveUserValue(normalizedPassword, user.getDisplayName())
+            || containsSensitiveUserValue(normalizedPassword, emailPrefix(user.getEmail()))) {
+            throw new IllegalArgumentException("Password cannot contain user profile information");
+        }
+    }
+
+    private void validateWeakPassword(String password) {
+        if (!authenticationPolicyService.currentPasswordWeakPasswordCheckEnabled()) {
+            return;
+        }
+        String normalizedPassword = password.toLowerCase();
+        java.util.Set<String> weakPasswords = new java.util.HashSet<>(java.util.Set.of(
+            "123456",
+            "12345678",
+            "123456789",
+            "password",
+            "qwerty",
+            "admin",
+            "admin123",
+            "letmein",
+            "welcome"));
+        weakPasswords.addAll(authenticationPolicyService.currentAdditionalWeakPasswords());
+        if (weakPasswords.contains(normalizedPassword)) {
+            throw new IllegalArgumentException("Password is too weak");
+        }
+    }
+
+    private void validatePasswordExtensionRules(String password) {
+        java.util.Set<String> rules = authenticationPolicyService.currentPasswordExtensionRules();
+        if (rules.contains("serial-number") && containsAscendingRun(password, '0', '9')) {
+            throw new IllegalArgumentException("Password cannot contain serial numbers");
+        }
+        if (rules.contains("serial-letter") && (containsAscendingRun(password.toLowerCase(), 'a', 'z'))) {
+            throw new IllegalArgumentException("Password cannot contain serial letters");
+        }
+    }
+
+    private boolean containsSensitiveUserValue(String password, String value) {
+        return value != null && value.length() >= 3 && password.contains(value.toLowerCase());
+    }
+
+    private String emailPrefix(String email) {
+        if (email == null) {
+            return null;
+        }
+        int at = email.indexOf('@');
+        return at <= 0 ? email : email.substring(0, at);
+    }
+
+    private boolean containsAscendingRun(String value, char first, char last) {
+        for (int index = 0; index <= value.length() - 3; index++) {
+            char a = value.charAt(index);
+            char b = value.charAt(index + 1);
+            char c = value.charAt(index + 2);
+            if (a >= first && c <= last && b == a + 1 && c == b + 1) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void require(boolean condition, String message) {
+        if (!condition) {
+            throw new IllegalArgumentException(message);
+        }
     }
 
     private PasswordResetTicketResponse toResponse(PasswordResetTicket ticket, String resetToken) {
