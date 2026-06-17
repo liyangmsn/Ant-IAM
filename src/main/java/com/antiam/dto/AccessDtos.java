@@ -78,6 +78,8 @@ public final class AccessDtos {
         @NotNull ApplicationProtocol protocol,
         @Schema(description = "应用登录地址", example = "https://console.example.com/login")
         String loginUrl,
+        @Schema(description = "应用备注")
+        String description,
         @Schema(description = "所属租户 UUID；为空表示系统级应用")
         UUID tenantId,
         @Schema(description = "应用分组 UUID；为空表示未分组")
@@ -92,6 +94,8 @@ public final class AccessDtos {
         @NotNull ApplicationProtocol protocol,
         @Schema(description = "应用登录地址", example = "https://console.example.com/login")
         String loginUrl,
+        @Schema(description = "应用备注")
+        String description,
         @Schema(description = "应用分组 UUID；为空表示未分组")
         UUID groupId
     ) {
@@ -292,6 +296,7 @@ public final class AccessDtos {
         String name,
         ApplicationProtocol protocol,
         String loginUrl,
+        String description,
         UUID tenantId,
         UUID groupId,
         boolean enabled,

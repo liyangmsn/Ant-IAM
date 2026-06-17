@@ -31,6 +31,7 @@ class AccessControllerTest {
             "JWT",
             ApplicationProtocol.JWT,
             "https://example.com/login",
+            "JWT application",
             null,
             null,
             true,
@@ -40,6 +41,7 @@ class AccessControllerTest {
         List<ApplicationResponse> response = controller.applications(null, true, "jwt");
 
         assertThat(response).containsExactly(application);
+        assertThat(response.get(0).description()).isEqualTo("JWT application");
         assertThat(response.get(0).selfServiceAccessRequestEnabled()).isTrue();
         verify(access).listApplications(null, true, "jwt");
     }

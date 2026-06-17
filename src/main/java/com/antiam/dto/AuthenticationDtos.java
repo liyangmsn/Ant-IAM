@@ -38,6 +38,10 @@ public final class AuthenticationDtos {
         String sessionIndex,
         String ipAddress,
         String userAgent,
+        String location,
+        String deviceType,
+        Instant createdAt,
+        Instant lastAccessedAt,
         Instant expiresAt,
         Instant endedAt,
         boolean active

@@ -23,6 +23,7 @@ public class Application extends BaseEntity {
 
     private String code;
     private String name;
+    private String description;
     private String loginUrl;
     private boolean enabled;
 
@@ -44,20 +45,22 @@ public class Application extends BaseEntity {
         inverseJoinColumns = @JoinColumn(name = "role_id"))
     private Set<Role> roles = new LinkedHashSet<>();
 
-    public Application(String code, String name, ApplicationProtocol protocol, String loginUrl, Tenant tenant, ApplicationGroup group) {
+    public Application(String code, String name, ApplicationProtocol protocol, String loginUrl, String description, Tenant tenant, ApplicationGroup group) {
         this.code = code;
         this.name = name;
         this.protocol = protocol;
         this.loginUrl = loginUrl;
+        this.description = description;
         this.tenant = tenant;
         this.group = group;
         this.enabled = true;
     }
 
-    public void update(String name, ApplicationProtocol protocol, String loginUrl, ApplicationGroup group) {
+    public void update(String name, ApplicationProtocol protocol, String loginUrl, String description, ApplicationGroup group) {
         this.name = name;
         this.protocol = protocol;
         this.loginUrl = loginUrl;
+        this.description = description;
         this.group = group;
     }
 

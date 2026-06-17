@@ -145,6 +145,7 @@ public class AccessService {
             request.name(),
             request.protocol(),
             request.loginUrl(),
+            request.description(),
             tenant,
             group));
         auditService.record(actor, "application.create", "application", saved.getId().toString(), saved.getCode());
@@ -156,7 +157,7 @@ public class AccessService {
     public ApplicationResponse updateApplication(UUID applicationId, UpdateApplicationRequest request, String actor) {
         Application application = getApplication(applicationId);
         ApplicationGroup group = request.groupId() == null ? null : getApplicationGroup(request.groupId());
-        application.update(request.name(), request.protocol(), request.loginUrl(), group);
+        application.update(request.name(), request.protocol(), request.loginUrl(), request.description(), group);
         auditService.record(actor, "application.update", "application", applicationId.toString(), application.getCode());
         return toResponse(application);
     }
@@ -226,6 +227,7 @@ public class AccessService {
             application.getName(),
             application.getProtocol(),
             application.getLoginUrl(),
+            application.getDescription(),
             null));
         applicationGroups.delete(group);
         auditService.record(actor, "application_group.delete", "application_group", groupId.toString(), code);
@@ -1054,6 +1056,7 @@ public class AccessService {
             application.getName(),
             application.getProtocol(),
             application.getLoginUrl(),
+            application.getDescription(),
             application.getTenant() == null ? null : application.getTenant().getId(),
             application.getGroup() == null ? null : application.getGroup().getId(),
             application.isEnabled(),

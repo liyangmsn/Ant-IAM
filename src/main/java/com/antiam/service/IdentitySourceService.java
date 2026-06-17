@@ -56,7 +56,7 @@ public class IdentitySourceService {
     // 创建身份源，后续可配置连接器并通过同步任务导入组织、用户和用户组。
     public IdentitySourceResponse create(CreateIdentitySourceRequest request, String actor) {
         Tenant tenant = request.tenantId() == null ? null : tenantService.getEntity(request.tenantId());
-        IdentitySource saved = identitySources.save(new IdentitySource(request.code(), request.name(), request.type(), tenant));
+        IdentitySource saved = identitySources.save(new IdentitySource(request.code(), request.name(), request.description(), request.type(), tenant));
         auditService.record(actor, "identity_source.create", "identity_source", saved.getId().toString(), saved.getCode());
         return identitySourceMapper.toResponse(saved);
     }
@@ -84,7 +84,7 @@ public class IdentitySourceService {
     // 更新身份源展示信息，身份源编码和类型保持稳定。
     public IdentitySourceResponse update(UUID identitySourceId, UpdateIdentitySourceRequest request, String actor) {
         IdentitySource source = getSource(identitySourceId);
-        source.rename(request.name());
+        source.update(request.name(), request.description());
         auditService.record(actor, "identity_source.update", "identity_source", identitySourceId.toString(), source.getCode());
         return identitySourceMapper.toResponse(source);
     }
@@ -271,6 +271,7 @@ public class IdentitySourceService {
     private boolean matchesKeyword(IdentitySource source, String keyword) {
         return contains(source.getCode(), keyword)
             || contains(source.getName(), keyword)
+            || contains(source.getDescription(), keyword)
             || source.getType().name().toLowerCase().contains(keyword);
     }
 

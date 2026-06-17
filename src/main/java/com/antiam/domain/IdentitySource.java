@@ -19,6 +19,7 @@ public class IdentitySource extends BaseEntity {
 
     private String code;
     private String name;
+    private String description;
 
     @Enumerated(EnumType.STRING)
     private IdentitySourceType type;
@@ -29,16 +30,18 @@ public class IdentitySource extends BaseEntity {
 
     private boolean enabled;
 
-    public IdentitySource(String code, String name, IdentitySourceType type, Tenant tenant) {
+    public IdentitySource(String code, String name, String description, IdentitySourceType type, Tenant tenant) {
         this.code = code;
         this.name = name;
+        this.description = description;
         this.type = type;
         this.tenant = tenant;
         this.enabled = true;
     }
 
-    public void rename(String name) {
+    public void update(String name, String description) {
         this.name = name;
+        this.description = description;
     }
 
     public void enable() {

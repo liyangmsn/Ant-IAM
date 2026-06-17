@@ -18,6 +18,8 @@ public final class IdentitySourceDtos {
         @NotBlank String code,
         @Schema(description = "身份源名称", example = "公司 LDAP")
         @NotBlank String name,
+        @Schema(description = "身份源备注", example = "从公司通讯录同步组织和用户")
+        String description,
         @Schema(description = "身份源类型")
         @NotNull IdentitySourceType type,
         @Schema(description = "所属租户 UUID；为空表示系统级身份源")
@@ -29,6 +31,7 @@ public final class IdentitySourceDtos {
         UUID id,
         String code,
         String name,
+        String description,
         IdentitySourceType type,
         boolean enabled,
         UUID tenantId,
@@ -39,7 +42,9 @@ public final class IdentitySourceDtos {
 
     public record UpdateIdentitySourceRequest(
         @Schema(description = "身份源名称", example = "公司 LDAP")
-        @NotBlank String name
+        @NotBlank String name,
+        @Schema(description = "身份源备注", example = "从公司通讯录同步组织和用户")
+        String description
     ) {
     }
 

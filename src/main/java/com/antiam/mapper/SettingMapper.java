@@ -16,6 +16,13 @@ public interface SettingMapper {
     SettingResponse toResponse(SystemSetting setting);
 
     default String maskSensitive(SystemSetting setting) {
-        return setting.isSensitive() && setting.getSettingValue() != null ? "******" : setting.getSettingValue();
+        if (!setting.isSensitive() || setting.getSettingValue() == null) {
+            return setting.getSettingValue();
+        }
+        if (setting.getValueType() != null && setting.getValueType().name().equals("JSON")) {
+            return setting.getSettingValue()
+                .replaceAll("(?i)(\"(?:password|secret|secretKey|secretAccessKey|accessKey|accessKeyId|accessKeySecret|token|licenseKey)\"\\s*:\\s*\")([^\"]+)(\")", "$1******$3");
+        }
+        return "******";
     }
 }

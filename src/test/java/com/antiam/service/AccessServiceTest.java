@@ -63,7 +63,7 @@ class AccessServiceTest {
     @Test
     void configuresApplicationProtocolSettings() {
         UUID applicationId = UUID.randomUUID();
-        Application application = new Application("oidc", "OIDC", ApplicationProtocol.OIDC, "https://example.com/login", null, null);
+        Application application = new Application("oidc", "OIDC", ApplicationProtocol.OIDC, "https://example.com/login", "OIDC application", null, null);
         ConfigureApplicationSsoRequest request = new ConfigureApplicationSsoRequest(
             ApplicationProtocol.OIDC,
             "client-id",

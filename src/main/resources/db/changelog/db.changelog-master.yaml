@@ -53,3 +53,9 @@ databaseChangeLog:
       file: db/changelog/026-application-group-schema.sql
   - include:
       file: db/changelog/027-application-sso-protocol-settings.sql
+  - include:
+      file: db/changelog/028-application-description-schema.sql
+  - include:
+      file: db/changelog/029-identity-source-description-schema.sql
+  - include:
+      file: db/changelog/030-authentication-provider-schema.sql

@@ -40,9 +40,10 @@ public class AuditController {
         @Parameter(description = "开始时间，ISO-8601 格式") @RequestParam(required = false) Instant from,
         @Parameter(description = "结束时间，ISO-8601 格式") @RequestParam(required = false) Instant to,
         @Parameter(description = "关键字，匹配审计详情") @RequestParam(required = false) String keyword,
+        @Parameter(description = "页码，从 1 开始") @RequestParam(defaultValue = "1") int page,
         @Parameter(description = "返回数量上限") @RequestParam(defaultValue = "100") int limit
     ) {
-        return auditService.search(actor, action, targetType, targetId, from, to, keyword, limit);
+        return auditService.search(actor, action, targetType, targetId, from, to, keyword, page, limit);
     }
 
     /**

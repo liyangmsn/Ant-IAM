@@ -52,13 +52,31 @@ public class AuditService {
         String keyword,
         int limit
     ) {
+        return search(actor, action, targetType, targetId, from, to, keyword, 1, limit);
+    }
+
+    @Transactional(readOnly = true)
+    // 按操作者、动作、目标、时间范围和关键字搜索审计事件。
+    public AuditEventListResponse search(
+        String actor,
+        String action,
+        String targetType,
+        String targetId,
+        Instant from,
+        Instant to,
+        String keyword,
+        int page,
+        int limit
+    ) {
         int size = Math.clamp(limit, 1, 500);
+        int pageIndex = Math.max(page, 1) - 1;
+        Specification<AuditEvent> spec = specification(actor, action, targetType, targetId, from, to, keyword);
         List<AuditEventResponse> resources = auditEvents
-            .findAll(specification(actor, action, targetType, targetId, from, to, keyword), PageRequest.of(0, size, Sort.by(Sort.Direction.DESC, "createdAt")))
+            .findAll(spec, PageRequest.of(pageIndex, size, Sort.by(Sort.Direction.DESC, "createdAt")))
             .stream()
             .map(auditMapper::toResponse)
             .toList();
-        return new AuditEventListResponse(resources.size(), size, resources);
+        return new AuditEventListResponse((int) auditEvents.count(spec), size, resources);
     }
 
     @Transactional(readOnly = true)
