@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 public final class AuthenticationDtos {
@@ -93,6 +94,44 @@ public final class AuthenticationDtos {
         String userAgent,
         String detail,
         Instant createdAt
+    ) {
+    }
+
+    public record ThirdPartyAuthorizeResponse(
+        String providerKey,
+        String authorizationUrl,
+        String state
+    ) {
+    }
+
+    public record ThirdPartyLoginCallbackRequest(
+        @Schema(description = "第三方授权码")
+        @NotBlank String code,
+        @Schema(description = "回调 state")
+        String state,
+        @Schema(description = "本次授权使用的回调地址；为空则使用认证源配置")
+        String redirectUri
+    ) {
+    }
+
+    public record ThirdPartyIdentityResponse(
+        String providerKey,
+        String provider,
+        String subject,
+        String unionId,
+        String displayName,
+        String email,
+        String mobile,
+        String avatarUrl,
+        Map<String, Object> raw
+    ) {
+    }
+
+    public record ThirdPartyLoginResponse(
+        ThirdPartyIdentityResponse identity,
+        AuthenticationSessionResponse session,
+        UUID userId,
+        boolean userCreated
     ) {
     }
 }

@@ -36,6 +36,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/v1/users/password-reset-tickets/consumptions").permitAll()
                 .requestMatchers(HttpMethod.GET, "/oauth2/userinfo").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/catalog").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/authentication/third-party/*/authorize").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/authentication/third-party/*/callback").permitAll()
                 .anyRequest().authenticated())
             .httpBasic(Customizer.withDefaults());
         return http.build();

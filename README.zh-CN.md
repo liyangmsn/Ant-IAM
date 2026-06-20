@@ -204,6 +204,20 @@ curl -u admin:admin123456 \
 
 飞书应用需要开通通讯录部门和用户读取权限。连接器优先使用飞书官方 Java SDK 调用 `contact/v3` 部门子节点和部门用户能力，按 `has_more` 与 `page_token` 自动翻页；如需切换私有化或代理网关，可配置 `endpoint`。
 
+第三方登录通过公开接口完成授权跳转和授权码回调；回调时应传回 `authorize` 返回的签名 `state`：
+
+```bash
+curl 'http://localhost:8080/api/v1/authentication/third-party/wechat/authorize?redirectUri=https://iam.example.com/callback&state=demo'
+```
+
+```bash
+curl -H 'Content-Type: application/json' \
+  -d '{"code":"auth-code","state":"authorize-response-state","redirectUri":"https://iam.example.com/callback"}' \
+  http://localhost:8080/api/v1/authentication/third-party/wechat/callback
+```
+
+微信、QQ、飞书、钉钉认证源配置统一使用 `appId`、`appSecret`、`redirectUri`。飞书登录优先使用飞书官方 Java SDK 的 `authen/v1` 能力，钉钉登录优先使用钉钉官方 Java SDK 的 `sns/getuserinfo_bycode` 能力；微信和 QQ 当前使用官方 OAuth 接口直连。可选字段包括 `scope`、`usernameClaim`、`usernamePrefix`、`autoCreateUser`、`sessionTtlMinutes`、`stateTtlSeconds` 和各平台 endpoint 覆盖项。
+
 ## 路线图
 
 - 强化 OAuth2/OIDC 端点，补充 consent UI 页面。

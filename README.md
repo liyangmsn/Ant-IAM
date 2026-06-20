@@ -204,6 +204,20 @@ Feishu connectors can use app credentials to import departments and department u
 
 The Feishu app must have contact department and user read permissions. The connector prefers the official Feishu Java SDK for `contact/v3` department children and department user APIs, and follows `has_more` / `page_token` pagination; set `endpoint` only for private deployments or API gateways.
 
+Third-party login uses public authorization and callback endpoints. The callback should send back the signed `state` returned by `authorize`:
+
+```bash
+curl 'http://localhost:8080/api/v1/authentication/third-party/wechat/authorize?redirectUri=https://iam.example.com/callback&state=demo'
+```
+
+```bash
+curl -H 'Content-Type: application/json' \
+  -d '{"code":"auth-code","state":"authorize-response-state","redirectUri":"https://iam.example.com/callback"}' \
+  http://localhost:8080/api/v1/authentication/third-party/wechat/callback
+```
+
+WeChat, QQ, Feishu and DingTalk authentication providers use `appId`, `appSecret` and `redirectUri`. Feishu login prefers the official Feishu Java SDK `authen/v1` APIs, and DingTalk login prefers the official DingTalk Java SDK `sns/getuserinfo_bycode` API. WeChat and QQ use their official OAuth endpoints directly. Optional fields include `scope`, `usernameClaim`, `usernamePrefix`, `autoCreateUser`, `sessionTtlMinutes`, `stateTtlSeconds` and platform endpoint overrides.
+
 ## Roadmap
 
 - Harden OAuth2/OIDC endpoints with consent UI pages.
