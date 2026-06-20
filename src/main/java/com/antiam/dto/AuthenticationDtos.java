@@ -134,4 +134,20 @@ public final class AuthenticationDtos {
         boolean userCreated
     ) {
     }
+
+    public record ThirdPartyBindingResponse(
+        UUID id,
+        UUID userId,
+        String providerKey,
+        String provider,
+        String subject,
+        String unionId,
+        String displayName,
+        String email,
+        String mobile,
+        String avatarUrl,
+        Instant createdAt,
+        Instant updatedAt
+    ) {
+    }
 }

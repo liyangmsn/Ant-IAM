@@ -20,6 +20,7 @@ import com.antiam.repository.AuthenticationEventRepository;
 import com.antiam.repository.AuthenticationProviderRepository;
 import com.antiam.repository.AuthenticationSessionRepository;
 import com.antiam.repository.UserAccountRepository;
+import com.antiam.repository.UserThirdPartyBindingRepository;
 import com.antiam.service.thirdparty.ThirdPartyAuthAdapter;
 import com.antiam.service.thirdparty.ThirdPartyProfile;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -27,12 +28,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 class ThirdPartyLoginServiceTest {
 
     private final AuthenticationProviderRepository providers = mock(AuthenticationProviderRepository.class);
     private final UserAccountRepository users = mock(UserAccountRepository.class);
+    private final UserThirdPartyBindingRepository bindings = mock(UserThirdPartyBindingRepository.class);
     private final AuthenticationSessionRepository sessions = mock(AuthenticationSessionRepository.class);
     private final AuthenticationEventRepository events = mock(AuthenticationEventRepository.class);
     private final AuditService auditService = mock(AuditService.class);
@@ -40,6 +43,7 @@ class ThirdPartyLoginServiceTest {
     private final ThirdPartyLoginService service = new ThirdPartyLoginService(
         providers,
         users,
+        bindings,
         sessions,
         events,
         auditService,
@@ -90,6 +94,28 @@ class ThirdPartyLoginServiceTest {
             "Mozilla/5.0"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("not signed");
+    }
+
+    @Test
+    void bindsThirdPartyIdentityToUser() {
+        UUID userId = UUID.randomUUID();
+        UserAccount user = new UserAccount("alice", "Alice", "alice@example.com", null, null, null);
+        when(users.findById(userId)).thenReturn(Optional.of(user));
+        when(providers.findByProviderKey("wechat")).thenReturn(Optional.of(provider("wechat", AuthenticationProviderKind.WECHAT)));
+        when(bindings.findByProviderKeyAndSubject("wechat", "open-1")).thenReturn(Optional.empty());
+        when(bindings.findByUserIdAndProviderKey(userId, "wechat")).thenReturn(Optional.empty());
+        when(bindings.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        String signedState = service.authorizeBinding(userId, "wechat", "https://iam.example.com/bind", "bind-1").state();
+
+        var response = service.bind(
+            userId,
+            "wechat",
+            new ThirdPartyLoginCallbackRequest("code-1", signedState, "https://iam.example.com/bind"),
+            "admin");
+
+        assertThat(response.providerKey()).isEqualTo("wechat");
+        assertThat(response.subject()).isEqualTo("open-1");
+        verify(bindings).save(any());
     }
 
     private AuthenticationProvider provider(String key, AuthenticationProviderKind kind) {

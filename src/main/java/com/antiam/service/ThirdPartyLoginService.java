@@ -2,6 +2,7 @@ package com.antiam.service;
 
 import static com.antiam.dto.AuthenticationDtos.AuthenticationSessionResponse;
 import static com.antiam.dto.AuthenticationDtos.ThirdPartyAuthorizeResponse;
+import static com.antiam.dto.AuthenticationDtos.ThirdPartyBindingResponse;
 import static com.antiam.dto.AuthenticationDtos.ThirdPartyIdentityResponse;
 import static com.antiam.dto.AuthenticationDtos.ThirdPartyLoginCallbackRequest;
 import static com.antiam.dto.AuthenticationDtos.ThirdPartyLoginResponse;
@@ -14,10 +15,12 @@ import com.antiam.domain.AuthenticationEventType;
 import com.antiam.domain.AuthenticationProvider;
 import com.antiam.domain.AuthenticationSession;
 import com.antiam.domain.UserAccount;
+import com.antiam.domain.UserThirdPartyBinding;
 import com.antiam.repository.AuthenticationEventRepository;
 import com.antiam.repository.AuthenticationProviderRepository;
 import com.antiam.repository.AuthenticationSessionRepository;
 import com.antiam.repository.UserAccountRepository;
+import com.antiam.repository.UserThirdPartyBindingRepository;
 import com.antiam.service.thirdparty.ThirdPartyAuthAdapter;
 import com.antiam.service.thirdparty.ThirdPartyAuthSupport;
 import com.antiam.service.thirdparty.ThirdPartyProfile;
@@ -45,6 +48,7 @@ public class ThirdPartyLoginService {
 
     private final AuthenticationProviderRepository providers;
     private final UserAccountRepository users;
+    private final UserThirdPartyBindingRepository bindings;
     private final AuthenticationSessionRepository sessions;
     private final AuthenticationEventRepository events;
     private final AuditService auditService;
@@ -57,7 +61,7 @@ public class ThirdPartyLoginService {
         AuthenticationProvider provider = getEnabledProvider(providerKey);
         JsonNode configuration = readConfiguration(provider);
         String resolvedRedirectUri = ThirdPartyAuthSupport.redirectUri(configuration, redirectUri);
-        String resolvedState = signedState(provider, configuration, resolvedRedirectUri, state);
+        String resolvedState = signedState(provider, configuration, resolvedRedirectUri, state, "login", null);
         ThirdPartyAuthAdapter adapter = adapter(provider);
         return new ThirdPartyAuthorizeResponse(
             provider.getProviderKey(),
@@ -69,7 +73,8 @@ public class ThirdPartyLoginService {
     public ThirdPartyLoginResponse callback(String providerKey, ThirdPartyLoginCallbackRequest request, String ipAddress, String userAgent) {
         AuthenticationProvider provider = getEnabledProvider(providerKey);
         JsonNode configuration = readConfiguration(provider);
-        String resolvedRedirectUri = validateState(provider, configuration, request);
+        StateValidation state = validateState(provider, configuration, request, "login", null);
+        String resolvedRedirectUri = state.redirectUri();
         ThirdPartyProfile profile = adapter(provider).exchange(configuration, request.code(), resolvedRedirectUri);
         UserResolution resolution = resolveUser(provider, configuration, profile);
         AuthenticationSession session = sessions.save(new AuthenticationSession(
@@ -103,6 +108,67 @@ public class ThirdPartyLoginService {
             toResponse(session),
             resolution.user().getId(),
             resolution.created());
+    }
+
+    @Transactional(readOnly = true)
+    public List<ThirdPartyBindingResponse> bindings(UUID userId) {
+        return bindings.findByUserIdOrderByCreatedAtAsc(userId).stream()
+            .map(this::toBindingResponse)
+            .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public ThirdPartyAuthorizeResponse authorizeBinding(UUID userId, String providerKey, String redirectUri, String state) {
+        ensureUser(userId);
+        AuthenticationProvider provider = getEnabledProvider(providerKey);
+        JsonNode configuration = readConfiguration(provider);
+        String resolvedRedirectUri = ThirdPartyAuthSupport.redirectUri(configuration, redirectUri);
+        String resolvedState = signedState(provider, configuration, resolvedRedirectUri, state, "bind", userId);
+        return new ThirdPartyAuthorizeResponse(
+            provider.getProviderKey(),
+            adapter(provider).authorizationUrl(configuration, resolvedRedirectUri, resolvedState),
+            resolvedState);
+    }
+
+    @Transactional
+    public ThirdPartyBindingResponse bind(UUID userId, String providerKey, ThirdPartyLoginCallbackRequest request, String actor) {
+        UserAccount user = ensureUser(userId);
+        AuthenticationProvider provider = getEnabledProvider(providerKey);
+        JsonNode configuration = readConfiguration(provider);
+        StateValidation state = validateState(provider, configuration, request, "bind", userId);
+        ThirdPartyProfile profile = adapter(provider).exchange(configuration, request.code(), state.redirectUri());
+        UserThirdPartyBinding binding = bindings.findByProviderKeyAndSubject(provider.getProviderKey(), profile.subject())
+            .map(existing -> {
+                if (!existing.getUser().getId().equals(userId)) {
+                    throw new IllegalArgumentException("Third-party identity is already bound to another user");
+                }
+                return existing;
+            })
+            .orElseGet(() -> bindings.findByUserIdAndProviderKey(userId, provider.getProviderKey())
+                .orElseGet(() -> new UserThirdPartyBinding(
+                    user,
+                    provider.getProviderKey(),
+                    provider.getProvider(),
+                    profile.subject(),
+                    profile.unionId(),
+                    profile.displayName(),
+                    profile.email(),
+                    profile.mobile(),
+                    profile.avatarUrl(),
+                    raw(profile))));
+        binding.updateProfile(profile.unionId(), profile.displayName(), profile.email(), profile.mobile(), profile.avatarUrl(), raw(profile));
+        UserThirdPartyBinding saved = bindings.save(binding);
+        auditService.record(actor, "third_party_binding.upsert", "user", String.valueOf(userId), provider.getProviderKey() + ":" + profile.subject());
+        return toBindingResponse(saved);
+    }
+
+    @Transactional
+    public void unbind(UUID userId, UUID bindingId, String actor) {
+        UserThirdPartyBinding binding = bindings.findById(bindingId)
+            .filter(candidate -> candidate.getUser().getId().equals(userId))
+            .orElseThrow(() -> new NotFoundException("Third-party binding not found: " + bindingId));
+        bindings.delete(binding);
+        auditService.record(actor, "third_party_binding.delete", "user", String.valueOf(userId), binding.getProviderKey() + ":" + binding.getSubject());
     }
 
     private AuthenticationProvider getEnabledProvider(String providerKey) {
@@ -178,19 +244,27 @@ public class ThirdPartyLoginService {
         return Duration.ofMinutes(minutes);
     }
 
-    private String signedState(AuthenticationProvider provider, JsonNode configuration, String redirectUri, String clientState) {
+    private UserAccount ensureUser(UUID userId) {
+        return users.findById(userId).orElseThrow(() -> new NotFoundException("User not found: " + userId));
+    }
+
+    private String signedState(AuthenticationProvider provider, JsonNode configuration, String redirectUri, String clientState, String mode, UUID userId) {
         ObjectNode payload = objectMapper.createObjectNode()
             .put("providerKey", provider.getProviderKey())
             .put("redirectUri", redirectUri)
             .put("nonce", tokenSupport.generateToken(16))
             .put("clientState", ThirdPartyAuthSupport.state(clientState))
+            .put("mode", mode)
             .put("issuedAt", Instant.now().getEpochSecond());
+        if (userId != null) {
+            payload.put("userId", userId.toString());
+        }
         String encodedPayload = Base64.getUrlEncoder().withoutPadding()
             .encodeToString(payload.toString().getBytes(StandardCharsets.UTF_8));
         return "v1." + encodedPayload + "." + signature(configuration, encodedPayload);
     }
 
-    private String validateState(AuthenticationProvider provider, JsonNode configuration, ThirdPartyLoginCallbackRequest request) {
+    private StateValidation validateState(AuthenticationProvider provider, JsonNode configuration, ThirdPartyLoginCallbackRequest request, String expectedMode, UUID expectedUserId) {
         String configuredRedirectUri = ThirdPartyAuthSupport.redirectUri(configuration, request.redirectUri());
         String state = request.state();
         if (state == null || state.isBlank()) {
@@ -198,7 +272,7 @@ public class ThirdPartyLoginService {
         }
         if (!state.startsWith("v1.")) {
             if (ThirdPartyAuthSupport.boolOrDefault(configuration, "allowUnsignedState", false)) {
-                return configuredRedirectUri;
+                return new StateValidation(configuredRedirectUri, expectedMode, expectedUserId);
             }
             throw new IllegalArgumentException("Third-party login state is not signed");
         }
@@ -210,6 +284,7 @@ public class ThirdPartyLoginService {
             JsonNode payload = objectMapper.readTree(new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8));
             String providerKey = payload.path("providerKey").asText();
             String redirectUri = payload.path("redirectUri").asText();
+            String mode = payload.path("mode").asText("login");
             long issuedAt = payload.path("issuedAt").asLong(0);
             if (!provider.getProviderKey().equals(providerKey)) {
                 throw new IllegalArgumentException("Third-party login state provider does not match");
@@ -217,11 +292,18 @@ public class ThirdPartyLoginService {
             if (!configuredRedirectUri.equals(redirectUri)) {
                 throw new IllegalArgumentException("Third-party login state redirectUri does not match");
             }
+            if (!expectedMode.equals(mode)) {
+                throw new IllegalArgumentException("Third-party login state mode does not match");
+            }
+            UUID userId = payload.hasNonNull("userId") ? UUID.fromString(payload.path("userId").asText()) : null;
+            if (expectedUserId != null && !expectedUserId.equals(userId)) {
+                throw new IllegalArgumentException("Third-party login state user does not match");
+            }
             long ttlSeconds = configuration.has("stateTtlSeconds") ? configuration.path("stateTtlSeconds").asLong(600) : 600;
             if (issuedAt <= 0 || Instant.ofEpochSecond(issuedAt).plusSeconds(ttlSeconds).isBefore(Instant.now())) {
                 throw new IllegalArgumentException("Third-party login state has expired");
             }
-            return redirectUri;
+            return new StateValidation(redirectUri, mode, userId);
         } catch (IllegalArgumentException ex) {
             throw ex;
         } catch (RuntimeException | JsonProcessingException ex) {
@@ -231,6 +313,30 @@ public class ThirdPartyLoginService {
 
     private String signature(JsonNode configuration, String encodedPayload) {
         return tokenSupport.sha256(encodedPayload + "." + ThirdPartyAuthSupport.required(configuration, "appSecret"));
+    }
+
+    private ThirdPartyBindingResponse toBindingResponse(UserThirdPartyBinding binding) {
+        return new ThirdPartyBindingResponse(
+            binding.getId(),
+            binding.getUser().getId(),
+            binding.getProviderKey(),
+            binding.getProvider().name(),
+            binding.getSubject(),
+            binding.getUnionId(),
+            binding.getDisplayName(),
+            binding.getEmail(),
+            binding.getMobile(),
+            binding.getAvatarUrl(),
+            binding.getCreatedAt(),
+            binding.getUpdatedAt());
+    }
+
+    private String raw(ThirdPartyProfile profile) {
+        try {
+            return objectMapper.writeValueAsString(profile.raw() == null ? Map.of() : profile.raw());
+        } catch (JsonProcessingException ex) {
+            throw new IllegalArgumentException("Third-party profile raw payload must be serializable", ex);
+        }
     }
 
     private AuthenticationSessionResponse toResponse(AuthenticationSession session) {
@@ -266,5 +372,8 @@ public class ThirdPartyLoginService {
     }
 
     private record UserResolution(UserAccount user, boolean created) {
+    }
+
+    private record StateValidation(String redirectUri, String mode, UUID userId) {
     }
 }

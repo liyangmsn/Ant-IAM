@@ -59,3 +59,5 @@ databaseChangeLog:
       file: db/changelog/029-identity-source-description-schema.sql
   - include:
       file: db/changelog/030-authentication-provider-schema.sql
+  - include:
+      file: db/changelog/031-user-third-party-binding-schema.sql
