@@ -48,7 +48,8 @@ class UserServiceTest {
         authenticationPolicies,
         mock(AuditService.class),
         mock(PasswordEncoder.class),
-        mock(TokenSupport.class));
+        mock(TokenSupport.class),
+        mock(SmsVerificationService.class));
 
     @Test
     void rejectsPasswordThatDoesNotMeetComplexityPolicy() {

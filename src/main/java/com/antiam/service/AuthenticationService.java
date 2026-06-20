@@ -6,20 +6,31 @@ import static com.antiam.dto.AuthenticationDtos.CreateAuthenticationEventRequest
 import static com.antiam.dto.AuthenticationDtos.CreateAuthenticationSessionRequest;
 import static com.antiam.dto.AuthenticationDtos.EndAuthenticationSessionsRequest;
 import static com.antiam.dto.AuthenticationDtos.EndAuthenticationSessionsResponse;
+import static com.antiam.dto.AuthenticationDtos.MobileLoginResponse;
+import static com.antiam.dto.AuthenticationDtos.PasswordLoginResponse;
+import static com.antiam.dto.AuthenticationDtos.SendSmsCodeResponse;
 
+import com.antiam.common.TokenSupport;
 import com.antiam.common.NotFoundException;
+import com.antiam.domain.AccountStatus;
+import com.antiam.domain.ApplicationProtocol;
 import com.antiam.domain.Application;
 import com.antiam.domain.AuthenticationEvent;
 import com.antiam.domain.AuthenticationEventType;
 import com.antiam.domain.AuthenticationSession;
+import com.antiam.domain.CredentialType;
 import com.antiam.domain.UserAccount;
 import com.antiam.repository.ApplicationRepository;
 import com.antiam.repository.AuthenticationEventRepository;
 import com.antiam.repository.AuthenticationSessionRepository;
 import com.antiam.repository.UserAccountRepository;
+import com.antiam.repository.UserCredentialRepository;
 import java.util.List;
 import java.util.UUID;
+import java.time.Duration;
+import java.time.Instant;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,7 +42,12 @@ public class AuthenticationService {
     private final AuthenticationEventRepository events;
     private final UserAccountRepository users;
     private final ApplicationRepository applications;
+    private final UserCredentialRepository credentials;
     private final AuditService auditService;
+    private final SmsVerificationService smsVerificationService;
+    private final TokenSupport tokenSupport;
+    private final AuthenticationPolicyService authenticationPolicyService;
+    private final PasswordEncoder passwordEncoder;
 
     @Transactional
     // 创建认证会话，记录用户、应用、协议、客户端和过期时间。
@@ -48,6 +64,72 @@ public class AuthenticationService {
             request.expiresAt()));
         auditService.record(actor, "auth_session.create", "auth_session", saved.getId().toString(), request.protocol().name());
         return toResponse(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public SendSmsCodeResponse sendSmsCode(String mobile, String purpose) {
+        return smsVerificationService.sendFixedCode(mobile, purpose);
+    }
+
+    @Transactional
+    public MobileLoginResponse mobileLogin(String mobile, String code, String ipAddress, String userAgent) {
+        smsVerificationService.verify(mobile, "LOGIN", code);
+        UserAccount user = users.findByMobile(mobile)
+            .orElseThrow(() -> new NotFoundException("User not found by mobile: " + mobile));
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            events.save(new AuthenticationEvent(null, user, null, AuthenticationEventType.LOGIN_FAILURE, ipAddress, userAgent, "mobile_login_status=" + user.getStatus()));
+            throw new IllegalArgumentException("User account is not active");
+        }
+        AuthenticationSession session = sessions.save(new AuthenticationSession(
+            user,
+            null,
+            ApplicationProtocol.FORM_FILL,
+            tokenSupport.generateToken(32),
+            ipAddress,
+            userAgent,
+            Instant.now().plus(Duration.ofHours(8))));
+        events.save(new AuthenticationEvent(session, user, null, AuthenticationEventType.LOGIN_SUCCESS, ipAddress, userAgent, "mobile_code_login"));
+        auditService.record(user.getUsername(), "mobile_login.success", "user", user.getId().toString(), mobile);
+        return new MobileLoginResponse(user.getId(), toResponse(session));
+    }
+
+    @Transactional
+    public PasswordLoginResponse passwordLogin(String username, String rawPassword, String ipAddress, String userAgent) {
+        UserAccount user = users.findByUsername(username)
+            .orElseThrow(() -> new NotFoundException("User not found: " + username));
+        var credential = credentials.findByUserAndType(user, CredentialType.PASSWORD)
+            .orElseThrow(() -> new NotFoundException("Password credential not found for user: " + username));
+        if (user.getStatus() != AccountStatus.ACTIVE) {
+            events.save(new AuthenticationEvent(null, user, null, AuthenticationEventType.LOGIN_FAILURE, ipAddress, userAgent, "password_login_status=" + user.getStatus()));
+            throw new IllegalArgumentException("User account is not active");
+        }
+        if (!passwordEncoder.matches(rawPassword, credential.getSecretHash())) {
+            credential.markFailed();
+            int maxAttempts = authenticationPolicyService.currentPasswordMaxFailureAttempts();
+            boolean locked = credential.getFailedAttempts() >= maxAttempts;
+            if (locked) {
+                user.lock();
+                credential.markLocked();
+            }
+            events.save(new AuthenticationEvent(null, user, null, AuthenticationEventType.LOGIN_FAILURE, ipAddress, userAgent, "password_login_failed;failed_attempts=" + credential.getFailedAttempts() + ";locked=" + locked));
+            if (locked) {
+                auditService.record(username, "user.password.lock", "user", user.getId().toString(), "failed_attempts=" + credential.getFailedAttempts());
+            }
+            throw new IllegalArgumentException("Username or password is invalid");
+        }
+        credential.markUsed();
+        boolean expired = credential.isExpired(Instant.now());
+        AuthenticationSession session = sessions.save(new AuthenticationSession(
+            user,
+            null,
+            ApplicationProtocol.FORM_FILL,
+            tokenSupport.generateToken(32),
+            ipAddress,
+            userAgent,
+            Instant.now().plus(Duration.ofHours(8))));
+        events.save(new AuthenticationEvent(session, user, null, AuthenticationEventType.LOGIN_SUCCESS, ipAddress, userAgent, expired ? "password_login;password_expired" : "password_login"));
+        auditService.record(username, "password_login.success", "user", user.getId().toString(), username);
+        return new PasswordLoginResponse(user.getId(), toResponse(session), credential.isTemporary(), expired, credential.isTemporary() || expired);
     }
 
     @Transactional

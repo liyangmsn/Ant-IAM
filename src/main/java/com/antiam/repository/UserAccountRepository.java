@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> {
     Optional<UserAccount> findByUsername(String username);
 
+    Optional<UserAccount> findByMobile(String mobile);
+
     long countByStatus(AccountStatus status);
 
     java.util.List<UserAccount> findByTenantId(UUID tenantId);

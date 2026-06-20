@@ -6,12 +6,19 @@ import static com.antiam.dto.AuthenticationDtos.CreateAuthenticationEventRequest
 import static com.antiam.dto.AuthenticationDtos.CreateAuthenticationSessionRequest;
 import static com.antiam.dto.AuthenticationDtos.EndAuthenticationSessionsRequest;
 import static com.antiam.dto.AuthenticationDtos.EndAuthenticationSessionsResponse;
+import static com.antiam.dto.AuthenticationDtos.MobileLoginRequest;
+import static com.antiam.dto.AuthenticationDtos.MobileLoginResponse;
+import static com.antiam.dto.AuthenticationDtos.PasswordLoginRequest;
+import static com.antiam.dto.AuthenticationDtos.PasswordLoginResponse;
+import static com.antiam.dto.AuthenticationDtos.SendSmsCodeRequest;
+import static com.antiam.dto.AuthenticationDtos.SendSmsCodeResponse;
 
 import com.antiam.domain.AuthenticationEventType;
 import com.antiam.service.AuthenticationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import java.util.List;
@@ -34,6 +41,32 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthenticationController {
 
     private final AuthenticationService authentication;
+
+    @Operation(summary = "发送短信验证码", description = "发送固定短信验证码；默认验证码为 666666，可通过配置覆盖。")
+    @PostMapping("/sms-codes")
+    SendSmsCodeResponse sendSmsCode(@Parameter(description = "短信验证码发送请求") @Valid @RequestBody SendSmsCodeRequest request) {
+        return authentication.sendSmsCode(request.mobile(), request.purpose());
+    }
+
+    @Operation(summary = "手机号验证码登录", description = "校验短信验证码，创建后端认证会话并返回可用于门户 API 的会话 token。")
+    @PostMapping("/mobile-login")
+    @ResponseStatus(HttpStatus.CREATED)
+    MobileLoginResponse mobileLogin(
+        @Parameter(description = "手机号验证码登录请求") @Valid @RequestBody MobileLoginRequest request,
+        HttpServletRequest httpRequest
+    ) {
+        return authentication.mobileLogin(request.mobile(), request.code(), clientIp(httpRequest), httpRequest.getHeader("User-Agent"));
+    }
+
+    @Operation(summary = "账号密码登录", description = "校验本地账号密码，创建后端认证会话并返回可用于门户 API 的会话 token。")
+    @PostMapping("/password-login")
+    @ResponseStatus(HttpStatus.CREATED)
+    PasswordLoginResponse passwordLogin(
+        @Parameter(description = "账号密码登录请求") @Valid @RequestBody PasswordLoginRequest request,
+        HttpServletRequest httpRequest
+    ) {
+        return authentication.passwordLogin(request.username(), request.password(), clientIp(httpRequest), httpRequest.getHeader("User-Agent"));
+    }
 
     /**
      * 查询认证会话列表，可按用户、应用和活跃状态过滤。
@@ -110,5 +143,13 @@ public class AuthenticationController {
         Principal principal
     ) {
         return authentication.recordEvent(request, principal.getName());
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 }

@@ -28,3 +28,8 @@ management:
     web:
       exposure:
         include: health,info,metrics
+
+ant-iam:
+  sms:
+    fixed-code: ${ANT_IAM_SMS_FIXED_CODE:666666}
+    code-ttl-seconds: ${ANT_IAM_SMS_CODE_TTL_SECONDS:300}

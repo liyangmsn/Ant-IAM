@@ -2,6 +2,7 @@ package com.antiam.web;
 
 import static com.antiam.dto.AccessDtos.GrantRequest;
 import static com.antiam.dto.UserDtos.ChangeOwnPasswordRequest;
+import static com.antiam.dto.UserDtos.BindMobileRequest;
 import static com.antiam.dto.UserDtos.CreateUserRequest;
 import static com.antiam.dto.UserDtos.ConsumePasswordResetTicketRequest;
 import static com.antiam.dto.UserDtos.CreatePasswordResetTicketRequest;
@@ -13,6 +14,7 @@ import static com.antiam.dto.UserDtos.PasswordResetTicketDetailResponse;
 import static com.antiam.dto.UserDtos.RegisterMfaFactorRequest;
 import static com.antiam.dto.UserDtos.RecoveryCodesResponse;
 import static com.antiam.dto.UserDtos.SetPasswordRequest;
+import static com.antiam.dto.UserDtos.SendMobileBindingCodeRequest;
 import static com.antiam.dto.UserDtos.StartMfaChallengeRequest;
 import static com.antiam.dto.UserDtos.UpdateMfaFactorRequest;
 import static com.antiam.dto.UserDtos.UpdateUserRequest;
@@ -213,6 +215,47 @@ public class UserController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void changeOwnPassword(@Parameter(description = "自助改密请求") @Valid @RequestBody ChangeOwnPasswordRequest request, Principal principal) {
         users.changeOwnPassword(principal.getName(), request);
+    }
+
+    @Operation(summary = "当前用户发送绑定手机号验证码", description = "向当前用户准备绑定的手机号发送固定验证码；默认验证码为 666666，可通过配置覆盖。")
+    @PostMapping("/me/mobile-binding-code")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void sendOwnMobileBindingCode(
+        @Parameter(description = "绑定手机号验证码请求") @Valid @RequestBody SendMobileBindingCodeRequest request,
+        Principal principal
+    ) {
+        UserResponse current = users.currentUser(principal.getName());
+        users.sendMobileBindingCode(current.id(), request.mobile());
+    }
+
+    @Operation(summary = "当前用户绑定手机号", description = "校验短信验证码后为当前用户绑定手机号。")
+    @PostMapping("/me/mobile")
+    UserResponse bindOwnMobile(
+        @Parameter(description = "绑定手机号请求") @Valid @RequestBody BindMobileRequest request,
+        Principal principal
+    ) {
+        UserResponse current = users.currentUser(principal.getName());
+        return users.bindMobile(current.id(), request, principal.getName());
+    }
+
+    @Operation(summary = "发送绑定手机号验证码", description = "向目标手机号发送固定验证码；默认验证码为 666666，可通过配置覆盖。")
+    @PostMapping("/{userId}/mobile-binding-code")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void sendMobileBindingCode(
+        @Parameter(description = "用户 UUID") @PathVariable UUID userId,
+        @Parameter(description = "绑定手机号验证码请求") @Valid @RequestBody SendMobileBindingCodeRequest request
+    ) {
+        users.sendMobileBindingCode(userId, request.mobile());
+    }
+
+    @Operation(summary = "绑定手机号", description = "校验短信验证码后为指定用户绑定手机号。")
+    @PostMapping("/{userId}/mobile")
+    UserResponse bindMobile(
+        @Parameter(description = "用户 UUID") @PathVariable UUID userId,
+        @Parameter(description = "绑定手机号请求") @Valid @RequestBody BindMobileRequest request,
+        Principal principal
+    ) {
+        return users.bindMobile(userId, request, principal.getName());
     }
 
     /**

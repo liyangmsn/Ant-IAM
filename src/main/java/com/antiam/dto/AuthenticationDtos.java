@@ -66,6 +66,52 @@ public final class AuthenticationDtos {
     ) {
     }
 
+    public record SendSmsCodeRequest(
+        @Schema(description = "手机号", example = "13800000000")
+        @NotBlank String mobile,
+        @Schema(description = "验证码用途", example = "LOGIN")
+        String purpose
+    ) {
+    }
+
+    public record SendSmsCodeResponse(
+        String mobile,
+        String purpose,
+        Instant expiresAt
+    ) {
+    }
+
+    public record MobileLoginRequest(
+        @Schema(description = "手机号", example = "13800000000")
+        @NotBlank String mobile,
+        @Schema(description = "短信验证码", example = "666666")
+        @NotBlank String code
+    ) {
+    }
+
+    public record PasswordLoginRequest(
+        @Schema(description = "登录账号", example = "zhangsan")
+        @NotBlank String username,
+        @Schema(description = "登录密码", example = "ChangeMe123")
+        @NotBlank String password
+    ) {
+    }
+
+    public record MobileLoginResponse(
+        UUID userId,
+        AuthenticationSessionResponse session
+    ) {
+    }
+
+    public record PasswordLoginResponse(
+        UUID userId,
+        AuthenticationSessionResponse session,
+        boolean temporaryPassword,
+        boolean passwordExpired,
+        boolean passwordChangeRequired
+    ) {
+    }
+
     public record CreateAuthenticationEventRequest(
         @Schema(description = "认证会话 UUID")
         UUID sessionId,

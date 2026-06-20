@@ -1,6 +1,7 @@
 package com.antiam.service;
 
 import static com.antiam.dto.UserDtos.ChangeOwnPasswordRequest;
+import static com.antiam.dto.UserDtos.BindMobileRequest;
 import static com.antiam.dto.UserDtos.CreateUserRequest;
 import static com.antiam.dto.UserDtos.EffectivePermissionResponse;
 import static com.antiam.dto.UserDtos.ConsumePasswordResetTicketRequest;
@@ -106,6 +107,7 @@ public class UserService {
     private final AuditService auditService;
     private final PasswordEncoder passwordEncoder;
     private final TokenSupport tokens;
+    private final SmsVerificationService smsVerificationService;
 
     /**
      * 创建内部用户账号，并在提供初始密码时创建临时密码凭据。
@@ -263,6 +265,26 @@ public class UserService {
             null,
             "password_changed"));
         auditService.record(username, "user.password.change", "user", user.getId().toString(), user.getUsername());
+    }
+
+    @Transactional(readOnly = true)
+    public void sendMobileBindingCode(UUID userId, String mobile) {
+        getEntity(userId);
+        smsVerificationService.sendFixedCode(mobile, "BIND_MOBILE");
+    }
+
+    @Transactional
+    public UserResponse bindMobile(UUID userId, BindMobileRequest request, String actor) {
+        UserAccount user = getEntity(userId);
+        smsVerificationService.verify(request.mobile(), "BIND_MOBILE", request.code());
+        users.findByMobile(request.mobile())
+            .filter(existing -> !existing.getId().equals(userId))
+            .ifPresent(existing -> {
+                throw new IllegalArgumentException("Mobile is already bound to another user");
+            });
+        user.updateProfile(user.getDisplayName(), user.getEmail(), request.mobile(), user.getOrganization());
+        auditService.record(actor, "user.mobile.bind", "user", userId.toString(), request.mobile());
+        return toResponse(user);
     }
 
     /**

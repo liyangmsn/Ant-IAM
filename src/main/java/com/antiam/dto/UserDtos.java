@@ -51,6 +51,20 @@ public final class UserDtos {
     ) {
     }
 
+    public record SendMobileBindingCodeRequest(
+        @Schema(description = "手机号", example = "13800000000")
+        @NotBlank String mobile
+    ) {
+    }
+
+    public record BindMobileRequest(
+        @Schema(description = "手机号", example = "13800000000")
+        @NotBlank String mobile,
+        @Schema(description = "短信验证码", example = "666666")
+        @NotBlank String code
+    ) {
+    }
+
     public record CreatePasswordResetTicketRequest(
         @Schema(description = "需要重置密码的用户 UUID")
         @NotNull UUID userId,
