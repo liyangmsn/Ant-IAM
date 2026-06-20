@@ -162,7 +162,7 @@ curl -u admin:admin123456 \
   http://localhost:8080/api/v1/organizations
 ```
 
-身份源连接器配置可以通过 JSON 导入目录数据：
+身份源连接器配置可以通过 JSON 导入目录数据，钉钉和飞书连接器也支持把同样的结构放入 `payload` 字段用于本地联调：
 
 ```json
 {
@@ -178,12 +178,38 @@ curl -u admin:admin123456 \
 }
 ```
 
+钉钉连接器可配置开放平台凭据，运行同步任务时会拉取部门和部门用户：
+
+```json
+{
+  "appKey": "ding-app-key",
+  "appSecret": "ding-app-secret",
+  "rootDeptId": 1,
+  "fetchUserDetail": true
+}
+```
+
+钉钉应用需要开通通讯录部门读取、成员读取权限。连接器优先使用钉钉官方 Java SDK 调用 `oapi` 通讯录能力；如需切换私有化或代理网关，可配置 `endpoint`。
+
+飞书连接器可配置自建应用凭据，运行同步任务时会拉取部门和部门用户：
+
+```json
+{
+  "appId": "cli_xxx",
+  "appSecret": "feishu-app-secret",
+  "rootDepartmentId": "0",
+  "departmentIdType": "open_department_id"
+}
+```
+
+飞书应用需要开通通讯录部门和用户读取权限。连接器优先使用飞书官方 Java SDK 调用 `contact/v3` 部门子节点和部门用户能力，按 `has_more` 与 `page_token` 自动翻页；如需切换私有化或代理网关，可配置 `endpoint`。
+
 ## 路线图
 
 - 强化 OAuth2/OIDC 端点，补充 consent UI 页面。
 - 强化 SAML2/CAS 适配器，支持 XML 签名和更完整的协议绑定校验。
 - 增加面向用户的 MFA 注册和恢复引导页面。
-- 增加钉钉、企业微信、飞书、LDAP 和 AD 后台连接器。
-- 在 JSON 同步执行器基础上增加原生 LDAP/AD/钉钉/企业微信/飞书连接器适配。
+- 增加企业微信、LDAP 和 AD 后台连接器。
+- 在 JSON 同步执行器基础上继续补齐 LDAP/AD/企业微信连接器适配。
 - 将 SMS、email 和 WebAuthn MFA 原型挑战码替换为生产级校验器。
 - 扩展风险规则，支持地理速度和更丰富的自适应 MFA 动作。

@@ -28,8 +28,11 @@ import com.antiam.repository.IdentitySyncRunRepository;
 import com.antiam.repository.OrganizationRepository;
 import com.antiam.repository.UserAccountRepository;
 import com.antiam.repository.UserGroupRepository;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.antiam.service.identitysource.DirectoryGroup;
+import com.antiam.service.identitysource.DirectoryOrganization;
+import com.antiam.service.identitysource.DirectorySyncPayload;
+import com.antiam.service.identitysource.DirectoryUser;
+import com.antiam.service.identitysource.IdentitySourceConnectorAdapter;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -50,7 +53,7 @@ public class IdentitySourceService {
     private final IdentitySourceMapper identitySourceMapper;
     private final TenantService tenantService;
     private final AuditService auditService;
-    private final ObjectMapper objectMapper;
+    private final List<IdentitySourceConnectorAdapter> connectorAdapters;
 
     @Transactional
     // 创建身份源，后续可配置连接器并通过同步任务导入组织、用户和用户组。
@@ -214,7 +217,7 @@ public class IdentitySourceService {
         try {
             IdentitySourceConnector connector = connectors.findByIdentitySourceId(job.getIdentitySource().getId())
                 .orElseThrow(() -> new NotFoundException("Connector not configured for identity source: " + job.getIdentitySource().getCode()));
-            SyncCounters counters = applyJsonSync(job.getIdentitySource(), connector);
+            SyncCounters counters = applyConnectorSync(job.getIdentitySource(), connector);
             String message = "Applied " + job.getMode() + " sync for " + job.getIdentitySource().getType()
                 + ": organizationsCreated=" + counters.organizationsCreated()
                 + ", organizationsUpdated=" + counters.organizationsUpdated()
@@ -279,43 +282,26 @@ public class IdentitySourceService {
         return value != null && value.toLowerCase().contains(keyword);
     }
 
-    private int safeLength(String value) {
-        return value == null ? 0 : value.length();
-    }
-
-    private SyncCounters applyJsonSync(IdentitySource source, IdentitySourceConnector connector) {
+    private SyncCounters applyConnectorSync(IdentitySource source, IdentitySourceConnector connector) {
         if (!source.isEnabled()) {
             throw new IllegalArgumentException("Identity source is disabled: " + source.getCode());
         }
         if (!connector.isEnabled()) {
             throw new IllegalArgumentException("Identity source connector is disabled: " + source.getCode());
         }
-        JsonSyncPayload payload = readPayload(connector.getConfiguration());
+        DirectorySyncPayload payload = connectorAdapters.stream()
+            .filter(adapter -> adapter.supports(source.getType()))
+            .findFirst()
+            .orElseThrow(() -> new IllegalArgumentException("Unsupported identity source connector type: " + source.getType()))
+            .load(source, connector);
         SyncCounters counters = new SyncCounters();
-        if (payload.organizations() != null) {
-            payload.organizations().forEach(item -> syncOrganization(item, counters));
-        }
-        if (payload.users() != null) {
-            payload.users().forEach(item -> syncUser(source, item, counters));
-        }
-        if (payload.groups() != null) {
-            payload.groups().forEach(item -> syncGroup(item, counters));
-        }
+        payload.organizations().forEach(item -> syncOrganization(item, counters));
+        payload.users().forEach(item -> syncUser(source, item, counters));
+        payload.groups().forEach(item -> syncGroup(item, counters));
         return counters;
     }
 
-    private JsonSyncPayload readPayload(String configuration) {
-        if (configuration == null || configuration.isBlank()) {
-            return new JsonSyncPayload(List.of(), List.of(), List.of());
-        }
-        try {
-            return objectMapper.readValue(configuration, JsonSyncPayload.class);
-        } catch (JsonProcessingException ex) {
-            throw new IllegalArgumentException("Connector configuration must be valid JSON sync payload", ex);
-        }
-    }
-
-    private void syncOrganization(JsonOrganization item, SyncCounters counters) {
+    private void syncOrganization(DirectoryOrganization item, SyncCounters counters) {
         Organization parent = item.parentCode() == null || item.parentCode().isBlank()
             ? null
             : organizations.findByCode(item.parentCode())
@@ -332,7 +318,7 @@ public class IdentitySourceService {
             });
     }
 
-    private void syncUser(IdentitySource source, JsonUser item, SyncCounters counters) {
+    private void syncUser(IdentitySource source, DirectoryUser item, SyncCounters counters) {
         Organization organization = item.organizationCode() == null || item.organizationCode().isBlank()
             ? null
             : organizations.findByCode(item.organizationCode())
@@ -355,7 +341,7 @@ public class IdentitySourceService {
             });
     }
 
-    private void syncGroup(JsonGroup item, SyncCounters counters) {
+    private void syncGroup(DirectoryGroup item, SyncCounters counters) {
         UserGroup group = groups.findByCode(required(item.code(), "group.code"))
             .map(existing -> {
                 existing.rename(required(item.name(), "group.name"));
@@ -373,7 +359,7 @@ public class IdentitySourceService {
         }
     }
 
-    private String displayName(JsonUser item) {
+    private String displayName(DirectoryUser item) {
         if (item.displayName() != null && !item.displayName().isBlank()) {
             return item.displayName();
         }
@@ -385,18 +371,6 @@ public class IdentitySourceService {
             throw new IllegalArgumentException(field + " is required");
         }
         return value;
-    }
-
-    private record JsonSyncPayload(List<JsonOrganization> organizations, List<JsonUser> users, List<JsonGroup> groups) {
-    }
-
-    private record JsonOrganization(String code, String name, String parentCode) {
-    }
-
-    private record JsonUser(String username, String displayName, String email, String mobile, String organizationCode) {
-    }
-
-    private record JsonGroup(String code, String name, List<String> members) {
     }
 
     private static final class SyncCounters {

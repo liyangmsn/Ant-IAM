@@ -162,7 +162,7 @@ curl -u admin:admin123456 \
   http://localhost:8080/api/v1/organizations
 ```
 
-Identity source connector configuration can import directory data from JSON:
+Identity source connector configuration can import directory data from JSON. DingTalk and Feishu connectors also support the same structure under `payload` for local dry runs:
 
 ```json
 {
@@ -178,12 +178,38 @@ Identity source connector configuration can import directory data from JSON:
 }
 ```
 
+DingTalk connectors can use Open Platform credentials to import departments and department users:
+
+```json
+{
+  "appKey": "ding-app-key",
+  "appSecret": "ding-app-secret",
+  "rootDeptId": 1,
+  "fetchUserDetail": true
+}
+```
+
+The DingTalk app must have contact department and member read permissions. The connector prefers the official DingTalk Java SDK for `oapi` contact APIs; set `endpoint` only for private deployments or API gateways.
+
+Feishu connectors can use app credentials to import departments and department users:
+
+```json
+{
+  "appId": "cli_xxx",
+  "appSecret": "feishu-app-secret",
+  "rootDepartmentId": "0",
+  "departmentIdType": "open_department_id"
+}
+```
+
+The Feishu app must have contact department and user read permissions. The connector prefers the official Feishu Java SDK for `contact/v3` department children and department user APIs, and follows `has_more` / `page_token` pagination; set `endpoint` only for private deployments or API gateways.
+
 ## Roadmap
 
 - Harden OAuth2/OIDC endpoints with consent UI pages.
 - Harden SAML2/CAS adapters with XML signatures and richer protocol binding validation.
 - Add guided user-facing MFA enrollment and recovery screens.
-- Add background connectors for DingTalk, WeChat Work, Feishu, LDAP and AD.
-- Add native LDAP/AD/DingTalk/WeChat Work/Feishu connector adapters on top of the JSON sync executor.
+- Add background connectors for WeChat Work, LDAP and AD.
+- Continue native LDAP/AD/WeChat Work connector adapters on top of the JSON sync executor.
 - Replace SMS, email and WebAuthn MFA prototype challenge codes with production verifiers.
 - Expand risk rules with geo-velocity and richer adaptive MFA actions.
