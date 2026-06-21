@@ -52,6 +52,7 @@ public class ThirdPartyLoginService {
     private final AuthenticationSessionRepository sessions;
     private final AuthenticationEventRepository events;
     private final AuditService auditService;
+    private final ClientMetadataService clientMetadataService;
     private final ObjectMapper objectMapper;
     private final TokenSupport tokenSupport;
     private final List<ThirdPartyAuthAdapter> adapters;
@@ -348,27 +349,13 @@ public class ThirdPartyLoginService {
             session.getSessionIndex(),
             session.getIpAddress(),
             session.getUserAgent(),
-            null,
-            deviceType(session.getUserAgent()),
+            clientMetadataService.location(session.getIpAddress()),
+            clientMetadataService.deviceType(session.getUserAgent()),
             session.getCreatedAt(),
             session.getUpdatedAt(),
             session.getExpiresAt(),
             session.getEndedAt(),
             session.isActive());
-    }
-
-    private String deviceType(String userAgent) {
-        if (userAgent == null || userAgent.isBlank()) {
-            return null;
-        }
-        String normalized = userAgent.toLowerCase();
-        if (normalized.contains("mobile") || normalized.contains("iphone") || normalized.contains("android")) {
-            return "Mobile";
-        }
-        if (normalized.contains("ipad") || normalized.contains("tablet")) {
-            return "Tablet";
-        }
-        return "PC";
     }
 
     private record UserResolution(UserAccount user, boolean created) {

@@ -91,7 +91,7 @@ public class OAuthService {
         UserAccount user = users.findByUsername(username)
             .orElseThrow(() -> new NotFoundException("User not found: " + username));
         if (!hasConsent(clientId, user, approvedScopes)) {
-            return new AuthorizationResponse(null, null, state, true, List.copyOf(approvedScopes));
+            return new AuthorizationResponse(consentRedirect(clientId, redirectUri, scope, state, codeChallenge, codeChallengeMethod), null, state, true, List.copyOf(approvedScopes));
         }
 
         String code = tokens.generateToken(32);
@@ -746,6 +746,26 @@ public class OAuthService {
             url += "&state=" + urlEncode(state);
         }
         return url;
+    }
+
+    private String consentRedirect(String clientId, String redirectUri, String scope, String state, String codeChallenge, String codeChallengeMethod) {
+        StringBuilder target = new StringBuilder("/oauth2/consent?client_id=")
+            .append(urlEncode(clientId))
+            .append("&redirect_uri=")
+            .append(urlEncode(redirectUri));
+        if (scope != null && !scope.isBlank()) {
+            target.append("&scope=").append(urlEncode(scope));
+        }
+        if (state != null && !state.isBlank()) {
+            target.append("&state=").append(urlEncode(state));
+        }
+        if (codeChallenge != null && !codeChallenge.isBlank()) {
+            target.append("&code_challenge=").append(urlEncode(codeChallenge));
+        }
+        if (codeChallengeMethod != null && !codeChallengeMethod.isBlank()) {
+            target.append("&code_challenge_method=").append(urlEncode(codeChallengeMethod));
+        }
+        return target.toString();
     }
 
     private String urlEncode(String value) {

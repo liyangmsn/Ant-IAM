@@ -9,4 +9,6 @@ public interface IdentitySyncRunRepository extends JpaRepository<IdentitySyncRun
     List<IdentitySyncRun> findTop50BySyncJobIdOrderByCreatedAtDesc(UUID syncJobId);
 
     List<IdentitySyncRun> findTop100ByOrderByCreatedAtDesc();
+
+    java.util.Optional<IdentitySyncRun> findTopBySyncJobIdOrderByStartedAtDesc(UUID syncJobId);
 }

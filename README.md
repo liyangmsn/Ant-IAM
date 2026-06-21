@@ -208,6 +208,18 @@ Feishu connectors can use app credentials to import departments and department u
 
 The Feishu app must have contact department and user read permissions. The connector prefers the official Feishu Java SDK for `contact/v3` department children and department user APIs, and follows `has_more` / `page_token` pagination; set `endpoint` only for private deployments or API gateways.
 
+WeCom identity sources can use the corporate ID and contact secret to import departments and users:
+
+```json
+{
+  "corpId": "wwxxxxxxxx",
+  "corpSecret": "wechat-work-contact-secret",
+  "rootDeptId": 1
+}
+```
+
+The WeCom app must have contact department and member read permissions. The connector calls the official WeCom contact APIs directly; set `endpoint` only for private deployments or API gateways. Sync jobs with `cronExpression` are executed by the background scheduler. By default it scans due jobs every 60 seconds; tune it with the `ant-iam.identity-sync.scheduler-delay-ms` property.
+
 Third-party login uses public authorization and callback endpoints. The callback should send back the signed `state` returned by `authorize`:
 
 ```bash

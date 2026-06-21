@@ -47,6 +47,7 @@ class ThirdPartyLoginServiceTest {
         sessions,
         events,
         auditService,
+        new ClientMetadataService(),
         new ObjectMapper().findAndRegisterModules(),
         new TokenSupport(),
         List.of(adapter));

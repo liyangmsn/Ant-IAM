@@ -208,6 +208,18 @@ curl -H "Authorization: Bearer ${TOKEN}" \
 
 飞书应用需要开通通讯录部门和用户读取权限。连接器优先使用飞书官方 Java SDK 调用 `contact/v3` 部门子节点和部门用户能力，按 `has_more` 与 `page_token` 自动翻页；如需切换私有化或代理网关，可配置 `endpoint`。
 
+企业微信连接器可配置企业 ID 和通讯录 Secret，运行同步任务时会拉取部门和部门用户：
+
+```json
+{
+  "corpId": "wwxxxxxxxx",
+  "corpSecret": "wechat-work-contact-secret",
+  "rootDeptId": 1
+}
+```
+
+企业微信应用需要开通通讯录部门和成员读取权限。连接器调用企业微信官方通讯录 API；如需切换私有化或代理网关，可配置 `endpoint`。身份源同步任务填写 `cronExpression` 后会由后台调度器定时执行，默认每 60 秒扫描一次到期任务，可通过 `ANT_IAM_IDENTITY_SYNC_SCHEDULER_DELAY_MS` 对应配置调整扫描间隔。
+
 第三方登录通过公开接口完成授权跳转和授权码回调；回调时应传回 `authorize` 返回的签名 `state`：
 
 ```bash

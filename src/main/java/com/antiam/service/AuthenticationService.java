@@ -45,6 +45,7 @@ public class AuthenticationService {
     private final UserCredentialRepository credentials;
     private final AuditService auditService;
     private final SmsVerificationService smsVerificationService;
+    private final ClientMetadataService clientMetadataService;
     private final TokenSupport tokenSupport;
     private final AuthenticationPolicyService authenticationPolicyService;
     private final PasswordEncoder passwordEncoder;
@@ -275,27 +276,13 @@ public class AuthenticationService {
             session.getSessionIndex(),
             session.getIpAddress(),
             session.getUserAgent(),
-            null,
-            deviceType(session.getUserAgent()),
+            clientMetadataService.location(session.getIpAddress()),
+            clientMetadataService.deviceType(session.getUserAgent()),
             session.getCreatedAt(),
             session.getUpdatedAt(),
             session.getExpiresAt(),
             session.getEndedAt(),
             session.isActive());
-    }
-
-    private String deviceType(String userAgent) {
-        if (userAgent == null || userAgent.isBlank()) {
-            return null;
-        }
-        String normalized = userAgent.toLowerCase();
-        if (normalized.contains("mobile") || normalized.contains("iphone") || normalized.contains("android")) {
-            return "Mobile";
-        }
-        if (normalized.contains("ipad") || normalized.contains("tablet")) {
-            return "Tablet";
-        }
-        return "PC";
     }
 
     private AuthenticationEventResponse toResponse(AuthenticationEvent event) {

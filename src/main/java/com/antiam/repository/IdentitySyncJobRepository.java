@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface IdentitySyncJobRepository extends JpaRepository<IdentitySyncJob, UUID> {
     List<IdentitySyncJob> findByIdentitySourceId(UUID identitySourceId);
+
+    List<IdentitySyncJob> findByEnabledTrue();
 }

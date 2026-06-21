@@ -20,7 +20,6 @@ public class JsonIdentitySourceConnectorAdapter implements IdentitySourceConnect
         return type == IdentitySourceType.LOCAL
             || type == IdentitySourceType.LDAP
             || type == IdentitySourceType.ACTIVE_DIRECTORY
-            || type == IdentitySourceType.WECHAT_WORK
             || type == IdentitySourceType.SCIM;
     }
 
