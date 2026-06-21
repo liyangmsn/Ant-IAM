@@ -1,9 +1,16 @@
 package com.antiam.web;
 
 import static com.antiam.dto.SettingDtos.SettingResponse;
+import static com.antiam.dto.SettingDtos.GeoIpLookupResponse;
+import static com.antiam.dto.SettingDtos.GeoIpUpdateRequest;
+import static com.antiam.dto.SettingDtos.IntegrationTestResponse;
+import static com.antiam.dto.SettingDtos.MailTestRequest;
 import static com.antiam.dto.SettingDtos.UpsertSettingRequest;
 
 import com.antiam.domain.SettingValueType;
+import com.antiam.service.GeoIpService;
+import com.antiam.service.MailDeliveryService;
+import com.antiam.service.ObjectStorageService;
 import com.antiam.service.SystemSettingService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -30,6 +37,9 @@ import org.springframework.web.bind.annotation.RestController;
 public class SystemSettingController {
 
     private final SystemSettingService settings;
+    private final MailDeliveryService mailDeliveryService;
+    private final GeoIpService geoIpService;
+    private final ObjectStorageService objectStorageService;
 
     /**
      * 查询系统配置列表。
@@ -74,5 +84,29 @@ public class SystemSettingController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void delete(@Parameter(description = "配置键") @PathVariable String settingKey, Principal principal) {
         settings.delete(settingKey, principal.getName());
+    }
+
+    @Operation(summary = "发送测试邮件", description = "使用 message.mail.service 和邮件模板配置发送测试邮件。")
+    @PostMapping("/message/mail/test")
+    IntegrationTestResponse testMail(@Parameter(description = "测试邮件请求") @Valid @RequestBody MailTestRequest request) {
+        return mailDeliveryService.sendTest(request.to(), request.templateKey());
+    }
+
+    @Operation(summary = "测试 IP 地理位置解析", description = "使用当前 IP 地理库配置解析指定 IP。")
+    @GetMapping("/geo-ip/lookup")
+    GeoIpLookupResponse lookupIp(@Parameter(description = "待解析 IP") @RequestParam String ip) {
+        return geoIpService.lookup(ip);
+    }
+
+    @Operation(summary = "更新 MaxMind IP 地理库", description = "下载 GeoLite2 City 数据库并写入指定路径。")
+    @PostMapping("/geo-ip/update")
+    IntegrationTestResponse updateGeoIp(@Parameter(description = "GeoIP 更新请求") @RequestBody GeoIpUpdateRequest request) {
+        return geoIpService.updateMaxmindDatabase(request.licenseKey(), request.databasePath());
+    }
+
+    @Operation(summary = "校验对象存储配置", description = "校验当前对象存储配置；本地存储会实际写入探测文件。")
+    @PostMapping("/storage/validate")
+    IntegrationTestResponse validateStorage() {
+        return objectStorageService.validateCurrentConfiguration();
     }
 }

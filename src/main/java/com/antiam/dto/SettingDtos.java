@@ -36,4 +36,36 @@ public final class SettingDtos {
         boolean sensitive
     ) {
     }
+
+    public record MailTestRequest(
+        @Schema(description = "测试收件人邮箱", example = "admin@example.com")
+        @NotBlank String to,
+        @Schema(description = "邮件模板键", example = "login_verify")
+        String templateKey
+    ) {
+    }
+
+    public record IntegrationTestResponse(
+        boolean success,
+        String message
+    ) {
+    }
+
+    public record GeoIpLookupResponse(
+        String ip,
+        String provider,
+        String country,
+        String province,
+        String city,
+        String location
+    ) {
+    }
+
+    public record GeoIpUpdateRequest(
+        @Schema(description = "MaxMind license key")
+        String licenseKey,
+        @Schema(description = "GeoLite2-City.mmdb 保存路径", example = "E:\\data\\GeoLite2-City.mmdb")
+        String databasePath
+    ) {
+    }
 }
