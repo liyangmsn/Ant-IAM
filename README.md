@@ -113,7 +113,7 @@ ANT_IAM_DATASOURCE_PASSWORD=ant_iam
 
 Inside Docker Compose, the API uses `jdbc:postgresql://postgres:5432/ant_iam` to reach PostgreSQL on the compose network.
 
-Default Basic Auth credentials:
+Default sign-in credentials:
 
 ```text
 admin / admin123456
@@ -121,21 +121,20 @@ admin / admin123456
 
 Override them with `ANT_IAM_ADMIN_USERNAME` and `ANT_IAM_ADMIN_PASSWORD`.
 
-OpenAPI JSON, Swagger UI, health checks, OIDC discovery, JWKS, SAML metadata, CAS validation and OAuth2 token/introspection/revocation endpoints are exposed without Basic Auth so protocol clients can call them directly; management APIs still require Basic Auth.
+OpenAPI JSON, Swagger UI, health checks, OIDC discovery, JWKS, SAML metadata, CAS validation and OAuth2 token/introspection/revocation endpoints are exposed without sign-in so protocol clients can call them directly; management APIs use the Bearer session token issued by the login endpoints.
 
 ## Frontend Projects
 
-The frontend is maintained outside this backend project. Both frontend projects live next to `ant-iam`:
+The frontend lives in this repository:
 
-- Admin console: `../ant-iam-console`
-- User portal: `../ant-iam-portal`
+- Unified frontend: `Ant-IAM-Frontend`
 
-Both projects are built with Vite, React, TypeScript, Tailwind CSS and Ant Design. They connect to `http://localhost:8080` by default and use the default Basic Auth credentials `admin / admin123456`; both can be changed from the page header.
+The frontend is built with Vite, React, TypeScript, Tailwind CSS and Ant Design. It connects to `http://localhost:8080` by default and uses `/login` to obtain a Bearer session token for the portal and console.
 
 Install dependencies:
 
 ```bash
-cd ../ant-iam-console
+cd Ant-IAM-Frontend
 pnpm install
 ```
 
@@ -145,7 +144,7 @@ Start the development server:
 pnpm run dev
 ```
 
-The admin console uses `http://localhost:5173/` by default. The user portal uses `http://localhost:5174/`; switch to `../ant-iam-portal` and run the same command to start it.
+The frontend uses `http://localhost:5174/` by default. The portal is under `/portal`; the admin console is under `/console`.
 
 Build for production:
 
@@ -156,7 +155,12 @@ pnpm run build
 ## Example
 
 ```bash
-curl -u admin:admin123456 \
+TOKEN=$(curl -s \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"admin123456"}' \
+  http://localhost:8080/api/v1/authentication/password-login | jq -r '.session.sessionIndex')
+
+curl -H "Authorization: Bearer ${TOKEN}" \
   -H 'Content-Type: application/json' \
   -d '{"code":"hq","name":"Headquarters"}' \
   http://localhost:8080/api/v1/organizations

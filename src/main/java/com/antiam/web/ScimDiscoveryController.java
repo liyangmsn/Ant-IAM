@@ -40,10 +40,10 @@ public class ScimDiscoveryController {
             new ScimFeature(false),
             new ScimFeature(false),
             List.of(new ScimAuthenticationScheme(
-                "httpbasic",
-                "HTTP Basic",
-                "Administrative HTTP Basic authentication for SCIM API access.",
-                "https://www.rfc-editor.org/rfc/rfc7617",
+                "oauthbearertoken",
+                "OAuth Bearer Token",
+                "Bearer session token authentication for SCIM API access.",
+                "https://www.rfc-editor.org/rfc/rfc6750",
                 "/README.md",
                 true)));
     }

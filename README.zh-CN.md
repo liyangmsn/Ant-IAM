@@ -113,7 +113,7 @@ ANT_IAM_DATASOURCE_PASSWORD=ant_iam
 
 容器内 API 会使用 `jdbc:postgresql://postgres:5432/ant_iam` 连接 compose 网络中的 PostgreSQL。
 
-默认 Basic Auth 账号：
+默认登录账号：
 
 ```text
 admin / admin123456
@@ -121,21 +121,20 @@ admin / admin123456
 
 可以通过 `ANT_IAM_ADMIN_USERNAME` 和 `ANT_IAM_ADMIN_PASSWORD` 覆盖默认账号密码。
 
-OpenAPI JSON、Swagger UI、健康检查、OIDC discovery、JWKS、SAML metadata、CAS validation 以及 OAuth2 token/introspection/revocation 端点不需要 Basic Auth，方便协议客户端直接访问；管理类 API 仍需要 Basic Auth。
+OpenAPI JSON、Swagger UI、健康检查、OIDC discovery、JWKS、SAML metadata、CAS validation 以及 OAuth2 token/introspection/revocation 端点不需要登录，方便协议客户端直接访问；管理类 API 统一使用登录接口签发的 Bearer session token。
 
 ## 前端项目
 
-前端与后端分开维护，两个项目都位于 `ant-iam` 同级目录：
+前端项目已放在当前仓库子目录：
 
-- 管理员控制台：`../ant-iam-console`
-- 用户门户：`../ant-iam-portal`
+- 统一前端：`Ant-IAM-Frontend`
 
-两个前端项目都使用 Vite、React、TypeScript、Tailwind CSS 和 Ant Design 构建。默认连接 `http://localhost:8080` 后端，并使用默认 Basic Auth 账号 `admin / admin123456`，可在页面顶部修改。
+前端使用 Vite、React、TypeScript、Tailwind CSS 和 Ant Design 构建。默认连接 `http://localhost:8080` 后端，通过 `/login` 统一登录后使用 Bearer session token 访问门户和控制台。
 
 安装依赖：
 
 ```bash
-cd ../ant-iam-console
+cd Ant-IAM-Frontend
 pnpm install
 ```
 
@@ -145,7 +144,7 @@ pnpm install
 pnpm run dev
 ```
 
-管理员控制台默认运行在 `http://localhost:5173/`，用户门户默认运行在 `http://localhost:5174/`。如需启动用户门户，将目录切换为 `../ant-iam-portal` 后执行同样命令。
+前端默认运行在 `http://localhost:5174/`，门户路径为 `/portal`，控制台路径为 `/console`。
 
 生产构建：
 
@@ -156,7 +155,12 @@ pnpm run build
 ## 示例
 
 ```bash
-curl -u admin:admin123456 \
+TOKEN=$(curl -s \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"admin123456"}' \
+  http://localhost:8080/api/v1/authentication/password-login | jq -r '.session.sessionIndex')
+
+curl -H "Authorization: Bearer ${TOKEN}" \
   -H 'Content-Type: application/json' \
   -d '{"code":"hq","name":"总部"}' \
   http://localhost:8080/api/v1/organizations
