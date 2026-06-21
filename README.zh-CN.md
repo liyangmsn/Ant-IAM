@@ -113,13 +113,9 @@ ANT_IAM_DATASOURCE_PASSWORD=ant_iam
 
 容器内 API 会使用 `jdbc:postgresql://postgres:5432/ant_iam` 连接 compose 网络中的 PostgreSQL。
 
-默认登录账号：
+账号密码登录会从数据库中的 `user_accounts` 和 `user_credentials` 读取用户与密码凭据。首次安装的空库会初始化默认管理员账号 `admin / admin123456`，应用不再通过配置文件读取默认登录账号。
 
-```text
-admin / admin123456
-```
-
-可以通过 `ANT_IAM_ADMIN_USERNAME` 和 `ANT_IAM_ADMIN_PASSWORD` 覆盖默认账号密码。
+短信验证码通过 sms4j 通道发送。默认启用 `fixed-code` 通道用于本地安装和联调，验证码为 `666666`，可通过 `ANT_IAM_SMS_FIXED_CODE` 覆盖；生产环境可以配置其它 sms4j 通道，并通过 `ANT_IAM_SMS_BLEND_ID` 切换。
 
 OpenAPI JSON、Swagger UI、健康检查、OIDC discovery、JWKS、SAML metadata、CAS validation 以及 OAuth2 token/introspection/revocation 端点不需要登录，方便协议客户端直接访问；管理类 API 统一使用登录接口签发的 Bearer session token。
 

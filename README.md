@@ -113,13 +113,9 @@ ANT_IAM_DATASOURCE_PASSWORD=ant_iam
 
 Inside Docker Compose, the API uses `jdbc:postgresql://postgres:5432/ant_iam` to reach PostgreSQL on the compose network.
 
-Default sign-in credentials:
+Password sign-in reads users and password credentials from the `user_accounts` and `user_credentials` database tables. On first install with an empty database, the application initializes the default administrator account `admin / admin123456`; it no longer reads default sign-in credentials from configuration.
 
-```text
-admin / admin123456
-```
-
-Override them with `ANT_IAM_ADMIN_USERNAME` and `ANT_IAM_ADMIN_PASSWORD`.
+SMS verification codes are delivered through sms4j channels. The default local setup enables the `fixed-code` channel with code `666666`, overrideable through `ANT_IAM_SMS_FIXED_CODE`; production deployments can configure another sms4j channel and select it with `ANT_IAM_SMS_BLEND_ID`.
 
 OpenAPI JSON, Swagger UI, health checks, OIDC discovery, JWKS, SAML metadata, CAS validation and OAuth2 token/introspection/revocation endpoints are exposed without sign-in so protocol clients can call them directly; management APIs use the Bearer session token issued by the login endpoints.
 
