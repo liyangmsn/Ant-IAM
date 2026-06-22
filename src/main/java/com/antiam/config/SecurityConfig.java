@@ -14,7 +14,10 @@ public class SecurityConfig {
 
     @Bean
     // 管理接口统一使用 Bearer session token；协议发现、token 端点和公开元数据按标准放行到业务层处理。
-    SecurityFilterChain securityFilterChain(HttpSecurity http, SessionTokenAuthenticationFilter sessionTokenAuthenticationFilter) throws Exception {
+    SecurityFilterChain securityFilterChain(
+        HttpSecurity http,
+        SessionTokenAuthenticationFilter sessionTokenAuthenticationFilter,
+        RestAuthenticationEntryPoint restAuthenticationEntryPoint) throws Exception {
         http
             .csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth
@@ -38,6 +41,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/authentication/third-party/*/authorize").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/authentication/third-party/*/callback").permitAll()
                 .anyRequest().authenticated())
+            .exceptionHandling(exceptions -> exceptions
+                .authenticationEntryPoint(restAuthenticationEntryPoint))
             .addFilterBefore(sessionTokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }

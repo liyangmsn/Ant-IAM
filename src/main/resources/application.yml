@@ -15,6 +15,9 @@ spring:
   liquibase:
     change-log: classpath:/db/changelog/db.changelog-master.yaml
     enabled: true
+  threads:
+    virtual:
+      enabled: true
 server:
   port: ${ANT_IAM_PORT:8080}
 
