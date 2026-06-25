@@ -27,7 +27,7 @@ class SmsVerificationServiceTest {
     void verifiesCodeReturnedByFixedCodeSms4jChannel() {
         SmsVerificationService service = serviceWithFixedCode("666666");
 
-        service.sendCode(" 13800000000 ", "login");
+        service.sendVerificationCode(" 13800000000 ", "login");
 
         assertThatThrownBy(() -> service.verify("13800000000", "LOGIN", "123456"))
             .isInstanceOf(IllegalArgumentException.class)
@@ -40,7 +40,7 @@ class SmsVerificationServiceTest {
     void consumesVerificationCodeAfterSuccessfulVerification() {
         SmsVerificationService service = serviceWithFixedCode("666666");
 
-        service.sendCode("13800000000", "LOGIN");
+        service.sendVerificationCode("13800000000", "LOGIN");
         service.verify("13800000000", "LOGIN", "666666");
 
         assertThatThrownBy(() -> service.verify("13800000000", "LOGIN", "666666"))
@@ -54,7 +54,7 @@ class SmsVerificationServiceTest {
         ReflectionTestUtils.setField(service, "smsBlendId", "missing-" + UUID.randomUUID());
         ReflectionTestUtils.setField(service, "codeTtlSeconds", 300L);
 
-        assertThatThrownBy(() -> service.sendCode("13800000000", "LOGIN"))
+        assertThatThrownBy(() -> service.sendVerificationCode("13800000000", "LOGIN"))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("SMS channel is not configured");
     }

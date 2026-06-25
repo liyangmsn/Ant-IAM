@@ -30,11 +30,7 @@ public class SmsVerificationService {
     @Value("${ant-iam.sms.code-ttl-seconds:300}")
     private long codeTtlSeconds;
 
-    public SendSmsCodeResponse sendFixedCode(String mobile, String purpose) {
-        return sendCode(mobile, purpose);
-    }
-
-    public SendSmsCodeResponse sendCode(String mobile, String purpose) {
+    public SendSmsCodeResponse sendVerificationCode(String mobile, String purpose) {
         String normalizedMobile = normalizeMobile(mobile);
         String normalizedPurpose = normalizePurpose(purpose);
         String generatedCode = generateCode();

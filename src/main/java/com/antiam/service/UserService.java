@@ -270,7 +270,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public void sendMobileBindingCode(UUID userId, String mobile) {
         getEntity(userId);
-        smsVerificationService.sendFixedCode(mobile, "BIND_MOBILE");
+        smsVerificationService.sendVerificationCode(mobile, "BIND_MOBILE");
     }
 
     @Transactional

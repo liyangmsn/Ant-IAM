@@ -69,7 +69,7 @@ public class AuthenticationService {
 
     @Transactional(readOnly = true)
     public SendSmsCodeResponse sendSmsCode(String mobile, String purpose) {
-        return smsVerificationService.sendFixedCode(mobile, purpose);
+        return smsVerificationService.sendVerificationCode(mobile, purpose);
     }
 
     @Transactional
