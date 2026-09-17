@@ -17,6 +17,7 @@ import com.antiam.domain.ApplicationProtocol;
 import com.antiam.domain.Application;
 import com.antiam.domain.AuthenticationEvent;
 import com.antiam.domain.AuthenticationEventType;
+import com.antiam.domain.AuthenticationMethods;
 import com.antiam.domain.AuthenticationSession;
 import com.antiam.domain.CredentialType;
 import com.antiam.domain.UserAccount;
@@ -89,7 +90,7 @@ public class AuthenticationService {
             ipAddress,
             userAgent,
             Instant.now().plus(Duration.ofHours(8))));
-        events.save(new AuthenticationEvent(session, user, null, AuthenticationEventType.LOGIN_SUCCESS, ipAddress, userAgent, "mobile_code_login"));
+        events.save(new AuthenticationEvent(session, user, null, AuthenticationEventType.LOGIN_SUCCESS, AuthenticationMethods.MOBILE_CODE, ipAddress, userAgent, "mobile_code_login"));
         auditService.record(user.getUsername(), "mobile_login.success", "user", user.getId().toString(), mobile);
         return new MobileLoginResponse(user.getId(), toResponse(session));
     }
@@ -128,7 +129,7 @@ public class AuthenticationService {
             ipAddress,
             userAgent,
             Instant.now().plus(Duration.ofHours(8))));
-        events.save(new AuthenticationEvent(session, user, null, AuthenticationEventType.LOGIN_SUCCESS, ipAddress, userAgent, expired ? "password_login;password_expired" : "password_login"));
+        events.save(new AuthenticationEvent(session, user, null, AuthenticationEventType.LOGIN_SUCCESS, AuthenticationMethods.PASSWORD, ipAddress, userAgent, expired ? "password_login;password_expired" : "password_login"));
         auditService.record(username, "password_login.success", "user", user.getId().toString(), username);
         return new PasswordLoginResponse(user.getId(), toResponse(session), credential.isTemporary(), expired, credential.isTemporary() || expired);
     }

@@ -91,6 +91,7 @@ public class ThirdPartyLoginService {
             resolution.user(),
             null,
             AuthenticationEventType.LOGIN_SUCCESS,
+            provider.getProviderKey(),
             ipAddress,
             userAgent,
             "Third-party login via " + provider.getProviderKey() + ", subject=" + profile.subject()));

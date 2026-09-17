@@ -12,6 +12,8 @@ public interface AuthenticationEventRepository extends JpaRepository<Authenticat
 
     List<AuthenticationEvent> findTop100ByTypeOrderByCreatedAtDesc(AuthenticationEventType type);
 
+    List<AuthenticationEvent> findByCreatedAtGreaterThanEqualOrderByCreatedAtAsc(Instant createdAt);
+
     void deleteByApplicationId(UUID applicationId);
 
     long countByUserIdAndTypeAndCreatedAtAfter(UUID userId, AuthenticationEventType type, Instant createdAt);

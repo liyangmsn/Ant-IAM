@@ -1,17 +1,21 @@
 package com.antiam.web;
 
 import static com.antiam.dto.DashboardDtos.DashboardMetricsResponse;
+import static com.antiam.dto.DashboardDtos.DashboardStatisticsResponse;
 import static com.antiam.dto.DashboardDtos.DashboardSummaryResponse;
 import static com.antiam.dto.DashboardDtos.RecentRiskAssessmentResponse;
 import static com.antiam.dto.DashboardDtos.RecentSyncRunResponse;
 
+import com.antiam.domain.DashboardRange;
 import com.antiam.service.DashboardService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -38,6 +42,15 @@ public class DashboardController {
     @GetMapping("/metrics")
     DashboardMetricsResponse metrics() {
         return dashboard.metrics();
+    }
+
+    /**
+     * 查询控制台图表统计。
+     */
+    @Operation(summary = "查询控制台统计", description = "按时间范围返回认证量趋势、应用访问排名、热门认证方式和登录位置分布。")
+    @GetMapping("/statistics")
+    DashboardStatisticsResponse statistics(@Parameter(description = "统计时间范围") @RequestParam DashboardRange range) {
+        return dashboard.statistics(range);
     }
 
     /**

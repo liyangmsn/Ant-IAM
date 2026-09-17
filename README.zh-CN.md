@@ -2,6 +2,8 @@
 
 Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS 后端项目，覆盖组织目录、用户生命周期、用户组、RBAC、应用访问、身份源同步和审计等能力。
 
+第三方应用接入指南见 [docs/integration-guide.md](docs/integration-guide.md)，其中包含接入方式选择、单点登录与通讯录同步流程、接口能力清单和常见问题。
+
 ## 技术栈
 
 - Java 25
@@ -36,7 +38,7 @@ Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS
 - 认证策略，支持生命周期控制、MFA、注册要求、风险升阶、拒绝、密码最小长度、失败登录锁定、密码过期和密码历史校验：`/api/v1/authentication-policies`
 - 认证策略评估：`/api/v1/authentication-policies/evaluations`
 - 登录风险规则支持检索/详情/更新/生命周期控制，风险评估支持检索/详情、设备指纹和地理位置上下文：`/api/v1/risk/rules`、`/api/v1/risk/rules/{ruleId}`、`/api/v1/risk/assessments`、`/api/v1/risk/assessments/{assessmentId}`
-- 仪表盘摘要和指标：`/api/v1/dashboard/summary`、`/api/v1/dashboard/metrics`
+- 仪表盘摘要、指标和时间范围统计（认证量趋势、应用访问排名、热门认证方式、登录位置分布）：`/api/v1/dashboard/summary`、`/api/v1/dashboard/metrics`、`/api/v1/dashboard/statistics`
 - 系统设置支持检索/过滤、详情和删除：`/api/v1/settings`、`/api/v1/settings/{settingKey}`
 - 租户和租户设置，租户设置支持检索/详情/删除：`/api/v1/tenants`、`/api/v1/tenants/{tenantId}/settings`、`/api/v1/tenants/{tenantId}/settings/{settingKey}`
 - 认证会话活跃/历史筛选、强制登出和可检索认证事件，包含登录风险与登出事件：`/api/v1/authentication/**`

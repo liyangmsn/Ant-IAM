@@ -2,6 +2,8 @@
 
 Ant IAM is a standalone enterprise IAM / IDaaS backend built with Spring Boot 4. It covers organization directory, user lifecycle management, groups, RBAC, application access, identity sources and audit.
 
+For third-party integration, see [docs/integration-guide.md](docs/integration-guide.md) (Chinese), which covers integration options, single sign-on and directory sync flows, API capabilities and FAQs.
+
 ## Stack
 
 - Java 25
@@ -36,7 +38,7 @@ Ant IAM is a standalone enterprise IAM / IDaaS backend built with Spring Boot 4.
 - Authentication policies with lifecycle controls, configurable MFA, enrollment, step-up, deny, password minimum-length, failed-login lockout, password expiry and password history enforcement: `/api/v1/authentication-policies`
 - Authentication policy evaluation: `/api/v1/authentication-policies/evaluations`
 - Login risk rules with search/profiles/updates/lifecycle controls and searchable assessment profiles with device fingerprint and geo-location context: `/api/v1/risk/rules`, `/api/v1/risk/rules/{ruleId}`, `/api/v1/risk/assessments`, `/api/v1/risk/assessments/{assessmentId}`
-- Dashboard summary and metrics: `/api/v1/dashboard/summary`, `/api/v1/dashboard/metrics`
+- Dashboard summary, metrics and range statistics (authentication trend, application ranking, authentication methods, login locations): `/api/v1/dashboard/summary`, `/api/v1/dashboard/metrics`, `/api/v1/dashboard/statistics`
 - System settings with search/filtering, profiles and deletion: `/api/v1/settings`, `/api/v1/settings/{settingKey}`
 - Tenants and tenant settings with setting search/profiles/deletion: `/api/v1/tenants`, `/api/v1/tenants/{tenantId}/settings`, `/api/v1/tenants/{tenantId}/settings/{settingKey}`
 - Authentication sessions with active/history filtering, force logout and searchable events, including login risk and logout events: `/api/v1/authentication/**`
