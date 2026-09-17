@@ -12,6 +12,10 @@ spring:
     properties:
       hibernate:
         format_sql: true
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
   liquibase:
     change-log: classpath:/db/changelog/db.changelog-master.yaml
     enabled: true
@@ -26,6 +30,10 @@ management:
     web:
       exposure:
         include: health,info,metrics
+
+ant-iam:
+  geoip:
+    database-path: ${ANT_IAM_GEOIP_DATABASE_PATH:}
 
 sms:
   blends:

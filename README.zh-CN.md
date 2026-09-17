@@ -35,6 +35,10 @@ Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS
 - 身份源详情、检索、更新和生命周期控制：`/api/v1/identity-sources`、`/api/v1/identity-sources/{identitySourceId}`，列表支持 `tenantId`、`type`、`enabled` 和 `keyword` 过滤
 - 身份源连接器支持生命周期控制，同步任务支持任务详情、更新和生命周期控制：`/api/v1/identity-sources/{identitySourceId}/connector`、`/api/v1/identity-sources/{identitySourceId}/sync-jobs`、`/api/v1/identity-sources/sync-jobs/{syncJobId}`
 - 手动身份同步运行，支持 JSON 目录数据导入和运行详情：`/api/v1/identity-sources/sync-jobs/{syncJobId}/runs`、`/api/v1/identity-sources/sync-runs/{syncRunId}`
+- 身份源实时事件回调，支持 HMAC-SHA256 验签：`/api/v1/synchronizer/event_receive/{sourceCode}`
+- 邮件发信能力，支持配置 SMTP 服务和模板渲染，并接入邮箱 MFA 挑战
+- 文件上传，提供阿里云 OSS、腾讯云 COS、七牛云 Kodo 和 S3 兼容服务的原生适配：`/api/v1/files`
+- 基于 MaxMind 数据库的 IP 地理库解析，系统默认模式提供地址段分类
 - 认证策略，支持生命周期控制、MFA、注册要求、风险升阶、拒绝、密码最小长度、失败登录锁定、密码过期和密码历史校验：`/api/v1/authentication-policies`
 - 认证策略评估：`/api/v1/authentication-policies/evaluations`
 - 登录风险规则支持检索/详情/更新/生命周期控制，风险评估支持检索/详情、设备指纹和地理位置上下文：`/api/v1/risk/rules`、`/api/v1/risk/rules/{ruleId}`、`/api/v1/risk/assessments`、`/api/v1/risk/assessments/{assessmentId}`
@@ -234,10 +238,9 @@ curl -H 'Content-Type: application/json' \
 
 ## 路线图
 
-- 强化 OAuth2/OIDC 端点，补充 consent UI 页面。
 - 强化 SAML2/CAS 适配器，支持 XML 签名和更完整的协议绑定校验。
 - 增加面向用户的 MFA 注册和恢复引导页面。
-- 增加企业微信、LDAP 和 AD 后台连接器。
-- 在 JSON 同步执行器基础上继续补齐 LDAP/AD/企业微信连接器适配。
-- 将 SMS、email 和 WebAuthn MFA 原型挑战码替换为生产级校验器。
+- 增加 LDAP 和 AD 后台连接器。
+- 在 JSON 同步执行器基础上继续补齐 LDAP/AD 连接器适配。
+- 将 SMS 和 WebAuthn MFA 原型挑战码替换为生产级校验器。
 - 扩展风险规则，支持地理速度和更丰富的自适应 MFA 动作。

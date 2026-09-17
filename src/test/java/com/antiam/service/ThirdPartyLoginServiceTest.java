@@ -47,7 +47,7 @@ class ThirdPartyLoginServiceTest {
         sessions,
         events,
         auditService,
-        new ClientMetadataService(),
+        new ClientMetadataService(mock(GeoIpService.class)),
         new ObjectMapper().findAndRegisterModules(),
         new TokenSupport(),
         List.of(adapter));

@@ -35,6 +35,10 @@ For third-party integration, see [docs/integration-guide.md](docs/integration-gu
 - Identity sources with profiles, search, updates and lifecycle controls: `/api/v1/identity-sources`, `/api/v1/identity-sources/{identitySourceId}`; list supports optional `tenantId`, `type`, `enabled` and `keyword` filters
 - Identity source connectors with lifecycle controls, and sync jobs with job profiles, updates and lifecycle controls: `/api/v1/identity-sources/{identitySourceId}/connector`, `/api/v1/identity-sources/{identitySourceId}/sync-jobs`, `/api/v1/identity-sources/sync-jobs/{syncJobId}`
 - Manual identity sync runs with JSON payload import and run profiles: `/api/v1/identity-sources/sync-jobs/{syncJobId}/runs`, `/api/v1/identity-sources/sync-runs/{syncRunId}`
+- Identity source realtime event callback with HMAC-SHA256 signature verification: `/api/v1/synchronizer/event_receive/{sourceCode}`
+- Outbound email delivery with configurable SMTP service and template rendering, wired into EMAIL MFA challenges
+- File upload with native adapters for Aliyun OSS, Tencent COS, Qiniu Kodo and S3-compatible services: `/api/v1/files`
+- IP geo-location resolution backed by MaxMind databases, with system-default address classification
 - Authentication policies with lifecycle controls, configurable MFA, enrollment, step-up, deny, password minimum-length, failed-login lockout, password expiry and password history enforcement: `/api/v1/authentication-policies`
 - Authentication policy evaluation: `/api/v1/authentication-policies/evaluations`
 - Login risk rules with search/profiles/updates/lifecycle controls and searchable assessment profiles with device fingerprint and geo-location context: `/api/v1/risk/rules`, `/api/v1/risk/rules/{ruleId}`, `/api/v1/risk/assessments`, `/api/v1/risk/assessments/{assessmentId}`
@@ -234,10 +238,9 @@ WeChat, QQ, Feishu and DingTalk authentication providers use `appId`, `appSecret
 
 ## Roadmap
 
-- Harden OAuth2/OIDC endpoints with consent UI pages.
 - Harden SAML2/CAS adapters with XML signatures and richer protocol binding validation.
 - Add guided user-facing MFA enrollment and recovery screens.
-- Add background connectors for WeChat Work, LDAP and AD.
-- Continue native LDAP/AD/WeChat Work connector adapters on top of the JSON sync executor.
-- Replace SMS, email and WebAuthn MFA prototype challenge codes with production verifiers.
+- Add background connectors for LDAP and AD.
+- Continue native LDAP/AD connector adapters on top of the JSON sync executor.
+- Replace SMS and WebAuthn MFA prototype challenge codes with production verifiers.
 - Expand risk rules with geo-velocity and richer adaptive MFA actions.

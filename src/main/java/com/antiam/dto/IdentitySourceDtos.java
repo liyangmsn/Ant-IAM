@@ -82,6 +82,17 @@ public final class IdentitySourceDtos {
     public record SyncJobResponse(UUID id, UUID identitySourceId, String name, IdentitySyncMode mode, String cronExpression, boolean enabled) {
     }
 
+    public record RealtimeSyncResult(
+        String sourceCode,
+        int organizationsCreated,
+        int organizationsUpdated,
+        int usersCreated,
+        int usersUpdated,
+        int groupsCreated,
+        int groupsUpdated
+    ) {
+    }
+
     public record SyncRunResponse(
         UUID id,
         UUID syncJobId,

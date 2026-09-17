@@ -36,6 +36,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/v1/authentication/sms-codes").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/authentication/mobile-login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/authentication/password-login").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/synchronizer/event_receive/*").permitAll()
                 .requestMatchers(HttpMethod.GET, "/oauth2/userinfo").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/catalog").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/authentication/third-party/*/authorize").permitAll()

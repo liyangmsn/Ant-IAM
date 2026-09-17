@@ -108,6 +108,7 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final TokenSupport tokens;
     private final SmsVerificationService smsVerificationService;
+    private final MailDeliveryService mailDeliveryService;
 
     /**
      * 创建内部用户账号，并在提供初始密码时创建临时密码凭据。
@@ -540,6 +541,10 @@ public class UserService {
         }
         String code = factor.getType() == MfaFactorType.TOTP || factor.getType() == MfaFactorType.RECOVERY_CODE ? null : generateMfaCode();
         String codeHash = code == null ? factor.getType().name().toLowerCase() : tokens.sha256(code);
+        if (factor.getType() == MfaFactorType.EMAIL) {
+            String email = requireEmail(user);
+            mailDeliveryService.send("login_verify", email, Map.of("code", code, "user_email", email));
+        }
         MfaChallenge saved = mfaChallenges.save(new MfaChallenge(
             user,
             factor,
@@ -561,7 +566,7 @@ public class UserService {
             factor.getType(),
             saved.getStatus(),
             deliveryHint(factor),
-            code);
+            factor.getType() == MfaFactorType.EMAIL ? null : code);
     }
 
     /**
@@ -1201,6 +1206,13 @@ public class UserService {
         String token = tokens.generateToken(4);
         int numeric = Math.floorMod(token.hashCode(), 1_000_000);
         return String.format("%06d", numeric);
+    }
+
+    private String requireEmail(UserAccount user) {
+        if (user.getEmail() == null || user.getEmail().isBlank()) {
+            throw new IllegalArgumentException("User email is required for EMAIL MFA factor: " + user.getUsername());
+        }
+        return user.getEmail();
     }
 
     private String deliveryHint(MfaFactor factor) {
