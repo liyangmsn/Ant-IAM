@@ -29,6 +29,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/saml2/metadata.xml").permitAll()
                 .requestMatchers(HttpMethod.GET, "/cas/serviceValidate").permitAll()
                 .requestMatchers(HttpMethod.GET, "/cas/p3/serviceValidate").permitAll()
+                .requestMatchers(HttpMethod.POST, "/jwt/verify").permitAll()
                 .requestMatchers(HttpMethod.POST, "/oauth2/token").permitAll()
                 .requestMatchers(HttpMethod.POST, "/oauth2/introspect").permitAll()
                 .requestMatchers(HttpMethod.POST, "/oauth2/revoke").permitAll()

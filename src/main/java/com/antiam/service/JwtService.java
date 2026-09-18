@@ -10,6 +10,9 @@ import com.antiam.domain.JwtSigningKey;
 import com.antiam.domain.UserAccount;
 import com.antiam.mapper.JwtMapper;
 import com.antiam.repository.JwtSigningKeyRepository;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
@@ -39,6 +42,7 @@ public class JwtService {
     private final TokenSupport tokens;
     private final JwtMapper jwtMapper;
     private final AuditService auditService;
+    private final ObjectMapper objectMapper;
 
     @Transactional
     // 使用当前活跃 RSA 密钥签发 OIDC ID Token。
@@ -74,6 +78,92 @@ public class JwtService {
         String payload = jsonObject(fields.toArray(String[]::new));
         String signingInput = base64Url(header.getBytes(StandardCharsets.UTF_8)) + "." + base64Url(payload.getBytes(StandardCharsets.UTF_8));
         return signingInput + "." + base64Url(sign(signingInput, key.getPrivateKeyPem()));
+    }
+
+    @Transactional
+    // 使用当前活跃 RSA 密钥签发通用 JWT，供 JWT 单点登录等非 OIDC 场景使用。
+    public String signToken(
+        String issuer,
+        String subject,
+        String audience,
+        Instant issuedAt,
+        Instant expiresAt,
+        Map<String, String> claims
+    ) {
+        JwtSigningKey key = activeKey();
+        String header = jsonObject(
+            json("alg", "RS256"),
+            json("typ", "JWT"),
+            json("kid", key.getKeyId()));
+        List<String> fields = new ArrayList<>(List.of(
+            json("iss", issuer),
+            json("sub", subject),
+            json("aud", audience),
+            json("iat", issuedAt.getEpochSecond()),
+            json("exp", expiresAt.getEpochSecond())));
+        if (claims != null) {
+            claims.forEach((name, value) -> {
+                if (name != null && !name.isBlank()) {
+                    fields.add(json(name, value));
+                }
+            });
+        }
+        String payload = jsonObject(fields.toArray(String[]::new));
+        String signingInput = base64Url(header.getBytes(StandardCharsets.UTF_8)) + "." + base64Url(payload.getBytes(StandardCharsets.UTF_8));
+        return signingInput + "." + base64Url(sign(signingInput, key.getPrivateKeyPem()));
+    }
+
+    @Transactional(readOnly = true)
+    // 校验 JWT：算法固定 RS256，按头部 kid 匹配签名密钥，并校验 exp 与 nbf。
+    public TokenVerification verify(String token) {
+        if (token == null || token.isBlank()) {
+            return TokenVerification.failure("MALFORMED_TOKEN", "Token is empty");
+        }
+        String[] parts = token.split("\\.", -1);
+        if (parts.length != 3 || parts[0].isBlank() || parts[1].isBlank() || parts[2].isBlank()) {
+            return TokenVerification.failure("MALFORMED_TOKEN", "Token must contain three non-empty segments");
+        }
+        JsonNode header = decodeJson(parts[0]);
+        if (header == null) {
+            return TokenVerification.failure("MALFORMED_TOKEN", "Token header is not valid JSON");
+        }
+        if (!"RS256".equals(header.path("alg").asText(""))) {
+            return TokenVerification.failure("UNSUPPORTED_ALGORITHM", "Only RS256 tokens are supported");
+        }
+        String keyId = header.path("kid").asText("");
+        if (keyId.isBlank()) {
+            return TokenVerification.failure("UNKNOWN_KEY", "Token header does not carry kid");
+        }
+        JwtSigningKey key = signingKeys.findByKeyId(keyId).orElse(null);
+        if (key == null) {
+            return TokenVerification.failure("UNKNOWN_KEY", "No signing key matches kid " + keyId);
+        }
+        if (!verifySignature(parts[0] + "." + parts[1], parts[2], key.getPublicKeyPem())) {
+            return TokenVerification.failure("INVALID_SIGNATURE", "Token signature verification failed");
+        }
+        JsonNode payload = decodeJson(parts[1]);
+        if (payload == null) {
+            return TokenVerification.failure("MALFORMED_TOKEN", "Token payload is not valid JSON");
+        }
+        long now = Instant.now().getEpochSecond();
+        if (payload.hasNonNull("exp") && payload.get("exp").asLong() < now) {
+            return TokenVerification.failure("TOKEN_EXPIRED", "Token has expired");
+        }
+        if (payload.hasNonNull("nbf") && payload.get("nbf").asLong() > now) {
+            return TokenVerification.failure("TOKEN_NOT_YET_VALID", "Token is not valid yet");
+        }
+        return new TokenVerification(
+            true,
+            keyId,
+            payload.path("iss").asText(null),
+            audienceOf(payload),
+            payload.path("sub").asText(null),
+            instantAt(payload, "iat"),
+            instantAt(payload, "exp"),
+            objectMapper.convertValue(payload, new TypeReference<Map<String, Object>>() {
+            }),
+            null,
+            null);
     }
 
     @Transactional
@@ -244,8 +334,63 @@ public class JwtService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(value);
     }
 
+    private JsonNode decodeJson(String segment) {
+        try {
+            return objectMapper.readTree(Base64.getUrlDecoder().decode(segment));
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private Instant instantAt(JsonNode payload, String field) {
+        return payload.hasNonNull(field) ? Instant.ofEpochSecond(payload.get(field).asLong()) : null;
+    }
+
+    private String audienceOf(JsonNode payload) {
+        JsonNode audience = payload.get("aud");
+        if (audience == null || audience.isNull()) {
+            return null;
+        }
+        if (audience.isArray()) {
+            List<String> values = new ArrayList<>();
+            audience.forEach(node -> values.add(node.asText()));
+            return String.join(",", values);
+        }
+        return audience.asText();
+    }
+
+    private boolean verifySignature(String signingInput, String signature, String publicKeyPem) {
+        try {
+            Signature verifier = Signature.getInstance("SHA256withRSA");
+            verifier.initVerify(publicKey(publicKeyPem));
+            verifier.update(signingInput.getBytes(StandardCharsets.UTF_8));
+            return verifier.verify(Base64.getUrlDecoder().decode(signature));
+        } catch (GeneralSecurityException | IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
     private String unsignedInteger(byte[] value) {
         int offset = value.length > 1 && value[0] == 0 ? 1 : 0;
         return base64Url(java.util.Arrays.copyOfRange(value, offset, value.length));
+    }
+
+    // JWT 校验结果，失败时由 failureCode / failureMessage 说明原因。
+    public record TokenVerification(
+        boolean valid,
+        String keyId,
+        String issuer,
+        String audience,
+        String subject,
+        Instant issuedAt,
+        Instant expiresAt,
+        Map<String, Object> claims,
+        String failureCode,
+        String failureMessage
+    ) {
+
+        static TokenVerification failure(String code, String message) {
+            return new TokenVerification(false, null, null, null, null, null, null, Map.of(), code, message);
+        }
     }
 }

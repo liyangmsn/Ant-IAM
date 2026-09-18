@@ -15,4 +15,6 @@ public interface ApplicationSsoConfigRepository extends JpaRepository<Applicatio
     Optional<ApplicationSsoConfig> findBySamlEntityId(String samlEntityId);
 
     Optional<ApplicationSsoConfig> findByCasServiceUrl(String casServiceUrl);
+
+    Optional<ApplicationSsoConfig> findByJwtAudience(String jwtAudience);
 }

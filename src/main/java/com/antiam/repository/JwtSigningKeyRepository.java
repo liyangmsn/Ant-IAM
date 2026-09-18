@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface JwtSigningKeyRepository extends JpaRepository<JwtSigningKey, UUID> {
     Optional<JwtSigningKey> findFirstByRetiredAtIsNullOrderByActivatedAtDesc();
 
+    Optional<JwtSigningKey> findByKeyId(String keyId);
+
     java.util.List<JwtSigningKey> findByRetiredAtIsNullOrderByActivatedAtDesc();
 
     java.util.List<JwtSigningKey> findAllByOrderByActivatedAtDesc();
