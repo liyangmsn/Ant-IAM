@@ -4,6 +4,10 @@ Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS
 
 第三方应用接入指南见 [docs/integration-guide.md](docs/integration-guide.md)，其中包含接入方式选择、单点登录与通讯录同步流程、接口能力清单和常见问题。
 
+项目说明（作用与功能总览）见 [docs/project-overview.md](docs/project-overview.md)。
+
+一页式项目简报见 [docs/project-brief.md](docs/project-brief.md)。
+
 ## 技术栈
 
 - Java 25

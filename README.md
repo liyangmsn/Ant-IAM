@@ -4,6 +4,10 @@ Ant IAM is a standalone enterprise IAM / IDaaS backend built with Spring Boot 4.
 
 For third-party integration, see [docs/integration-guide.md](docs/integration-guide.md) (Chinese), which covers integration options, single sign-on and directory sync flows, API capabilities and FAQs.
 
+For a project overview covering purpose and capabilities, see [docs/project-overview.md](docs/project-overview.md) (Chinese).
+
+For a one-page project brief, see [docs/project-brief.md](docs/project-brief.md) (Chinese).
+
 ## Stack
 
 - Java 25
