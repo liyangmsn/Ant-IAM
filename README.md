@@ -69,6 +69,7 @@ For a one-page project brief, see [docs/project-brief.md](docs/project-brief.md)
 - OAuth2 consent management with filtering, profiles and revocation: `/oauth2/consents`, `/oauth2/consents/{consentId}`
 - SAML2 metadata and SSO assertions with XML responses: `/saml2/metadata`, `/saml2/metadata.xml`, `/saml2/sso`, `/saml2/sso/xml`
 - CAS login and service validation with XML response support: `/cas/login`, `/cas/serviceValidate`, `/cas/p3/serviceValidate`
+- JWT single sign-on with RS256 token issuance and verification: `/jwt/sso`, `/jwt/verify`
 - Audit event profile, search with keyword filtering and CSV export: `/api/v1/audit-events`, `/api/v1/audit-events/{auditEventId}`, `/api/v1/audit-events/export`
 - Public catalog: `/api/v1/catalog`
 - OpenAPI JSON documentation, publicly readable for integration tooling: `/v3/api-docs`
@@ -127,7 +128,7 @@ Password sign-in reads users and password credentials from the `user_accounts` a
 
 SMS verification codes are delivered through sms4j channels. The default local setup enables the `fixed-code` channel with code `666666`, overrideable through `ANT_IAM_SMS_FIXED_CODE`; production deployments can configure another sms4j channel and select it with `ANT_IAM_SMS_BLEND_ID`.
 
-OpenAPI JSON, Swagger UI, health checks, OIDC discovery, JWKS, SAML metadata, CAS validation and OAuth2 token/introspection/revocation endpoints are exposed without sign-in so protocol clients can call them directly; management APIs use the Bearer session token issued by the login endpoints.
+OpenAPI JSON, Swagger UI, health checks, OIDC discovery, JWKS, SAML metadata, CAS validation, JWT verification and OAuth2 token/introspection/revocation endpoints are exposed without sign-in so protocol clients can call them directly; management APIs use the Bearer session token issued by the login endpoints.
 
 ## Frontend Projects
 

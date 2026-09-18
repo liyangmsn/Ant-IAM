@@ -12,7 +12,7 @@
 | 4 | 通用调用约定 |
 | 5 | 单点登录接入（OIDC / OAuth2） |
 | 6 | 单点登录接入（SAML 2.0） |
-| 7 | 单点登录接入（CAS） |
+| 7 | 单点登录接入（CAS / JWT） |
 | 8 | 通讯录同步（SCIM 2.0） |
 | 9 | 管理 API 能力清单 |
 | 10 | 典型业务场景 |
@@ -49,7 +49,7 @@ GET {Base URL}/actuator/health
 
 | 能力 | 说明 |
 | --- | --- |
-| 统一登录 | 用户一次登录即可访问所有接入的应用，支持 OIDC、SAML 2.0、CAS 三种协议 |
+| 统一登录 | 用户一次登录即可访问所有接入的应用，支持 OIDC、SAML 2.0、CAS、JWT 四种协议 |
 | 通讯录同步 | 支持通过 SCIM 2.0 从上游同步用户、用户组和组织 |
 | 组织人员管理 | 组织架构、用户账号、用户组、角色、权限的完整管理接口 |
 | 应用访问控制 | 应用注册、应用授权、访问决策、访问审查 |
@@ -69,6 +69,7 @@ GET {Base URL}/actuator/health
 | 自研 Web 应用，希望用户用 IAM 账号登录 | OIDC 授权码流程 | 第 5 章 |
 | 已有 SAML 2.0 身份的成熟产品（如部分 SaaS） | SAML 2.0 | 第 6 章 |
 | 老系统只支持 CAS | CAS | 第 7 章 |
+| 自研应用只想校验一个签名令牌 | JWT 单点登录 | 第 7 章 |
 | 需要把用户从上游系统同步进 IAM | SCIM 2.0 或身份源连接器 | 第 8 章 |
 | 需要管理组织、用户、角色、权限 | 管理 API | 第 9 章 |
 | 需要判断某用户可以访问哪些应用 | 访问决策接口 | 第 9.4 节 |
@@ -144,6 +145,7 @@ Content-Type: application/json
 | `/oauth2/userinfo` | 用户信息（需携带 access_token） |
 | `/saml2/metadata`、`/saml2/metadata.xml` | SAML 元数据 |
 | `/cas/serviceValidate`、`/cas/p3/serviceValidate` | CAS 票据校验 |
+| `/jwt/verify` | JWT 签名与有效期校验 |
 | `/api/v1/authentication/password-login`、`/mobile-login`、`/sms-codes` | 登录相关 |
 | `/api/v1/authentication/third-party/*/authorize`、`/callback` | 第三方登录 |
 | `/api/v1/users/password-reset-tickets/consumptions` | 凭票据重置密码 |
@@ -404,7 +406,11 @@ Authorization: Bearer <访问令牌>
 
 ---
 
-## 7. 单点登录接入（CAS）
+## 7. 单点登录接入（CAS / JWT）
+
+适用于只支持 CAS 的老系统，以及只需要校验一个签名令牌的自研应用。
+
+### 7.1 CAS 单点登录
 
 适用于仅支持 CAS 的老系统。
 
@@ -422,6 +428,55 @@ Authorization: Bearer <访问令牌>
 4. 校验结果中的 `success` 表示票据有效，`user` 为用户名，`attributes` 为附加属性。
 
 `service` 参数在校验时必须与登录时完全一致。
+
+### 7.2 JWT 单点登录
+
+适用于自研应用：不引入 OIDC 客户端库，直接拿一个 RS256 签名的 JWT，自己验签后读取用户身份。
+
+| 端点 | 用途 |
+| --- | --- |
+| `{Base URL}/jwt/sso?audience=<你的 Audience>` | 为当前登录用户签发 JWT，`audience` 也接受应用的 `client_id` |
+| `POST {Base URL}/jwt/verify` | 校验 JWT 签名与有效期，返回令牌声明 |
+| `{Base URL}/oauth2/jwks` | 公钥集，可自行在本地验签 |
+
+接入步骤：
+
+1. 把你的 `audience` 提供给管理员，登记到该应用的 SSO 配置中。
+2. 用户未登录时，引导其访问 `/jwt/sso?audience=<你的 Audience>`（IAM 会要求先登录）。
+3. 从响应中取出 `accessToken`，`tokenType` 为 `Bearer`。
+4. 校验令牌：调用 `POST /jwt/verify`，或按 `kid` 从 `/oauth2/jwks` 取公钥在本地验签。
+
+签发响应字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `accessToken` | 签发的 JWT |
+| `tokenType` | 固定为 `Bearer` |
+| `issuer` | 签发方标识，取自请求根地址 |
+| `audience` | 应用配置的 JWT Audience |
+| `subject` | 用户账号 |
+| `issuedAt` / `expiresAt` | 签发与过期时间，有效期取应用 SSO 配置的 access_token 有效期 |
+
+请求示例：
+
+```bash
+curl -X POST '{Base URL}/jwt/verify' \
+  -H 'Content-Type: application/json' \
+  -d '{"token":"<accessToken>"}'
+```
+
+校验通过时 `valid` 为 `true`，`claims` 中默认包含 `preferred_username`、`name`、`email`、`phone_number`、`tenant_id`、`organization_id`，以及应用 SSO 配置里的自定义声明。校验失败时 `valid` 为 `false`，`failureCode` 取以下值：
+
+| failureCode | 含义 |
+| --- | --- |
+| `MALFORMED_TOKEN` | 令牌格式不合法，或缺少有效段 |
+| `UNSUPPORTED_ALGORITHM` | 非 RS256 令牌，拒绝接受 |
+| `UNKNOWN_KEY` | 令牌 `kid` 在服务端找不到对应签名密钥 |
+| `INVALID_SIGNATURE` | 签名校验失败 |
+| `TOKEN_EXPIRED` | 令牌已过期 |
+| `TOKEN_NOT_YET_VALID` | `nbf` 未到生效时间 |
+
+令牌使用的签名密钥可在管理接口 `/api/v1/jwt-signing-keys` 查看、轮换与退役；轮换后旧的公钥仍可用于校验未过期的既有令牌。
 
 ---
 

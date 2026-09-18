@@ -69,6 +69,7 @@ Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS
 - OAuth2 consent 管理，支持筛选、详情和撤销：`/oauth2/consents`、`/oauth2/consents/{consentId}`
 - SAML2 metadata 和 XML SSO assertion：`/saml2/metadata`、`/saml2/metadata.xml`、`/saml2/sso`、`/saml2/sso/xml`
 - CAS 登录和服务票据校验，支持 XML 响应：`/cas/login`、`/cas/serviceValidate`、`/cas/p3/serviceValidate`
+- JWT 单点登录，RS256 令牌签发与验签：`/jwt/sso`、`/jwt/verify`
 - 审计事件详情、搜索，支持关键字过滤和 CSV 导出：`/api/v1/audit-events`、`/api/v1/audit-events/{auditEventId}`、`/api/v1/audit-events/export`
 - 公共能力目录：`/api/v1/catalog`
 - OpenAPI JSON 文档，便于集成工具直接读取：`/v3/api-docs`
@@ -127,7 +128,7 @@ ANT_IAM_DATASOURCE_PASSWORD=ant_iam
 
 短信验证码通过 sms4j 通道发送。默认启用 `fixed-code` 通道用于本地安装和联调，验证码为 `666666`，可通过 `ANT_IAM_SMS_FIXED_CODE` 覆盖；生产环境可以配置其它 sms4j 通道，并通过 `ANT_IAM_SMS_BLEND_ID` 切换。
 
-OpenAPI JSON、Swagger UI、健康检查、OIDC discovery、JWKS、SAML metadata、CAS validation 以及 OAuth2 token/introspection/revocation 端点不需要登录，方便协议客户端直接访问；管理类 API 统一使用登录接口签发的 Bearer session token。
+OpenAPI JSON、Swagger UI、健康检查、OIDC discovery、JWKS、SAML metadata、CAS validation、JWT 验签以及 OAuth2 token/introspection/revocation 端点不需要登录，方便协议客户端直接访问；管理类 API 统一使用登录接口签发的 Bearer session token。
 
 ## 前端项目
 

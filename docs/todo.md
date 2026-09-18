@@ -45,11 +45,6 @@
   - 位置：`src/main/java/com/antiam/service/identitysource/JsonIdentitySourceConnectorAdapter.java:21`
   - 验收：可用连接配置直连目录服务拉取组织与用户，支持分页与变更同步。
 
-- [ ] **短信服务配置接入**
-  - 现状：控制台可配置阿里云/腾讯云/七牛，实际发送走 sms4j 的 `fixed-code` 通道。
-  - 位置：`src/main/java/com/antiam/service/SmsVerificationService.java:27`
-  - 验收：`message.sms.service` 配置驱动实际通道选择。
-
 - [ ] **风险规则：地理速度与自适应动作**
   - 现状：枚举仅 6 种，地理位置只做字符串相等比较。
   - 缺口：无不可能旅行/速度类规则，决策输出未驱动真实 MFA 或拒绝动作。
@@ -57,12 +52,6 @@
   - 验收：新增地理速度规则；`STEP_UP_MFA` 与 `DENY_OR_STEP_UP` 在登录链路真实生效。
 
 ## P2 待补全协议
-
-- [ ] **JWT 单点登录**
-  - 现状：`ApplicationProtocol` 有 `JWT`，SSO 配置可保存 `jwtAudience`，控制台有 JWT 模板。
-  - 缺口：无签发 JWT SSO 令牌的逻辑，`jwtAudience` 落库后无消费者。
-  - 位置：`src/main/java/com/antiam/service/AccessService.java:291`
-  - 验收：提供签发与验签端点，令牌按配置 audience 与有效期签发。
 
 - [ ] **表单代填**
   - 现状：`ApplicationProtocol` 有 `FORM_FILL`，可保存 `formLoginTemplate`。
@@ -77,6 +66,11 @@
 
 ## 已完成
 
+- [x] JWT 单点登录签发与验签
+  - 实现：`GET /jwt/sso?audience=` 按应用 SSO 配置的 `jwtAudience`（缺失时回退 `clientId`）签发 RS256 令牌，`aud` 取配置值、有效期取 `accessTokenTtlMinutes`；`POST /jwt/verify` 按头部 `kid` 匹配签名密钥校验签名与 `exp`/`nbf`，失败以 `failureCode` 说明原因，该端点无需登录即可调用。
+  - 位置：`src/main/java/com/antiam/service/FederationService.java`、`src/main/java/com/antiam/service/JwtService.java`、`src/main/java/com/antiam/web/FederationController.java`
+  - 控制台：SSO 配置新增「令牌 Audience」输入项（仅 JWT 协议显示），并展示签发、校验与 JWKS 端点；保存时不再清空 SAML/CAS/表单代填等协议字段。
+- [x] 短信验证码通道：由 sms4j 承载，本地默认 `fixed-code`，生产切换通道只需配置 `sms.blends` 并设置 `ANT_IAM_SMS_BLEND_ID`。控制台的阿里云/腾讯云/七牛字段仍未接入发送链路，作为渠道元数据保留。
 - [x] 对象存储云厂商原生 SDK：`aliyun`（阿里云 OSS）、`tencent`（腾讯云 COS，bucket 自动拼 `-{appId}`）、`qiniu`（七牛云 Kodo）各自原生上传；`s3` 与 `minio` 走 S3 兼容适配器
 - [x] OAuth2 / OIDC consent UI 页面
 - [x] 企业微信后台连接器（直连 `qyapi.weixin.qq.com` 拉取部门与成员）
