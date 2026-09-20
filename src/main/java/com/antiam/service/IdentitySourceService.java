@@ -5,6 +5,7 @@ import static com.antiam.dto.IdentitySourceDtos.ConfigureConnectorRequest;
 import static com.antiam.dto.IdentitySourceDtos.ConnectorResponse;
 import static com.antiam.dto.IdentitySourceDtos.CreateSyncJobRequest;
 import static com.antiam.dto.IdentitySourceDtos.IdentitySourceResponse;
+import static com.antiam.dto.IdentitySourceDtos.RealtimeSyncResult;
 import static com.antiam.dto.IdentitySourceDtos.SyncJobResponse;
 import static com.antiam.dto.IdentitySourceDtos.SyncRunResponse;
 import static com.antiam.dto.IdentitySourceDtos.UpdateIdentitySourceRequest;
@@ -31,8 +32,10 @@ import com.antiam.repository.UserGroupRepository;
 import com.antiam.service.identitysource.DirectoryGroup;
 import com.antiam.service.identitysource.DirectoryOrganization;
 import com.antiam.service.identitysource.DirectorySyncPayload;
+import com.antiam.service.identitysource.DirectorySyncPayloadReader;
 import com.antiam.service.identitysource.DirectoryUser;
 import com.antiam.service.identitysource.IdentitySourceConnectorAdapter;
+import com.antiam.service.identitysource.RealtimeSyncSignature;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -53,6 +56,8 @@ public class IdentitySourceService {
     private final IdentitySourceMapper identitySourceMapper;
     private final TenantService tenantService;
     private final AuditService auditService;
+    private final DirectorySyncPayloadReader payloadReader;
+    private final RealtimeSyncSignature syncSignature;
     private final List<IdentitySourceConnectorAdapter> connectorAdapters;
 
     @Transactional
@@ -234,6 +239,48 @@ public class IdentitySourceService {
         return identitySourceMapper.toResponse(run);
     }
 
+    @Transactional
+    // 接收身份源推送的实时目录事件，验签后增量应用到组织、用户和用户组。
+    public RealtimeSyncResult receiveRealtimeEvent(String sourceCode, String signature, String rawBody, String actor) {
+        IdentitySource source = identitySources.findByCode(sourceCode)
+            .orElseThrow(() -> new NotFoundException("Identity source not found: " + sourceCode));
+        IdentitySourceConnector connector = connectors.findByIdentitySourceId(source.getId())
+            .orElseThrow(() -> new NotFoundException("Identity source connector not found: " + sourceCode));
+        if (!source.isEnabled()) {
+            throw new IllegalArgumentException("Identity source is disabled: " + sourceCode);
+        }
+        if (!connector.isEnabled()) {
+            throw new IllegalArgumentException("Identity source connector is disabled: " + sourceCode);
+        }
+        String secret = connector.getSecretRef();
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("Realtime sync secret is not configured: " + sourceCode);
+        }
+        if (!syncSignature.matches(secret, rawBody, signature)) {
+            throw new IllegalArgumentException("Realtime sync signature is invalid");
+        }
+        SyncCounters counters = applyDirectoryPayload(source, payloadReader.read(rawBody));
+        auditService.record(
+            actor,
+            "identity_source.realtime_receive",
+            "identity_source",
+            source.getId().toString(),
+            "organizationsCreated=" + counters.organizationsCreated()
+                + ", organizationsUpdated=" + counters.organizationsUpdated()
+                + ", usersCreated=" + counters.usersCreated()
+                + ", usersUpdated=" + counters.usersUpdated()
+                + ", groupsCreated=" + counters.groupsCreated()
+                + ", groupsUpdated=" + counters.groupsUpdated());
+        return new RealtimeSyncResult(
+            source.getCode(),
+            counters.organizationsCreated(),
+            counters.organizationsUpdated(),
+            counters.usersCreated(),
+            counters.usersUpdated(),
+            counters.groupsCreated(),
+            counters.groupsUpdated());
+    }
+
     @Transactional(readOnly = true)
     // 查询同步任务最近运行记录。
     public List<SyncRunResponse> listSyncRuns(UUID syncJobId) {
@@ -294,6 +341,10 @@ public class IdentitySourceService {
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException("Unsupported identity source connector type: " + source.getType()))
             .load(source, connector);
+        return applyDirectoryPayload(source, payload);
+    }
+
+    private SyncCounters applyDirectoryPayload(IdentitySource source, DirectorySyncPayload payload) {
         SyncCounters counters = new SyncCounters();
         payload.organizations().forEach(item -> syncOrganization(item, counters));
         payload.users().forEach(item -> syncUser(source, item, counters));

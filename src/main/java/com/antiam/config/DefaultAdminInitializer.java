@@ -6,7 +6,6 @@ import com.antiam.domain.UserCredential;
 import com.antiam.repository.UserAccountRepository;
 import com.antiam.repository.UserCredentialRepository;
 import org.springframework.boot.ApplicationRunner;
-import org.springframework.boot.security.autoconfigure.SecurityProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -15,6 +14,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Configuration
 public class DefaultAdminInitializer {
 
+    private static final String DEFAULT_ADMIN_USERNAME = "admin";
+    private static final String DEFAULT_ADMIN_PASSWORD = "admin123456";
+
     @Bean
     ApplicationRunner defaultAdminUserRunner(DefaultAdminUserSeeder seeder) {
         return args -> seeder.seed();
@@ -22,27 +24,23 @@ public class DefaultAdminInitializer {
 
     @Bean
     DefaultAdminUserSeeder defaultAdminUserSeeder(
-        SecurityProperties security,
         UserAccountRepository users,
         UserCredentialRepository credentials,
         PasswordEncoder passwordEncoder
     ) {
-        return new DefaultAdminUserSeeder(security, users, credentials, passwordEncoder);
+        return new DefaultAdminUserSeeder(users, credentials, passwordEncoder);
     }
 
     static class DefaultAdminUserSeeder {
-        private final SecurityProperties security;
         private final UserAccountRepository users;
         private final UserCredentialRepository credentials;
         private final PasswordEncoder passwordEncoder;
 
         DefaultAdminUserSeeder(
-            SecurityProperties security,
             UserAccountRepository users,
             UserCredentialRepository credentials,
             PasswordEncoder passwordEncoder
         ) {
-            this.security = security;
             this.users = users;
             this.credentials = credentials;
             this.passwordEncoder = passwordEncoder;
@@ -50,24 +48,23 @@ public class DefaultAdminInitializer {
 
         @Transactional
         void seed() {
-            SecurityProperties.User configuredUser = security.getUser();
-            UserAccount user = users.findByUsername(configuredUser.getName())
-                .orElseGet(() -> users.save(new UserAccount(
-                    configuredUser.getName(),
-                    configuredUser.getName(),
-                    null,
-                    null,
-                    null,
-                    null
-                )));
-
-            credentials.findByUserAndType(user, CredentialType.PASSWORD)
-                .orElseGet(() -> credentials.save(new UserCredential(
-                    user,
-                    CredentialType.PASSWORD,
-                    passwordEncoder.encode(configuredUser.getPassword()),
-                    false
-                )));
+            if (users.count() > 0) {
+                return;
+            }
+            UserAccount user = users.save(new UserAccount(
+                DEFAULT_ADMIN_USERNAME,
+                DEFAULT_ADMIN_USERNAME,
+                null,
+                null,
+                null,
+                null
+            ));
+            credentials.save(new UserCredential(
+                user,
+                CredentialType.PASSWORD,
+                passwordEncoder.encode(DEFAULT_ADMIN_PASSWORD),
+                false
+            ));
         }
     }
 }

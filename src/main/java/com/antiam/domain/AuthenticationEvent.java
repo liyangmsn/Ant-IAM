@@ -33,6 +33,8 @@ public class AuthenticationEvent extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private AuthenticationEventType type;
 
+    private String method;
+
     private String ipAddress;
     private String userAgent;
 
@@ -48,10 +50,24 @@ public class AuthenticationEvent extends BaseEntity {
         String userAgent,
         String detail
     ) {
+        this(session, user, application, type, null, ipAddress, userAgent, detail);
+    }
+
+    public AuthenticationEvent(
+        AuthenticationSession session,
+        UserAccount user,
+        Application application,
+        AuthenticationEventType type,
+        String method,
+        String ipAddress,
+        String userAgent,
+        String detail
+    ) {
         this.session = session;
         this.user = user;
         this.application = application;
         this.type = type;
+        this.method = method;
         this.ipAddress = ipAddress;
         this.userAgent = userAgent;
         this.detail = detail;

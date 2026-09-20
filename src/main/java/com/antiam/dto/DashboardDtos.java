@@ -1,6 +1,7 @@
 package com.antiam.dto;
 
 import com.antiam.domain.AuthenticationEventType;
+import com.antiam.domain.DashboardRange;
 import com.antiam.domain.IdentitySyncRunStatus;
 import com.antiam.domain.RiskLevel;
 import java.util.List;
@@ -38,6 +39,28 @@ public final class DashboardDtos {
         Map<AuthenticationEventType, Long> authenticationEvents,
         Map<RiskLevel, Long> riskAssessments,
         Map<IdentitySyncRunStatus, Long> syncRuns
+    ) {
+    }
+
+    public record TrendPointResponse(String label, long count) {
+    }
+
+    public record ApplicationRankingResponse(UUID applicationId, String applicationName, long count) {
+    }
+
+    public record AuthenticationMethodMetricResponse(String method, String label, long count) {
+    }
+
+    public record LoginLocationMetricResponse(String location, long count) {
+    }
+
+    public record DashboardStatisticsResponse(
+        DashboardRange range,
+        long todayAuthentications,
+        List<TrendPointResponse> authenticationTrend,
+        List<ApplicationRankingResponse> applicationRanking,
+        List<AuthenticationMethodMetricResponse> authenticationMethods,
+        List<LoginLocationMetricResponse> loginLocations
     ) {
     }
 

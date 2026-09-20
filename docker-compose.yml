@@ -10,8 +10,6 @@ services:
       ANT_IAM_DATASOURCE_URL: jdbc:postgresql://postgres:5432/ant_iam
       ANT_IAM_DATASOURCE_USERNAME: ant_iam
       ANT_IAM_DATASOURCE_PASSWORD: ant_iam
-      ANT_IAM_ADMIN_USERNAME: admin
-      ANT_IAM_ADMIN_PASSWORD: admin123456
     ports:
       - "8080:8080"
     depends_on:

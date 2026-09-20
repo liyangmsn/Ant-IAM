@@ -2,6 +2,12 @@
 
 Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS 后端项目，覆盖组织目录、用户生命周期、用户组、RBAC、应用访问、身份源同步和审计等能力。
 
+第三方应用接入指南见 [docs/integration-guide.md](docs/integration-guide.md)，其中包含接入方式选择、单点登录与通讯录同步流程、接口能力清单和常见问题。
+
+项目说明（作用与功能总览）见 [docs/project-overview.md](docs/project-overview.md)。
+
+一页式项目简报见 [docs/project-brief.md](docs/project-brief.md)。
+
 ## 技术栈
 
 - Java 25
@@ -33,10 +39,14 @@ Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS
 - 身份源详情、检索、更新和生命周期控制：`/api/v1/identity-sources`、`/api/v1/identity-sources/{identitySourceId}`，列表支持 `tenantId`、`type`、`enabled` 和 `keyword` 过滤
 - 身份源连接器支持生命周期控制，同步任务支持任务详情、更新和生命周期控制：`/api/v1/identity-sources/{identitySourceId}/connector`、`/api/v1/identity-sources/{identitySourceId}/sync-jobs`、`/api/v1/identity-sources/sync-jobs/{syncJobId}`
 - 手动身份同步运行，支持 JSON 目录数据导入和运行详情：`/api/v1/identity-sources/sync-jobs/{syncJobId}/runs`、`/api/v1/identity-sources/sync-runs/{syncRunId}`
+- 身份源实时事件回调，支持 HMAC-SHA256 验签：`/api/v1/synchronizer/event_receive/{sourceCode}`
+- 邮件发信能力，支持配置 SMTP 服务和模板渲染，并接入邮箱 MFA 挑战
+- 文件上传，提供阿里云 OSS、腾讯云 COS、七牛云 Kodo 和 S3 兼容服务的原生适配：`/api/v1/files`
+- 基于 MaxMind 数据库的 IP 地理库解析，系统默认模式提供地址段分类
 - 认证策略，支持生命周期控制、MFA、注册要求、风险升阶、拒绝、密码最小长度、失败登录锁定、密码过期和密码历史校验：`/api/v1/authentication-policies`
 - 认证策略评估：`/api/v1/authentication-policies/evaluations`
 - 登录风险规则支持检索/详情/更新/生命周期控制，风险评估支持检索/详情、设备指纹和地理位置上下文：`/api/v1/risk/rules`、`/api/v1/risk/rules/{ruleId}`、`/api/v1/risk/assessments`、`/api/v1/risk/assessments/{assessmentId}`
-- 仪表盘摘要和指标：`/api/v1/dashboard/summary`、`/api/v1/dashboard/metrics`
+- 仪表盘摘要、指标和时间范围统计（认证量趋势、应用访问排名、热门认证方式、登录位置分布）：`/api/v1/dashboard/summary`、`/api/v1/dashboard/metrics`、`/api/v1/dashboard/statistics`
 - 系统设置支持检索/过滤、详情和删除：`/api/v1/settings`、`/api/v1/settings/{settingKey}`
 - 租户和租户设置，租户设置支持检索/详情/删除：`/api/v1/tenants`、`/api/v1/tenants/{tenantId}/settings`、`/api/v1/tenants/{tenantId}/settings/{settingKey}`
 - 认证会话活跃/历史筛选、强制登出和可检索认证事件，包含登录风险与登出事件：`/api/v1/authentication/**`
@@ -59,6 +69,7 @@ Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS
 - OAuth2 consent 管理，支持筛选、详情和撤销：`/oauth2/consents`、`/oauth2/consents/{consentId}`
 - SAML2 metadata 和 XML SSO assertion：`/saml2/metadata`、`/saml2/metadata.xml`、`/saml2/sso`、`/saml2/sso/xml`
 - CAS 登录和服务票据校验，支持 XML 响应：`/cas/login`、`/cas/serviceValidate`、`/cas/p3/serviceValidate`
+- JWT 单点登录，RS256 令牌签发与验签：`/jwt/sso`、`/jwt/verify`
 - 审计事件详情、搜索，支持关键字过滤和 CSV 导出：`/api/v1/audit-events`、`/api/v1/audit-events/{auditEventId}`、`/api/v1/audit-events/export`
 - 公共能力目录：`/api/v1/catalog`
 - OpenAPI JSON 文档，便于集成工具直接读取：`/v3/api-docs`
@@ -113,15 +124,11 @@ ANT_IAM_DATASOURCE_PASSWORD=ant_iam
 
 容器内 API 会使用 `jdbc:postgresql://postgres:5432/ant_iam` 连接 compose 网络中的 PostgreSQL。
 
-默认登录账号：
+账号密码登录会从数据库中的 `user_accounts` 和 `user_credentials` 读取用户与密码凭据。首次安装的空库会初始化默认管理员账号 `admin / admin123456`，应用不再通过配置文件读取默认登录账号。
 
-```text
-admin / admin123456
-```
+短信验证码通过 sms4j 通道发送。默认启用 `fixed-code` 通道用于本地安装和联调，验证码为 `666666`，可通过 `ANT_IAM_SMS_FIXED_CODE` 覆盖；生产环境可以配置其它 sms4j 通道，并通过 `ANT_IAM_SMS_BLEND_ID` 切换。
 
-可以通过 `ANT_IAM_ADMIN_USERNAME` 和 `ANT_IAM_ADMIN_PASSWORD` 覆盖默认账号密码。
-
-OpenAPI JSON、Swagger UI、健康检查、OIDC discovery、JWKS、SAML metadata、CAS validation 以及 OAuth2 token/introspection/revocation 端点不需要登录，方便协议客户端直接访问；管理类 API 统一使用登录接口签发的 Bearer session token。
+OpenAPI JSON、Swagger UI、健康检查、OIDC discovery、JWKS、SAML metadata、CAS validation、JWT 验签以及 OAuth2 token/introspection/revocation 端点不需要登录，方便协议客户端直接访问；管理类 API 统一使用登录接口签发的 Bearer session token。
 
 ## 前端项目
 
@@ -236,10 +243,9 @@ curl -H 'Content-Type: application/json' \
 
 ## 路线图
 
-- 强化 OAuth2/OIDC 端点，补充 consent UI 页面。
 - 强化 SAML2/CAS 适配器，支持 XML 签名和更完整的协议绑定校验。
 - 增加面向用户的 MFA 注册和恢复引导页面。
-- 增加企业微信、LDAP 和 AD 后台连接器。
-- 在 JSON 同步执行器基础上继续补齐 LDAP/AD/企业微信连接器适配。
-- 将 SMS、email 和 WebAuthn MFA 原型挑战码替换为生产级校验器。
+- 增加 LDAP 和 AD 后台连接器。
+- 在 JSON 同步执行器基础上继续补齐 LDAP/AD 连接器适配。
+- 将 SMS 和 WebAuthn MFA 原型挑战码替换为生产级校验器。
 - 扩展风险规则，支持地理速度和更丰富的自适应 MFA 动作。

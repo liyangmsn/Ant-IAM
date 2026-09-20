@@ -12,14 +12,16 @@ spring:
     properties:
       hibernate:
         format_sql: true
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 20MB
   liquibase:
     change-log: classpath:/db/changelog/db.changelog-master.yaml
     enabled: true
-  security:
-    user:
-      name: ${ANT_IAM_ADMIN_USERNAME:admin}
-      password: ${ANT_IAM_ADMIN_PASSWORD:admin123456}
-
+  threads:
+    virtual:
+      enabled: true
 server:
   port: ${ANT_IAM_PORT:8080}
 
@@ -30,6 +32,11 @@ management:
         include: health,info,metrics
 
 ant-iam:
-  sms:
-    fixed-code: ${ANT_IAM_SMS_FIXED_CODE:666666}
-    code-ttl-seconds: ${ANT_IAM_SMS_CODE_TTL_SECONDS:300}
+  geoip:
+    database-path: ${ANT_IAM_GEOIP_DATABASE_PATH:}
+
+sms:
+  blends:
+    fixed-code:
+      supplier: fixed-code
+      code: ${ANT_IAM_SMS_FIXED_CODE:666666}

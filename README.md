@@ -2,6 +2,12 @@
 
 Ant IAM is a standalone enterprise IAM / IDaaS backend built with Spring Boot 4. It covers organization directory, user lifecycle management, groups, RBAC, application access, identity sources and audit.
 
+For third-party integration, see [docs/integration-guide.md](docs/integration-guide.md) (Chinese), which covers integration options, single sign-on and directory sync flows, API capabilities and FAQs.
+
+For a project overview covering purpose and capabilities, see [docs/project-overview.md](docs/project-overview.md) (Chinese).
+
+For a one-page project brief, see [docs/project-brief.md](docs/project-brief.md) (Chinese).
+
 ## Stack
 
 - Java 25
@@ -33,10 +39,14 @@ Ant IAM is a standalone enterprise IAM / IDaaS backend built with Spring Boot 4.
 - Identity sources with profiles, search, updates and lifecycle controls: `/api/v1/identity-sources`, `/api/v1/identity-sources/{identitySourceId}`; list supports optional `tenantId`, `type`, `enabled` and `keyword` filters
 - Identity source connectors with lifecycle controls, and sync jobs with job profiles, updates and lifecycle controls: `/api/v1/identity-sources/{identitySourceId}/connector`, `/api/v1/identity-sources/{identitySourceId}/sync-jobs`, `/api/v1/identity-sources/sync-jobs/{syncJobId}`
 - Manual identity sync runs with JSON payload import and run profiles: `/api/v1/identity-sources/sync-jobs/{syncJobId}/runs`, `/api/v1/identity-sources/sync-runs/{syncRunId}`
+- Identity source realtime event callback with HMAC-SHA256 signature verification: `/api/v1/synchronizer/event_receive/{sourceCode}`
+- Outbound email delivery with configurable SMTP service and template rendering, wired into EMAIL MFA challenges
+- File upload with native adapters for Aliyun OSS, Tencent COS, Qiniu Kodo and S3-compatible services: `/api/v1/files`
+- IP geo-location resolution backed by MaxMind databases, with system-default address classification
 - Authentication policies with lifecycle controls, configurable MFA, enrollment, step-up, deny, password minimum-length, failed-login lockout, password expiry and password history enforcement: `/api/v1/authentication-policies`
 - Authentication policy evaluation: `/api/v1/authentication-policies/evaluations`
 - Login risk rules with search/profiles/updates/lifecycle controls and searchable assessment profiles with device fingerprint and geo-location context: `/api/v1/risk/rules`, `/api/v1/risk/rules/{ruleId}`, `/api/v1/risk/assessments`, `/api/v1/risk/assessments/{assessmentId}`
-- Dashboard summary and metrics: `/api/v1/dashboard/summary`, `/api/v1/dashboard/metrics`
+- Dashboard summary, metrics and range statistics (authentication trend, application ranking, authentication methods, login locations): `/api/v1/dashboard/summary`, `/api/v1/dashboard/metrics`, `/api/v1/dashboard/statistics`
 - System settings with search/filtering, profiles and deletion: `/api/v1/settings`, `/api/v1/settings/{settingKey}`
 - Tenants and tenant settings with setting search/profiles/deletion: `/api/v1/tenants`, `/api/v1/tenants/{tenantId}/settings`, `/api/v1/tenants/{tenantId}/settings/{settingKey}`
 - Authentication sessions with active/history filtering, force logout and searchable events, including login risk and logout events: `/api/v1/authentication/**`
@@ -59,6 +69,7 @@ Ant IAM is a standalone enterprise IAM / IDaaS backend built with Spring Boot 4.
 - OAuth2 consent management with filtering, profiles and revocation: `/oauth2/consents`, `/oauth2/consents/{consentId}`
 - SAML2 metadata and SSO assertions with XML responses: `/saml2/metadata`, `/saml2/metadata.xml`, `/saml2/sso`, `/saml2/sso/xml`
 - CAS login and service validation with XML response support: `/cas/login`, `/cas/serviceValidate`, `/cas/p3/serviceValidate`
+- JWT single sign-on with RS256 token issuance and verification: `/jwt/sso`, `/jwt/verify`
 - Audit event profile, search with keyword filtering and CSV export: `/api/v1/audit-events`, `/api/v1/audit-events/{auditEventId}`, `/api/v1/audit-events/export`
 - Public catalog: `/api/v1/catalog`
 - OpenAPI JSON documentation, publicly readable for integration tooling: `/v3/api-docs`
@@ -113,15 +124,11 @@ ANT_IAM_DATASOURCE_PASSWORD=ant_iam
 
 Inside Docker Compose, the API uses `jdbc:postgresql://postgres:5432/ant_iam` to reach PostgreSQL on the compose network.
 
-Default sign-in credentials:
+Password sign-in reads users and password credentials from the `user_accounts` and `user_credentials` database tables. On first install with an empty database, the application initializes the default administrator account `admin / admin123456`; it no longer reads default sign-in credentials from configuration.
 
-```text
-admin / admin123456
-```
+SMS verification codes are delivered through sms4j channels. The default local setup enables the `fixed-code` channel with code `666666`, overrideable through `ANT_IAM_SMS_FIXED_CODE`; production deployments can configure another sms4j channel and select it with `ANT_IAM_SMS_BLEND_ID`.
 
-Override them with `ANT_IAM_ADMIN_USERNAME` and `ANT_IAM_ADMIN_PASSWORD`.
-
-OpenAPI JSON, Swagger UI, health checks, OIDC discovery, JWKS, SAML metadata, CAS validation and OAuth2 token/introspection/revocation endpoints are exposed without sign-in so protocol clients can call them directly; management APIs use the Bearer session token issued by the login endpoints.
+OpenAPI JSON, Swagger UI, health checks, OIDC discovery, JWKS, SAML metadata, CAS validation, JWT verification and OAuth2 token/introspection/revocation endpoints are exposed without sign-in so protocol clients can call them directly; management APIs use the Bearer session token issued by the login endpoints.
 
 ## Frontend Projects
 
@@ -236,10 +243,9 @@ WeChat, QQ, Feishu and DingTalk authentication providers use `appId`, `appSecret
 
 ## Roadmap
 
-- Harden OAuth2/OIDC endpoints with consent UI pages.
 - Harden SAML2/CAS adapters with XML signatures and richer protocol binding validation.
 - Add guided user-facing MFA enrollment and recovery screens.
-- Add background connectors for WeChat Work, LDAP and AD.
-- Continue native LDAP/AD/WeChat Work connector adapters on top of the JSON sync executor.
-- Replace SMS, email and WebAuthn MFA prototype challenge codes with production verifiers.
+- Add background connectors for LDAP and AD.
+- Continue native LDAP/AD connector adapters on top of the JSON sync executor.
+- Replace SMS and WebAuthn MFA prototype challenge codes with production verifiers.
 - Expand risk rules with geo-velocity and richer adaptive MFA actions.

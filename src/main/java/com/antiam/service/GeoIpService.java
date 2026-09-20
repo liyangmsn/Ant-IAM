@@ -1,126 +1,117 @@
 package com.antiam.service;
 
-import com.antiam.dto.SettingDtos.GeoIpLookupResponse;
-import com.antiam.dto.SettingDtos.IntegrationTestResponse;
+import com.antiam.domain.SystemSetting;
+import com.antiam.repository.SystemSettingRepository;
 import com.maxmind.geoip2.DatabaseReader;
+import com.maxmind.geoip2.exception.GeoIp2Exception;
 import com.maxmind.geoip2.model.CityResponse;
-import java.io.ByteArrayInputStream;
 import java.io.File;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.io.IOException;
 import java.net.InetAddress;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
-import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
-import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 public class GeoIpService {
 
-    private static final String MAXMIND_DOWNLOAD_URL =
-        "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&suffix=tar.gz&license_key=";
+    private static final String SETTING_KEY = "geoip.provider";
+    private static final String MAXMIND_PROVIDER = "maxmind";
+    private static final String CHINESE_LOCALE = "zh-CN";
 
-    private final SettingJsonSupport settings;
-    private final ClientMetadataService clientMetadataService;
+    private final SystemSettingRepository settings;
+    private final String databasePath;
+    private volatile DatabaseReader reader;
 
-    public IntegrationTestResponse updateMaxmindDatabase(String licenseKey, String databasePath) {
-        String resolvedLicenseKey = firstPresent(licenseKey, settings.string("geoip.licenseKey", ""));
-        String resolvedDatabasePath = firstPresent(databasePath, settings.string("geoip.databasePath", "data/GeoLite2-City.mmdb"));
-        if (resolvedLicenseKey.isBlank()) {
-            throw new IllegalArgumentException("MaxMind licenseKey is required");
+    public GeoIpService(
+        SystemSettingRepository settings,
+        @Value("${ant-iam.geoip.database-path:}") String databasePath
+    ) {
+        this.settings = settings;
+        this.databasePath = databasePath;
+    }
+
+    /**
+     * 解析 IP 地理位置；MaxMind 模式返回国家与城市，系统默认模式返回地址段分类。
+     */
+    public String location(String ipAddress) {
+        if (ipAddress == null || ipAddress.isBlank()) {
+            return null;
         }
+        String ip = ipAddress.trim();
+        return usesMaxmind() ? maxmindLocation(ip) : systemLocation(ip);
+    }
+
+    private boolean usesMaxmind() {
+        return settings.findBySettingKey(SETTING_KEY)
+            .map(SystemSetting::getSettingValue)
+            .map(value -> MAXMIND_PROVIDER.equalsIgnoreCase(value.trim()))
+            .orElse(false);
+    }
+
+    private String maxmindLocation(String ip) {
         try {
-            byte[] archive = download(resolvedLicenseKey);
-            Path target = Path.of(resolvedDatabasePath).toAbsolutePath().normalize();
-            Files.createDirectories(target.getParent());
-            extractMmdb(archive, target);
-            return new IntegrationTestResponse(true, "GeoIP 数据库已更新：" + target);
-        } catch (IllegalArgumentException ex) {
-            throw ex;
-        } catch (Exception ex) {
-            throw new IllegalArgumentException("GeoIP database update failed: " + ex.getMessage(), ex);
+            CityResponse response = reader().city(InetAddress.getByName(ip));
+            String country = localizedName(response.getCountry().getNames(), response.getCountry().getName());
+            if (country == null) {
+                return null;
+            }
+            String city = localizedName(response.getCity().getNames(), response.getCity().getName());
+            return city == null ? country : country + " " + city;
+        } catch (GeoIp2Exception ex) {
+            return null;
+        } catch (IOException ex) {
+            throw new IllegalStateException("Failed to resolve IP location: " + ip, ex);
         }
     }
 
-    public GeoIpLookupResponse lookup(String ip) {
-        if (ip == null || ip.isBlank()) {
-            throw new IllegalArgumentException("IP is required");
+    private DatabaseReader reader() {
+        DatabaseReader current = reader;
+        if (current != null) {
+            return current;
         }
-        String provider = settings.string("geoip.provider", "system");
-        if ("maxmind".equalsIgnoreCase(provider)) {
-            return maxmind(ip);
-        }
-        String location = clientMetadataService.location(ip);
-        return new GeoIpLookupResponse(ip, "system", "", "", "", location);
-    }
-
-    private GeoIpLookupResponse maxmind(String ip) {
-        String databasePath = settings.string("geoip.databasePath", "");
-        if (databasePath.isBlank()) {
-            throw new IllegalArgumentException("MaxMind databasePath is required");
-        }
-        File database = new File(databasePath);
-        if (!database.isFile()) {
-            throw new IllegalArgumentException("MaxMind database file does not exist: " + databasePath);
-        }
-        try (DatabaseReader reader = new DatabaseReader.Builder(database).build()) {
-            CityResponse response = reader.city(InetAddress.getByName(ip));
-            String country = response.getCountry().getNames().getOrDefault("zh-CN", response.getCountry().getName());
-            String province = response.getMostSpecificSubdivision().getNames()
-                .getOrDefault("zh-CN", response.getMostSpecificSubdivision().getName());
-            String city = response.getCity().getNames().getOrDefault("zh-CN", response.getCity().getName());
-            return new GeoIpLookupResponse(ip, "maxmind", blank(country), blank(province), blank(city), join(country, province, city));
-        } catch (Exception ex) {
-            throw new IllegalArgumentException("GeoIP lookup failed: " + ex.getMessage(), ex);
-        }
-    }
-
-    private byte[] download(String licenseKey) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create(MAXMIND_DOWNLOAD_URL + licenseKey))
-            .timeout(Duration.ofSeconds(60))
-            .GET()
-            .build();
-        HttpResponse<byte[]> response = HttpClient.newHttpClient().send(request, HttpResponse.BodyHandlers.ofByteArray());
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalArgumentException("MaxMind download failed: HTTP " + response.statusCode());
-        }
-        return response.body();
-    }
-
-    private void extractMmdb(byte[] archive, Path target) throws Exception {
-        try (
-            ByteArrayInputStream input = new ByteArrayInputStream(archive);
-            GzipCompressorInputStream gzip = new GzipCompressorInputStream(input);
-            TarArchiveInputStream tar = new TarArchiveInputStream(gzip)
-        ) {
-            TarArchiveEntry entry;
-            while ((entry = tar.getNextEntry()) != null) {
-                if (!entry.isDirectory() && entry.getName().endsWith(".mmdb")) {
-                    Files.copy(tar, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-                    return;
+        synchronized (this) {
+            if (reader == null) {
+                if (databasePath == null || databasePath.isBlank()) {
+                    throw new IllegalStateException("MaxMind database path is not configured: ant-iam.geoip.database-path");
+                }
+                try {
+                    reader = new DatabaseReader.Builder(new File(databasePath)).build();
+                } catch (IOException ex) {
+                    throw new IllegalStateException("Failed to open MaxMind database: " + databasePath, ex);
                 }
             }
+            return reader;
         }
-        throw new IllegalArgumentException("MaxMind archive does not contain a .mmdb file");
     }
 
-    private String firstPresent(String value, String fallback) {
-        return value == null || value.isBlank() ? fallback : value;
+    private String localizedName(java.util.Map<String, String> names, String fallback) {
+        String localized = names.get(CHINESE_LOCALE);
+        return localized == null ? fallback : localized;
     }
 
-    private String join(String country, String province, String city) {
-        return String.join(" ", blank(country), blank(province), blank(city)).trim();
+    private String systemLocation(String ip) {
+        if ("127.0.0.1".equals(ip) || "::1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip)) {
+            return "本机";
+        }
+        if (ip.startsWith("10.") || ip.startsWith("192.168.") || isPrivate172(ip)) {
+            return "内网";
+        }
+        return "公网";
     }
 
-    private String blank(String value) {
-        return value == null ? "" : value;
+    private boolean isPrivate172(String ip) {
+        if (!ip.startsWith("172.")) {
+            return false;
+        }
+        String[] parts = ip.split("\\.");
+        if (parts.length < 2) {
+            return false;
+        }
+        try {
+            int second = Integer.parseInt(parts[1]);
+            return second >= 16 && second <= 31;
+        } catch (NumberFormatException ex) {
+            return false;
+        }
     }
 }

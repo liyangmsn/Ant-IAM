@@ -61,3 +61,5 @@ databaseChangeLog:
       file: db/changelog/030-authentication-provider-schema.sql
   - include:
       file: db/changelog/031-user-third-party-binding-schema.sql
+  - include:
+      file: db/changelog/032-authentication-event-method-schema.sql

@@ -2,6 +2,8 @@ package com.antiam.service;
 
 import static com.antiam.dto.FederationDtos.CasLoginResponse;
 import static com.antiam.dto.FederationDtos.CasServiceValidationResponse;
+import static com.antiam.dto.FederationDtos.JwtSsoTokenResponse;
+import static com.antiam.dto.FederationDtos.JwtSsoVerificationResponse;
 import static com.antiam.dto.FederationDtos.SamlAssertionResponse;
 import static com.antiam.dto.FederationDtos.SamlMetadataResponse;
 
@@ -23,7 +25,11 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +40,8 @@ public class FederationService {
 
     private static final Duration SAML_ASSERTION_TTL = Duration.ofMinutes(5);
     private static final Duration CAS_TICKET_TTL = Duration.ofMinutes(5);
+    private static final List<String> JWT_DEFAULT_CLAIMS = List.of(
+        "preferred_username", "name", "email", "phone_number", "tenant_id", "organization_id");
 
     private final ApplicationSsoConfigRepository ssoConfigs;
     private final SamlAssertionRepository samlAssertions;
@@ -41,6 +49,7 @@ public class FederationService {
     private final UserAccountRepository users;
     private final AuthenticationEventRepository authenticationEvents;
     private final TokenSupport tokens;
+    private final JwtService jwtService;
 
     // 生成 SAML 身份提供方元数据的结构化视图。
     public SamlMetadataResponse samlMetadata(String issuer) {
@@ -233,6 +242,134 @@ public class FederationService {
               </cas:authenticationSuccess>
             </cas:serviceResponse>
             """.formatted(xml(response.user()), attributes);
+    }
+
+    @Transactional
+    // 按 audience（或 client_id）为当前用户签发 JWT 单点登录令牌，有效期取应用 access_token 配置。
+    public JwtSsoTokenResponse issueJwtSsoToken(String audience, String username, String issuer) {
+        ApplicationSsoConfig config = jwtSsoConfig(audience);
+        UserAccount user = users.findByUsername(username)
+            .orElseThrow(() -> new NotFoundException("User not found: " + username));
+        Instant issuedAt = Instant.now();
+        Instant expiresAt = issuedAt.plus(Duration.ofMinutes(Math.max(1, config.getAccessTokenTtlMinutes())));
+        String resolvedAudience = jwtAudience(config);
+        String token = jwtService.signToken(
+            issuer,
+            user.getId().toString(),
+            resolvedAudience,
+            issuedAt,
+            expiresAt,
+            jwtClaims(config, user));
+        authenticationEvents.save(new AuthenticationEvent(
+            null,
+            user,
+            config.getApplication(),
+            AuthenticationEventType.TOKEN_ISSUED,
+            null,
+            null,
+            "jwt_sso_audience=" + resolvedAudience));
+        return new JwtSsoTokenResponse(
+            token,
+            "Bearer",
+            issuer,
+            resolvedAudience,
+            user.getUsername(),
+            issuedAt,
+            expiresAt);
+    }
+
+    @Transactional(readOnly = true)
+    // 校验 JWT 签名与有效期，校验失败时通过 failureCode 说明原因而不抛异常。
+    public JwtSsoVerificationResponse verifyJwtSsoToken(String token) {
+        JwtService.TokenVerification verification = jwtService.verify(token);
+        return new JwtSsoVerificationResponse(
+            verification.valid(),
+            verification.keyId(),
+            verification.issuer(),
+            verification.audience(),
+            verification.subject(),
+            verification.issuedAt(),
+            verification.expiresAt(),
+            verification.claims(),
+            verification.failureCode(),
+            verification.failureMessage());
+    }
+
+    private ApplicationSsoConfig jwtSsoConfig(String audience) {
+        if (audience == null || audience.isBlank()) {
+            throw new IllegalArgumentException("JWT audience or client_id is required");
+        }
+        ApplicationSsoConfig config = ssoConfigs.findByJwtAudience(audience)
+            .or(() -> ssoConfigs.findByClientId(audience))
+            .orElseThrow(() -> new NotFoundException("JWT single sign-on client not found: " + audience));
+        if (!config.isEnabled() || config.getProtocol() != ApplicationProtocol.JWT) {
+            throw new IllegalArgumentException("Application is not configured for JWT single sign-on");
+        }
+        return config;
+    }
+
+    private String jwtAudience(ApplicationSsoConfig config) {
+        if (config.getJwtAudience() != null && !config.getJwtAudience().isBlank()) {
+            return config.getJwtAudience();
+        }
+        if (config.getClientId() != null && !config.getClientId().isBlank()) {
+            return config.getClientId();
+        }
+        return config.getApplication().getCode();
+    }
+
+    private Map<String, String> jwtClaims(ApplicationSsoConfig config, UserAccount user) {
+        Set<String> configured = splitValues(config.getIdTokenClaims());
+        Collection<String> names = configured.isEmpty() ? JWT_DEFAULT_CLAIMS : configured;
+        Map<String, String> claims = new LinkedHashMap<>();
+        names.forEach(name -> {
+            String value = claimValue(name, user);
+            if (value != null && !value.isBlank()) {
+                claims.put(name, value);
+            }
+        });
+        splitEntries(config.getCustomClaims()).forEach((name, value) -> claims.put(name, value == null ? "" : value));
+        return claims;
+    }
+
+    private String claimValue(String claim, UserAccount user) {
+        return switch (claim) {
+            case "preferred_username" -> user.getUsername();
+            case "name" -> user.getDisplayName();
+            case "email" -> user.getEmail();
+            case "phone_number" -> user.getMobile();
+            case "tenant_id" -> user.getTenant() == null ? null : user.getTenant().getId().toString();
+            case "organization_id" -> user.getOrganization() == null ? null : user.getOrganization().getId().toString();
+            default -> null;
+        };
+    }
+
+    private Set<String> splitValues(String value) {
+        if (value == null || value.isBlank()) {
+            return Set.of();
+        }
+        return java.util.Arrays.stream(value.split("\\R"))
+            .filter(item -> !item.isBlank())
+            .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
+    private Map<String, String> splitEntries(String value) {
+        if (value == null || value.isBlank()) {
+            return Map.of();
+        }
+        return java.util.Arrays.stream(value.split("\\R"))
+            .filter(item -> !item.isBlank())
+            .map(item -> {
+                int separator = item.indexOf('=');
+                String key = separator < 0 ? item : item.substring(0, separator);
+                String entryValue = separator < 0 ? "" : item.substring(separator + 1);
+                return Map.entry(key, entryValue);
+            })
+            .collect(java.util.stream.Collectors.toMap(
+                Map.Entry::getKey,
+                Map.Entry::getValue,
+                (first, second) -> second,
+                LinkedHashMap::new));
     }
 
     private CasServiceValidationResponse failure(String service, String code, String message) {
