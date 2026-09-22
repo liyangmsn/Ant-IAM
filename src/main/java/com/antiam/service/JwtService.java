@@ -30,6 +30,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,6 +66,7 @@ public class JwtService {
             json("iss", issuer),
             json("sub", user.getId().toString()),
             json("aud", clientId),
+            json("jti", UUID.randomUUID().toString()),
             json("iat", now),
             json("exp", expiresAt.getEpochSecond())));
         claimNames(idTokenClaims).forEach(claim -> addClaim(fields, claim, user, scopes));

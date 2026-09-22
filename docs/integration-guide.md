@@ -287,20 +287,20 @@ grant_type=authorization_code
 
 ```json
 {
-  "accessToken": "...",
-  "tokenType": "Bearer",
-  "expiresIn": 3600,
-  "refreshToken": "...",
-  "idToken": "...",
+  "access_token": "...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "...",
+  "id_token": "...",
   "scope": "openid profile email"
 }
 ```
 
 | 令牌 | 用途 | 有效期 |
 | --- | --- | --- |
-| `accessToken` | 调用用户信息接口、资源接口 | 1 小时 |
-| `refreshToken` | 换取新的访问令牌 | 30 天 |
-| `idToken` | 身份令牌，包含用户标识，使用 RS256 签名 | 1 小时 |
+| `access_token` | 调用用户信息接口、资源接口 | 1 小时 |
+| `refresh_token` | 换取新的访问令牌 | 30 天 |
+| `id_token` | 身份令牌，包含用户标识，使用 RS256 签名 | 1 小时 |
 
 这里的令牌由 IAM 签发给你的应用使用，与第 4 章用于调用管理接口的访问令牌是两个不同的凭据，请勿混用。
 

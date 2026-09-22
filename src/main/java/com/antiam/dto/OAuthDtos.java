@@ -1,5 +1,6 @@
 package com.antiam.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import java.time.Instant;
@@ -36,11 +37,11 @@ public final class OAuthDtos {
     }
 
     public record TokenResponse(
-        String accessToken,
-        String tokenType,
-        long expiresIn,
-        String refreshToken,
-        String idToken,
+        @JsonProperty("access_token") String accessToken,
+        @JsonProperty("token_type") String tokenType,
+        @JsonProperty("expires_in") long expiresIn,
+        @JsonProperty("refresh_token") String refreshToken,
+        @JsonProperty("id_token") String idToken,
         String scope
     ) {
     }
@@ -73,10 +74,10 @@ public final class OAuthDtos {
 
     public record TokenIntrospectionResponse(
         boolean active,
-        String clientId,
+        @JsonProperty("client_id") String clientId,
         String username,
         String sub,
-        String tokenType,
+        @JsonProperty("token_type") String tokenType,
         String scope,
         long exp
     ) {
@@ -84,29 +85,29 @@ public final class OAuthDtos {
 
     public record UserInfoResponse(
         String sub,
-        String preferredUsername,
+        @JsonProperty("preferred_username") String preferredUsername,
         String name,
         String email,
-        String phoneNumber
+        @JsonProperty("phone_number") String phoneNumber
     ) {
     }
 
     public record OidcDiscoveryResponse(
         String issuer,
-        String authorizationEndpoint,
-        String tokenEndpoint,
-        String userinfoEndpoint,
-        String introspectionEndpoint,
-        String revocationEndpoint,
-        String jwksUri,
-        List<String> responseTypesSupported,
-        List<String> grantTypesSupported,
-        List<String> subjectTypesSupported,
-        List<String> idTokenSigningAlgValuesSupported,
-        List<String> scopesSupported,
-        List<String> codeChallengeMethodsSupported,
-        List<String> tokenEndpointAuthMethodsSupported,
-        Map<String, Object> claimsSupported
+        @JsonProperty("authorization_endpoint") String authorizationEndpoint,
+        @JsonProperty("token_endpoint") String tokenEndpoint,
+        @JsonProperty("userinfo_endpoint") String userinfoEndpoint,
+        @JsonProperty("introspection_endpoint") String introspectionEndpoint,
+        @JsonProperty("revocation_endpoint") String revocationEndpoint,
+        @JsonProperty("jwks_uri") String jwksUri,
+        @JsonProperty("response_types_supported") List<String> responseTypesSupported,
+        @JsonProperty("grant_types_supported") List<String> grantTypesSupported,
+        @JsonProperty("subject_types_supported") List<String> subjectTypesSupported,
+        @JsonProperty("id_token_signing_alg_values_supported") List<String> idTokenSigningAlgValuesSupported,
+        @JsonProperty("scopes_supported") List<String> scopesSupported,
+        @JsonProperty("code_challenge_methods_supported") List<String> codeChallengeMethodsSupported,
+        @JsonProperty("token_endpoint_auth_methods_supported") List<String> tokenEndpointAuthMethodsSupported,
+        @JsonProperty("claims_supported") Map<String, Object> claimsSupported
     ) {
     }
 }

@@ -696,6 +696,9 @@ public class OAuthService {
         if (!"S256".equals(method) && !"plain".equals(method)) {
             throw new IllegalArgumentException("Unsupported code_challenge_method: " + method);
         }
+        if (!isValidPkceValue(codeChallenge) || ("S256".equals(method) && codeChallenge.length() != 43)) {
+            throw new IllegalArgumentException("Invalid code_challenge");
+        }
     }
 
     private void validatePkceVerifier(OAuthAuthorizationCode authorizationCode, String codeVerifier) {
@@ -705,6 +708,9 @@ public class OAuthService {
         if (codeVerifier == null || codeVerifier.isBlank()) {
             throw new IllegalArgumentException("code_verifier is required");
         }
+        if (!isValidPkceValue(codeVerifier)) {
+            throw new IllegalArgumentException("Invalid code_verifier");
+        }
         String expected = "S256".equals(authorizationCode.getCodeChallengeMethod())
             ? s256(codeVerifier)
             : codeVerifier;
@@ -713,6 +719,22 @@ public class OAuthService {
             authorizationCode.getCodeChallenge().getBytes(StandardCharsets.UTF_8))) {
             throw new IllegalArgumentException("Invalid code_verifier");
         }
+    }
+
+    private boolean isValidPkceValue(String value) {
+        if (value.length() < 43 || value.length() > 128) {
+            return false;
+        }
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            if (!(character >= 'A' && character <= 'Z')
+                && !(character >= 'a' && character <= 'z')
+                && !(character >= '0' && character <= '9')
+                && character != '-' && character != '.' && character != '_' && character != '~') {
+                return false;
+            }
+        }
+        return true;
     }
 
     private String normalizeCodeChallengeMethod(String codeChallengeMethod) {

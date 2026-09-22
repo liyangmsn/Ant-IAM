@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.antiam.common.TokenSupport;
 import com.antiam.domain.JwtSigningKey;
+import com.antiam.domain.UserAccount;
 import com.antiam.mapper.JwtMapper;
 import com.antiam.repository.JwtSigningKeyRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,6 +19,8 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -80,6 +83,20 @@ class JwtServiceTest {
 
         assertThat(service.verify(first).keyId()).isEqualTo(service.verify(second).keyId());
         assertThat(stored).hasSize(1);
+    }
+
+    @Test
+    void signsDistinctIdTokensWithinTheSameSecond() {
+        UserAccount user = mock(UserAccount.class);
+        when(user.getId()).thenReturn(UUID.randomUUID());
+        Instant expiresAt = Instant.now().plusSeconds(600);
+
+        String first = service.signIdToken("https://iam.example.com", user, "client-1", "openid", expiresAt, Set.of(), Map.of());
+        String second = service.signIdToken("https://iam.example.com", user, "client-1", "openid", expiresAt, Set.of(), Map.of());
+
+        assertThat(first).isNotEqualTo(second);
+        assertThat(service.verify(first).claims()).containsKey("jti");
+        assertThat(service.verify(second).claims()).containsKey("jti");
     }
 
     @Test

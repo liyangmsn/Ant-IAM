@@ -36,7 +36,9 @@ ant-iam:
     database-path: ${ANT_IAM_GEOIP_DATABASE_PATH:}
 
 sms:
+  config-type: yaml
   blends:
     fixed-code:
       supplier: fixed-code
+      factory: com.antiam.sms.fixed.FixedCodeSmsFactory
       code: ${ANT_IAM_SMS_FIXED_CODE:666666}
