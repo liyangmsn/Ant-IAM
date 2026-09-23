@@ -83,7 +83,7 @@
 
 ### 3.7 标准协议与集成能力
 
-- OIDC / OAuth2：`/oauth2/authorize`、`/oauth2/token`、`/oauth2/userinfo`、`/.well-known/openid-configuration`、`/oauth2/jwks`；支持授权码、PKCE、刷新令牌轮换、令牌自省与撤销、同意（consent）管理。
+- OIDC / OAuth2：浏览器授权入口 `/oidc/authorize`，Bearer 授权 API `/oauth2/authorize`，以及 `/oauth2/token`、`/oauth2/userinfo`、`/.well-known/openid-configuration`、`/oauth2/jwks`；支持授权码、PKCE、刷新令牌轮换、令牌自省与撤销、同意（consent）管理。
 - OIDC 签名：RS256 ID token，签名密钥支持查询、轮换与带保护的退役 `/api/v1/jwt-signing-keys`。
 - SAML 2.0：`/saml2/metadata`、`/saml2/metadata.xml`、`/saml2/sso`、`/saml2/sso/xml`。
 - CAS：`/cas/login`、`/cas/serviceValidate`、`/cas/p3/serviceValidate`，支持 XML 响应。

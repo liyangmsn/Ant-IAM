@@ -57,12 +57,13 @@ public class OAuthController {
         @Parameter(description = "OAuth 客户端 ID") @RequestParam("client_id") String clientId,
         @Parameter(description = "授权完成后的回调地址") @RequestParam("redirect_uri") String redirectUri,
         @Parameter(description = "请求授权范围，多个 scope 使用空格分隔") @RequestParam(required = false) String scope,
+        @Parameter(description = "OIDC 会话标识，用于 ID Token nonce 声明") @RequestParam(required = false) String nonce,
         @Parameter(description = "PKCE code challenge") @RequestParam(value = "code_challenge", required = false) String codeChallenge,
         @Parameter(description = "PKCE code challenge 方法") @RequestParam(value = "code_challenge_method", required = false) String codeChallengeMethod,
         @Parameter(description = "客户端透传状态") @RequestParam(required = false) String state,
         Principal principal
     ) {
-        return oauth.authorize(responseType, clientId, redirectUri, scope, state, codeChallenge, codeChallengeMethod, principal.getName());
+        return oauth.authorize(responseType, clientId, redirectUri, scope, state, nonce, codeChallenge, codeChallengeMethod, principal.getName());
     }
 
     /**

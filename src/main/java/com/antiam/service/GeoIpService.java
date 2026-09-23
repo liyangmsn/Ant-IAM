@@ -24,7 +24,7 @@ public class GeoIpService {
 
     public GeoIpService(
         SystemSettingRepository settings,
-        @Value("${ant-iam.geoip.database-path:}") String databasePath
+        @Value("${iam.geoip.database-path:}") String databasePath
     ) {
         this.settings = settings;
         this.databasePath = databasePath;
@@ -72,7 +72,7 @@ public class GeoIpService {
         synchronized (this) {
             if (reader == null) {
                 if (databasePath == null || databasePath.isBlank()) {
-                    throw new IllegalStateException("MaxMind database path is not configured: ant-iam.geoip.database-path");
+                    throw new IllegalStateException("MaxMind database path is not configured: iam.geoip.database-path");
                 }
                 try {
                     reader = new DatabaseReader.Builder(new File(databasePath)).build();

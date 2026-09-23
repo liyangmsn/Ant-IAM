@@ -212,7 +212,7 @@ GET {Base URL}/.well-known/openid-configuration
 
 | 关键字段 | 说明 |
 | --- | --- |
-| `authorization_endpoint` | 授权地址，供已登录的调用方使用，见 5.9 节 |
+| `authorization_endpoint` | 浏览器授权入口；按需引导 IAM 登录和用户同意，见 5.3 节 |
 | `token_endpoint` | 令牌地址，用于换取令牌 |
 | `userinfo_endpoint` | 用户信息地址 |
 | `jwks_uri` | 公钥地址，用于校验身份令牌签名 |
@@ -231,7 +231,7 @@ GET {Base URL}/.well-known/openid-configuration
 需要用户登录你的应用时，把浏览器重定向到 IAM 授权页：
 
 ```http
-GET {Base URL}/oauth2/consent
+GET {Base URL}/oidc/authorize
   ?client_id=<应用标识>
   &redirect_uri=<回调地址>
   &scope=openid%20profile%20email
@@ -253,7 +253,7 @@ GET {Base URL}/oauth2/consent
 
 - 用户尚未登录 IAM 时，页面会引导用户登录，登录后自动回到授权页。
 - 用户首次使用该应用时，页面会展示申请的授权范围，由用户确认。
-- 用户此前已授权过时，页面仍会展示授权范围，用户确认后直接跳回你的回调地址。
+- 用户此前已授权当前请求的全部范围时，会跳过同意页并直接跳回你的回调地址。
 
 用户在授权页点击「同意授权」后，浏览器会带着授权码跳转到你在 `redirect_uri` 中指定的地址。
 

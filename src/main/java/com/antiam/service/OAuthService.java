@@ -77,6 +77,7 @@ public class OAuthService {
         String redirectUri,
         String scope,
         String state,
+        String nonce,
         String codeChallenge,
         String codeChallengeMethod,
         String username
@@ -91,7 +92,7 @@ public class OAuthService {
         UserAccount user = users.findByUsername(username)
             .orElseThrow(() -> new NotFoundException("User not found: " + username));
         if (!hasConsent(clientId, user, approvedScopes)) {
-            return new AuthorizationResponse(consentRedirect(clientId, redirectUri, scope, state, codeChallenge, codeChallengeMethod), null, state, true, List.copyOf(approvedScopes));
+            return new AuthorizationResponse(consentRedirect(clientId, redirectUri, scope, state, nonce, codeChallenge, codeChallengeMethod), null, state, true, List.copyOf(approvedScopes));
         }
 
         String code = tokens.generateToken(32);
@@ -103,6 +104,7 @@ public class OAuthService {
             redirectUri,
             joinScopes(approvedScopes),
             state,
+            nonce,
             codeChallenge,
             normalizeCodeChallengeMethod(codeChallengeMethod),
             Instant.now().plus(CODE_TTL)));
@@ -252,6 +254,7 @@ public class OAuthService {
             clientId,
             authorizationCode.getScopes(),
             refreshToken,
+            authorizationCode.getNonce(),
             issuer);
         authenticationEvents.save(new AuthenticationEvent(
             null,
@@ -294,6 +297,7 @@ public class OAuthService {
             clientId,
             storedRefreshToken.getScopes(),
             rotatedRefreshToken,
+            null,
             issuer);
         authenticationEvents.save(new AuthenticationEvent(
             null,
@@ -472,6 +476,7 @@ public class OAuthService {
         String clientId,
         String scopes,
         String refreshToken,
+        String nonce,
         String issuer
     ) {
         String accessToken = tokens.generateToken(48);
@@ -482,6 +487,7 @@ public class OAuthService {
             clientId,
             scopes,
             expiresAt,
+            nonce,
             splitValues(config.getIdTokenClaims()),
             splitEntries(config.getCustomClaims()));
         accessTokens.save(new OAuthAccessToken(
@@ -518,7 +524,7 @@ public class OAuthService {
         String normalized = issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
         return new OidcDiscoveryResponse(
             normalized,
-            normalized + "/oauth2/authorize",
+            normalized + "/oidc/authorize",
             normalized + "/oauth2/token",
             normalized + "/oauth2/userinfo",
             normalized + "/oauth2/introspect",
@@ -770,7 +776,7 @@ public class OAuthService {
         return url;
     }
 
-    private String consentRedirect(String clientId, String redirectUri, String scope, String state, String codeChallenge, String codeChallengeMethod) {
+    private String consentRedirect(String clientId, String redirectUri, String scope, String state, String nonce, String codeChallenge, String codeChallengeMethod) {
         StringBuilder target = new StringBuilder("/oauth2/consent?client_id=")
             .append(urlEncode(clientId))
             .append("&redirect_uri=")
@@ -780,6 +786,9 @@ public class OAuthService {
         }
         if (state != null && !state.isBlank()) {
             target.append("&state=").append(urlEncode(state));
+        }
+        if (nonce != null && !nonce.isBlank()) {
+            target.append("&nonce=").append(urlEncode(nonce));
         }
         if (codeChallenge != null && !codeChallenge.isBlank()) {
             target.append("&code_challenge=").append(urlEncode(codeChallenge));

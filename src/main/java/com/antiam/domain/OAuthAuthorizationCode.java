@@ -38,6 +38,7 @@ public class OAuthAuthorizationCode extends BaseEntity {
     private String scopes;
 
     private String state;
+    private String nonce;
     private String codeChallenge;
     private String codeChallengeMethod;
     private Instant expiresAt;
@@ -51,6 +52,7 @@ public class OAuthAuthorizationCode extends BaseEntity {
         String redirectUri,
         String scopes,
         String state,
+        String nonce,
         String codeChallenge,
         String codeChallengeMethod,
         Instant expiresAt
@@ -62,6 +64,7 @@ public class OAuthAuthorizationCode extends BaseEntity {
         this.redirectUri = redirectUri;
         this.scopes = scopes;
         this.state = state;
+        this.nonce = nonce;
         this.codeChallenge = codeChallenge;
         this.codeChallengeMethod = codeChallengeMethod;
         this.expiresAt = expiresAt;

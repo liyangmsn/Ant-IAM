@@ -24,10 +24,10 @@ public class SmsVerificationService {
 
     private final Map<VerificationKey, VerificationCode> codes = new ConcurrentHashMap<>();
 
-    @Value("${ant-iam.sms.blend-id:fixed-code}")
+    @Value("${iam.sms.blend-id:fixed-code}")
     private String smsBlendId;
 
-    @Value("${ant-iam.sms.code-ttl-seconds:300}")
+    @Value("${iam.sms.code-ttl-seconds:300}")
     private long codeTtlSeconds;
 
     public SendSmsCodeResponse sendVerificationCode(String mobile, String purpose) {

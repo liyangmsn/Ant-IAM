@@ -1,0 +1,212 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: iam
+  labels:
+    app.kubernetes.io/part-of: iam
+    environment: dev
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: iam-db-secret-reader
+  namespace: middleware
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["iam-db-auth"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: iam-db-secret-reader
+  namespace: middleware
+subjects:
+  - kind: ServiceAccount
+    name: pg-cluster
+    namespace: middleware
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: iam-db-secret-reader
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: iam-user
+  namespace: middleware
+spec:
+  cluster:
+    name: pg-cluster
+  name: js_iam
+  ensure: present
+  login: true
+  superuser: false
+  createdb: false
+  createrole: false
+  passwordSecret:
+    name: iam-db-auth
+  databaseRoleReclaimPolicy: retain
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: iam
+  namespace: middleware
+spec:
+  cluster:
+    name: pg-cluster
+  name: js_iam
+  owner: js_iam
+  ensure: present
+  databaseReclaimPolicy: retain
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iam-api
+  namespace: iam
+  labels:
+    app.kubernetes.io/name: iam
+    app.kubernetes.io/component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iam-api
+  template:
+    metadata:
+      labels:
+        app: iam-api
+        app.kubernetes.io/name: iam
+        app.kubernetes.io/component: api
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: worker-image-pull
+      containers:
+        - name: api
+          image: crpi-zs2zecm2bgpvuse2.cn-hangzhou.personal.cr.aliyuncs.com/worker-image/iam-api:20260923-oidc-r1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: IAM_DATASOURCE_URL
+              value: jdbc:postgresql://pg-cluster-rw.middleware.svc.cluster.local:5432/js_iam
+            - name: IAM_DATASOURCE_USERNAME
+              value: js_iam
+            - name: IAM_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: iam-runtime
+                  key: IAM_DATASOURCE_PASSWORD
+            - name: IAM_SMS_FIXED_CODE
+              valueFrom:
+                secretKeyRef:
+                  name: iam-runtime
+                  key: IAM_SMS_FIXED_CODE
+            - name: SERVER_FORWARD_HEADERS_STRATEGY
+              value: framework
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iam-api
+  namespace: iam
+spec:
+  selector:
+    app: iam-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iam-web
+  namespace: iam
+  labels:
+    app.kubernetes.io/name: iam
+    app.kubernetes.io/component: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iam-web
+  template:
+    metadata:
+      labels:
+        app: iam-web
+        app.kubernetes.io/name: iam
+        app.kubernetes.io/component: web
+    spec:
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: worker-image-pull
+      containers:
+        - name: web
+          image: crpi-zs2zecm2bgpvuse2.cn-hangzhou.personal.cr.aliyuncs.com/worker-image/iam-web:20260923-oidc-r1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iam-web
+  namespace: iam
+spec:
+  selector:
+    app: iam-web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

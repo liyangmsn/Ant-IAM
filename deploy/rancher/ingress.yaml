@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: iam
+  namespace: iam
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - iam.devs.zzjushu.com
+      secretName: iam-tls
+  rules:
+    - host: iam.devs.zzjushu.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: iam-web
+                port:
+                  number: 80

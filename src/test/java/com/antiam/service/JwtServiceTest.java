@@ -91,12 +91,30 @@ class JwtServiceTest {
         when(user.getId()).thenReturn(UUID.randomUUID());
         Instant expiresAt = Instant.now().plusSeconds(600);
 
-        String first = service.signIdToken("https://iam.example.com", user, "client-1", "openid", expiresAt, Set.of(), Map.of());
-        String second = service.signIdToken("https://iam.example.com", user, "client-1", "openid", expiresAt, Set.of(), Map.of());
+        String first = service.signIdToken("https://iam.example.com", user, "client-1", "openid", expiresAt, null, Set.of(), Map.of());
+        String second = service.signIdToken("https://iam.example.com", user, "client-1", "openid", expiresAt, null, Set.of(), Map.of());
 
         assertThat(first).isNotEqualTo(second);
         assertThat(service.verify(first).claims()).containsKey("jti");
         assertThat(service.verify(second).claims()).containsKey("jti");
+    }
+
+    @Test
+    void returnsAuthorizationNonceInIdToken() {
+        UserAccount user = mock(UserAccount.class);
+        when(user.getId()).thenReturn(UUID.randomUUID());
+
+        String token = service.signIdToken(
+            "https://iam.example.com",
+            user,
+            "client-1",
+            "openid",
+            Instant.now().plusSeconds(600),
+            "client-nonce-1",
+            Set.of(),
+            Map.of());
+
+        assertThat(service.verify(token).claims()).containsEntry("nonce", "client-nonce-1");
     }
 
     @Test

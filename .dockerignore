@@ -4,6 +4,8 @@
 .idea
 .mvn
 *.iml
+**/node_modules
+**/dist
 
 target/*
 !target/ant-iam-0.1.0-SNAPSHOT.jar

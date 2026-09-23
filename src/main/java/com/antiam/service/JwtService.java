@@ -53,6 +53,7 @@ public class JwtService {
         String clientId,
         String scopes,
         Instant expiresAt,
+        String nonce,
         Set<String> idTokenClaims,
         Map<String, String> customClaims
     ) {
@@ -69,6 +70,9 @@ public class JwtService {
             json("jti", UUID.randomUUID().toString()),
             json("iat", now),
             json("exp", expiresAt.getEpochSecond())));
+        if (nonce != null) {
+            fields.add(json("nonce", nonce));
+        }
         claimNames(idTokenClaims).forEach(claim -> addClaim(fields, claim, user, scopes));
         if (customClaims != null) {
             customClaims.forEach((name, value) -> {

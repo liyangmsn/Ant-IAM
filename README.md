@@ -56,7 +56,7 @@ For a one-page project brief, see [docs/project-brief.md](docs/project-brief.md)
 - MFA challenges with search/profiles and recovery codes: `/api/v1/users/{userId}/mfa-challenges`, `/api/v1/users/mfa-challenges`, `/api/v1/users/{userId}/mfa-recovery-codes`, `/api/v1/users/mfa-challenge-verifications`
 - SCIM 2.0 users, groups and organizations with list/create/profile endpoints plus filter and pagination support: `/scim/v2/Users`, `/scim/v2/Groups`, `/scim/v2/Organizations`
 - SCIM 2.0 discovery: `/scim/v2/ServiceProviderConfig`, `/scim/v2/ResourceTypes`, `/scim/v2/Schemas`
-- OAuth2 authorization endpoint: `/oauth2/authorize`
+- OIDC browser authorization entry: `/oidc/authorize`; Bearer-protected authorization API: `/oauth2/authorize`
 - OAuth2 token endpoint: `/oauth2/token`
 - OIDC discovery and userinfo: `/.well-known/openid-configuration`, `/oauth2/userinfo`
 - OIDC JWKS and RS256 ID token signing: `/oauth2/jwks`

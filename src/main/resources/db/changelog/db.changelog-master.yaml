@@ -63,3 +63,5 @@ databaseChangeLog:
       file: db/changelog/031-user-third-party-binding-schema.sql
   - include:
       file: db/changelog/032-authentication-event-method-schema.sql
+  - include:
+      file: db/changelog/033-oauth2-authorization-nonce-schema.sql

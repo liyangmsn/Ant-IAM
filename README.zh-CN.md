@@ -56,7 +56,7 @@ Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS
 - MFA 挑战支持检索/详情，恢复码支持生成：`/api/v1/users/{userId}/mfa-challenges`、`/api/v1/users/mfa-challenges`、`/api/v1/users/{userId}/mfa-recovery-codes`、`/api/v1/users/mfa-challenge-verifications`
 - SCIM 2.0 用户、用户组和组织，支持列表、创建、详情、过滤和分页：`/scim/v2/Users`、`/scim/v2/Groups`、`/scim/v2/Organizations`
 - SCIM 2.0 发现接口：`/scim/v2/ServiceProviderConfig`、`/scim/v2/ResourceTypes`、`/scim/v2/Schemas`
-- OAuth2 授权端点：`/oauth2/authorize`
+- OIDC 浏览器授权入口：`/oidc/authorize`；Bearer 保护的授权 API：`/oauth2/authorize`
 - OAuth2 token 端点：`/oauth2/token`
 - OIDC discovery 和 userinfo：`/.well-known/openid-configuration`、`/oauth2/userinfo`
 - OIDC JWKS 和 RS256 ID token 签名：`/oauth2/jwks`
