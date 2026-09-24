@@ -189,7 +189,7 @@ Identity source connector configuration can import directory data from JSON. Din
 }
 ```
 
-DingTalk connectors can use Open Platform credentials to import departments and department users:
+DingTalk connectors can use Open Platform credentials to import departments, department users, and role groups with their members:
 
 ```json
 {
@@ -200,7 +200,7 @@ DingTalk connectors can use Open Platform credentials to import departments and 
 }
 ```
 
-The DingTalk app must have contact department and member read permissions. The connector prefers the official DingTalk Java SDK for `oapi` contact APIs; set `endpoint` only for private deployments or API gateways.
+The DingTalk app must have contact department, member, role-list, and role-member read permissions. The connector prefers the official DingTalk Java SDK for `oapi` contact APIs; set `endpoint` only for private deployments or API gateways.
 
 Feishu connectors can use app credentials to import departments and department users:
 
@@ -239,7 +239,7 @@ curl -H 'Content-Type: application/json' \
   http://localhost:8080/api/v1/authentication/third-party/wechat/callback
 ```
 
-WeChat, QQ, Feishu and DingTalk authentication providers use `appId`, `appSecret` and `redirectUri`. Feishu login prefers the official Feishu Java SDK `authen/v1` APIs, and DingTalk login prefers the official DingTalk Java SDK `sns/getuserinfo_bycode` API. WeChat and QQ use their official OAuth endpoints directly. Optional fields include `scope`, `usernameClaim`, `usernamePrefix`, `autoCreateUser`, `sessionTtlMinutes`, `stateTtlSeconds` and platform endpoint overrides.
+WeChat, QQ, Feishu and DingTalk authentication providers use `appId`, `appSecret` and `redirectUri`. Feishu login prefers the official Feishu Java SDK `authen/v1` APIs, and DingTalk login uses the current OAuth 2.0 authorization, user access token and `/v1.0/contact/users/me` APIs. WeChat and QQ use their official OAuth endpoints directly. Optional fields include `scope`, `usernameClaim`, `usernamePrefix`, `autoCreateUser`, `sessionTtlMinutes`, `stateTtlSeconds` and platform endpoint overrides.
 
 ## Roadmap
 

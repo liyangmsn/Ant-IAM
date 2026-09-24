@@ -5,7 +5,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.antiam.domain.IdentitySource;
 import com.antiam.domain.IdentitySourceConnector;
 import com.antiam.domain.IdentitySourceType;
+import com.dingtalk.api.response.OapiRoleListResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.lark.oapi.service.contact.v3.model.Group;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 class IdentitySourceConnectorAdapterTest {
@@ -45,6 +48,28 @@ class IdentitySourceConnectorAdapterTest {
     }
 
     @Test
+    void dingtalkIncludesTheConfiguredRootDepartment() throws Exception {
+        DingtalkIdentitySourceConnectorAdapter adapter = new DingtalkIdentitySourceConnectorAdapter(objectMapper, jsonAdapter);
+        IdentitySource source = source(IdentitySourceType.DINGTALK);
+
+        DirectoryOrganization root = adapter.rootOrganization(source, objectMapper.readTree("{\"rootDeptName\":\"Develop Team\"}"), 1L);
+
+        assertThat(root).isEqualTo(new DirectoryOrganization("dingtalk:1", "Develop Team", null));
+        assertThat(adapter.rootDepartmentCode(1L)).isEqualTo(root.code());
+    }
+
+    @Test
+    void dingtalkMapsRoleGroupsToUserGroups() {
+        DingtalkIdentitySourceConnectorAdapter adapter = new DingtalkIdentitySourceConnectorAdapter(objectMapper, jsonAdapter);
+        OapiRoleListResponse.OpenRoleGroup group = new OapiRoleListResponse.OpenRoleGroup();
+        group.setGroupId(42L);
+        group.setName("Engineering");
+
+        assertThat(adapter.toDirectoryGroup(group, List.of("manager1830")))
+            .isEqualTo(new DirectoryGroup("dingtalk:role-group:42", "Engineering", List.of("manager1830")));
+    }
+
+    @Test
     void feishuCanUseEmbeddedPayloadForLocalDryRuns() {
         FeishuIdentitySourceConnectorAdapter adapter = new FeishuIdentitySourceConnectorAdapter(objectMapper, jsonAdapter);
         DirectorySyncPayload payload = adapter.load(
@@ -58,6 +83,28 @@ class IdentitySourceConnectorAdapterTest {
                 """));
 
         assertThat(payload.organizations()).extracting(DirectoryOrganization::code).containsExactly("fs-product");
+    }
+
+    @Test
+    void feishuIncludesTheConfiguredRootDepartment() throws Exception {
+        FeishuIdentitySourceConnectorAdapter adapter = new FeishuIdentitySourceConnectorAdapter(objectMapper, jsonAdapter);
+        IdentitySource source = source(IdentitySourceType.FEISHU);
+
+        DirectoryOrganization root = adapter.rootOrganization(source, objectMapper.readTree("{\"rootDepartmentName\":\"Feishu Team\"}"), "0");
+
+        assertThat(root).isEqualTo(new DirectoryOrganization("feishu:0", "Feishu Team", null));
+        assertThat(adapter.rootDepartmentCode("0")).isEqualTo(root.code());
+    }
+
+    @Test
+    void feishuMapsUserGroupMembers() {
+        FeishuIdentitySourceConnectorAdapter adapter = new FeishuIdentitySourceConnectorAdapter(objectMapper, jsonAdapter);
+        Group group = new Group();
+        group.setId("ug-1");
+        group.setName("Engineering");
+
+        assertThat(adapter.toDirectoryGroup(group, List.of("user-1")))
+            .isEqualTo(new DirectoryGroup("feishu:group:ug-1", "Engineering", List.of("user-1")));
     }
 
     private IdentitySource source(IdentitySourceType type) {

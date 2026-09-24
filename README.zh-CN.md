@@ -239,7 +239,7 @@ curl -H 'Content-Type: application/json' \
   http://localhost:8080/api/v1/authentication/third-party/wechat/callback
 ```
 
-微信、QQ、飞书、钉钉认证源配置统一使用 `appId`、`appSecret`、`redirectUri`。飞书登录优先使用飞书官方 Java SDK 的 `authen/v1` 能力，钉钉登录优先使用钉钉官方 Java SDK 的 `sns/getuserinfo_bycode` 能力；微信和 QQ 当前使用官方 OAuth 接口直连。可选字段包括 `scope`、`usernameClaim`、`usernamePrefix`、`autoCreateUser`、`sessionTtlMinutes`、`stateTtlSeconds` 和各平台 endpoint 覆盖项。
+微信、QQ、飞书、钉钉认证源配置统一使用 `appId`、`appSecret`、`redirectUri`。飞书登录优先使用飞书官方 Java SDK 的 `authen/v1` 能力，钉钉登录使用当前 OAuth 2.0 授权、用户访问令牌和 `/v1.0/contact/users/me` 接口；微信和 QQ 当前使用官方 OAuth 接口直连。可选字段包括 `scope`、`usernameClaim`、`usernamePrefix`、`autoCreateUser`、`sessionTtlMinutes`、`stateTtlSeconds` 和各平台 endpoint 覆盖项。
 
 ## 路线图
 

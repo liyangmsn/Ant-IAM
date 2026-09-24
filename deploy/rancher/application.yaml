@@ -87,7 +87,7 @@ spec:
         - name: worker-image-pull
       containers:
         - name: api
-          image: crpi-zs2zecm2bgpvuse2.cn-hangzhou.personal.cr.aliyuncs.com/worker-image/iam-api:20260923-oidc-r1
+          image: crpi-zs2zecm2bgpvuse2.cn-hangzhou.personal.cr.aliyuncs.com/worker-image/iam-api:20260924-login-dingtalk-r2
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -173,7 +173,7 @@ spec:
         - name: worker-image-pull
       containers:
         - name: web
-          image: crpi-zs2zecm2bgpvuse2.cn-hangzhou.personal.cr.aliyuncs.com/worker-image/iam-web:20260923-oidc-r1
+          image: crpi-zs2zecm2bgpvuse2.cn-hangzhou.personal.cr.aliyuncs.com/worker-image/iam-web:20260924-login-dingtalk-r2
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

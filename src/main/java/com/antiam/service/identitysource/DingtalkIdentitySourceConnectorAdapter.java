@@ -5,10 +5,14 @@ import com.antiam.domain.IdentitySourceConnector;
 import com.antiam.domain.IdentitySourceType;
 import com.dingtalk.api.DefaultDingTalkClient;
 import com.dingtalk.api.request.OapiGettokenRequest;
+import com.dingtalk.api.request.OapiRoleListRequest;
+import com.dingtalk.api.request.OapiRoleSimplelistRequest;
 import com.dingtalk.api.request.OapiUserListsimpleRequest;
 import com.dingtalk.api.request.OapiV2DepartmentListsubRequest;
 import com.dingtalk.api.request.OapiV2UserGetRequest;
 import com.dingtalk.api.response.OapiGettokenResponse;
+import com.dingtalk.api.response.OapiRoleListResponse;
+import com.dingtalk.api.response.OapiRoleSimplelistResponse;
 import com.dingtalk.api.response.OapiUserListsimpleResponse;
 import com.dingtalk.api.response.OapiV2DepartmentListsubResponse;
 import com.dingtalk.api.response.OapiV2UserGetResponse;
@@ -49,7 +53,7 @@ public class DingtalkIdentitySourceConnectorAdapter implements IdentitySourceCon
         if (accessToken == null) {
             accessToken = fetchAccessToken(config);
         }
-        return fetchDirectory(config, accessToken);
+        return fetchDirectory(source, config, accessToken);
     }
 
     private String fetchAccessToken(JsonNode config) {
@@ -66,13 +70,14 @@ public class DingtalkIdentitySourceConnectorAdapter implements IdentitySourceCon
         }
     }
 
-    private DirectorySyncPayload fetchDirectory(JsonNode config, String accessToken) {
+    private DirectorySyncPayload fetchDirectory(IdentitySource source, JsonNode config, String accessToken) {
         List<DirectoryOrganization> organizations = new ArrayList<>();
         List<DirectoryUser> users = new ArrayList<>();
         Queue<DepartmentRef> queue = new ArrayDeque<>();
         Set<Long> visited = new LinkedHashSet<>();
         long rootDeptId = config.path("rootDeptId").asLong(1L);
-        queue.add(new DepartmentRef(rootDeptId, null));
+        organizations.add(rootOrganization(source, config, rootDeptId));
+        queue.add(new DepartmentRef(rootDeptId, rootDepartmentCode(rootDeptId)));
         while (!queue.isEmpty()) {
             DepartmentRef current = queue.remove();
             if (!visited.add(current.id())) {
@@ -86,7 +91,100 @@ public class DingtalkIdentitySourceConnectorAdapter implements IdentitySourceCon
             }
             users.addAll(fetchUsers(config, accessToken, current.id(), shouldFetchUserDetail(config)));
         }
-        return new DirectorySyncPayload(organizations, users, List.of());
+        return new DirectorySyncPayload(organizations, users, fetchRoleGroups(config, accessToken));
+    }
+
+    DirectoryOrganization rootOrganization(IdentitySource source, JsonNode config, long rootDeptId) {
+        return new DirectoryOrganization(
+            rootDepartmentCode(rootDeptId),
+            textOrDefault(config, "rootDeptName", defaultString(source.getName(), "DingTalk")),
+            null);
+    }
+
+    String rootDepartmentCode(long rootDeptId) {
+        return "dingtalk:" + rootDeptId;
+    }
+
+    String roleGroupCode(long groupId) {
+        return "dingtalk:role-group:" + groupId;
+    }
+
+    DirectoryGroup toDirectoryGroup(OapiRoleListResponse.OpenRoleGroup group, List<String> members) {
+        String code = roleGroupCode(required(group.getGroupId(), "roleGroup.groupId"));
+        return new DirectoryGroup(code, defaultString(group.getName(), code), members);
+    }
+
+    private List<DirectoryGroup> fetchRoleGroups(JsonNode config, String accessToken) {
+        List<DirectoryGroup> values = new ArrayList<>();
+        long offset = 0L;
+        boolean hasMore;
+        do {
+            OapiRoleListResponse.PageVo page = fetchRoleGroupPage(config, accessToken, offset);
+            List<OapiRoleListResponse.OpenRoleGroup> groups = page.getList() == null ? List.of() : page.getList();
+            for (OapiRoleListResponse.OpenRoleGroup group : groups) {
+                Set<String> members = new LinkedHashSet<>();
+                List<OapiRoleListResponse.OpenRole> roles = group.getRoles() == null ? List.of() : group.getRoles();
+                for (OapiRoleListResponse.OpenRole role : roles) {
+                    members.addAll(fetchRoleMembers(config, accessToken, required(role.getId(), "role.id")));
+                }
+                values.add(toDirectoryGroup(group, List.copyOf(members)));
+            }
+            hasMore = Boolean.TRUE.equals(page.getHasMore());
+            offset = page.getNextCursor() == null ? offset + groups.size() : page.getNextCursor();
+        } while (hasMore);
+        return values;
+    }
+
+    private OapiRoleListResponse.PageVo fetchRoleGroupPage(JsonNode config, String accessToken, long offset) {
+        try {
+            OapiRoleListRequest request = new OapiRoleListRequest();
+            request.setOffset(offset);
+            request.setSize(100L);
+            OapiRoleListResponse response = new DefaultDingTalkClient(endpoint(config) + "/topapi/role/list")
+                .execute(request, accessToken);
+            assertSuccess(response);
+            return response.getResult() == null ? new OapiRoleListResponse.PageVo() : response.getResult();
+        } catch (ApiException ex) {
+            throw new IllegalStateException("DingTalk connector role group request failed: " + ex.getMessage(), ex);
+        }
+    }
+
+    private List<String> fetchRoleMembers(JsonNode config, String accessToken, long roleId) {
+        List<String> values = new ArrayList<>();
+        long offset = 0L;
+        boolean hasMore;
+        do {
+            OapiRoleSimplelistResponse.PageVo page = fetchRoleMemberPage(config, accessToken, roleId, offset);
+            List<OapiRoleSimplelistResponse.OpenEmpSimple> members = page.getList() == null ? List.of() : page.getList();
+            for (OapiRoleSimplelistResponse.OpenEmpSimple member : members) {
+                if (member.getUserid() != null && !member.getUserid().isBlank()) {
+                    values.add(member.getUserid());
+                }
+            }
+            hasMore = Boolean.TRUE.equals(page.getHasMore());
+            offset = page.getNextCursor() == null ? offset + members.size() : page.getNextCursor();
+        } while (hasMore);
+        return values;
+    }
+
+    private OapiRoleSimplelistResponse.PageVo fetchRoleMemberPage(
+        JsonNode config,
+        String accessToken,
+        long roleId,
+        long offset
+    ) {
+        try {
+            OapiRoleSimplelistRequest request = new OapiRoleSimplelistRequest();
+            request.setRoleId(roleId);
+            request.setOffset(offset);
+            request.setSize(100L);
+            OapiRoleSimplelistResponse response = new DefaultDingTalkClient(endpoint(config) + "/topapi/role/simplelist")
+                .execute(request, accessToken);
+            assertSuccess(response);
+            return response.getResult() == null ? new OapiRoleSimplelistResponse.PageVo() : response.getResult();
+        } catch (ApiException ex) {
+            throw new IllegalStateException("DingTalk connector role member request failed: " + ex.getMessage(), ex);
+        }
     }
 
     private List<OapiV2DepartmentListsubResponse.DeptBaseResponse> fetchDepartments(JsonNode config, String accessToken, long deptId) {
@@ -216,6 +314,20 @@ public class DingtalkIdentitySourceConnectorAdapter implements IdentitySourceCon
         }
     }
 
+    private void assertSuccess(OapiRoleListResponse response) {
+        if (response == null || !response.isSuccess()) {
+            String message = response == null ? "empty response" : defaultString(response.getErrmsg(), "unknown error");
+            throw new IllegalStateException("DingTalk connector request failed: " + message);
+        }
+    }
+
+    private void assertSuccess(OapiRoleSimplelistResponse response) {
+        if (response == null || !response.isSuccess()) {
+            String message = response == null ? "empty response" : defaultString(response.getErrmsg(), "unknown error");
+            throw new IllegalStateException("DingTalk connector request failed: " + message);
+        }
+    }
+
     private String required(JsonNode node, String field) {
         String value = text(node, field);
         if (value == null) {
@@ -240,6 +352,13 @@ public class DingtalkIdentitySourceConnectorAdapter implements IdentitySourceCon
 
     private String required(String value, String field) {
         if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("DingTalk connector field is required: " + field);
+        }
+        return value;
+    }
+
+    private long required(Long value, String field) {
+        if (value == null) {
             throw new IllegalArgumentException("DingTalk connector field is required: " + field);
         }
         return value;
