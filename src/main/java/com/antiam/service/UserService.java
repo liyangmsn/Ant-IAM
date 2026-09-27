@@ -791,6 +791,7 @@ public class UserService {
     private UserResponse toResponse(UserAccount user) {
         UUID organizationId = user.getOrganization() == null ? null : user.getOrganization().getId();
         String identitySourceType = user.getIdentitySource() == null ? null : user.getIdentitySource().getType().name();
+        String identitySourceName = user.getIdentitySource() == null ? null : user.getIdentitySource().getName();
         UUID tenantId = user.getTenant() == null ? null : user.getTenant().getId();
         Set<String> groupCodes = user.getGroups().stream().map(UserGroup::getCode).collect(java.util.stream.Collectors.toSet());
         Set<String> roleCodes = user.getRoles().stream().map(Role::getCode).collect(java.util.stream.Collectors.toSet());
@@ -804,6 +805,7 @@ public class UserService {
             tenantId,
             organizationId,
             identitySourceType,
+            identitySourceName,
             groupCodes,
             roleCodes);
     }
