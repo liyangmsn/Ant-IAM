@@ -377,6 +377,7 @@ public class IdentitySourceService {
         users.findByUsername(required(item.username(), "user.username"))
             .map(existing -> {
                 existing.updateProfile(displayName(item), item.email(), item.mobile(), organization);
+                existing.assignIdentitySource(source);
                 counters.usersUpdated++;
                 return existing;
             })
@@ -388,7 +389,8 @@ public class IdentitySourceService {
                     item.email(),
                     item.mobile(),
                     source.getTenant(),
-                    organization));
+                    organization,
+                    source));
             });
     }
 

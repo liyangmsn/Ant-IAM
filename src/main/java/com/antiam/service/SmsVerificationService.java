@@ -20,7 +20,7 @@ import org.springframework.stereotype.Service;
 public class SmsVerificationService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final Pattern VERIFICATION_CODE_PATTERN = Pattern.compile("\\d{4,8}");
+    private static final Pattern VERIFICATION_CODE_PATTERN = Pattern.compile("\\d{4,32}");
 
     private final Map<VerificationKey, VerificationCode> codes = new ConcurrentHashMap<>();
 

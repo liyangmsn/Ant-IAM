@@ -22,4 +22,13 @@ class AuthenticationProviderControllerTest {
 
         verify(providers).delete(providerId, "admin");
     }
+
+    @Test
+    void hidesAuthenticationProviderWithoutUpdatingConfiguration() {
+        UUID providerId = UUID.randomUUID();
+
+        controller.hide(providerId, principal);
+
+        verify(providers).setVisible(providerId, false, "admin");
+    }
 }

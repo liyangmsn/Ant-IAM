@@ -2,6 +2,7 @@ package com.antiam.service;
 
 import static com.antiam.dto.AuthenticationProviderDtos.AuthenticationProviderResponse;
 import static com.antiam.dto.AuthenticationProviderDtos.CreateAuthenticationProviderRequest;
+import static com.antiam.dto.AuthenticationProviderDtos.PublicAuthenticationProviderResponse;
 import static com.antiam.dto.AuthenticationProviderDtos.UpdateAuthenticationProviderRequest;
 
 import com.antiam.common.NotFoundException;
@@ -50,6 +51,15 @@ public class AuthenticationProviderService {
     }
 
     @Transactional(readOnly = true)
+    public List<PublicAuthenticationProviderResponse> publicList() {
+        return providers.findAll().stream()
+            .filter(provider -> provider.isVisible() && provider.isEnabled())
+            .filter(this::supportsPublicLogin)
+            .map(provider -> new PublicAuthenticationProviderResponse(provider.getProviderKey()))
+            .toList();
+    }
+
+    @Transactional(readOnly = true)
     public AuthenticationProviderResponse get(UUID providerId) {
         return toResponse(getEntity(providerId));
     }
@@ -81,6 +91,14 @@ public class AuthenticationProviderService {
         AuthenticationProvider provider = getEntity(providerId);
         provider.disable();
         auditService.record(actor, "authentication_provider.disable", "authentication_provider", providerId.toString(), provider.getProviderKey());
+        return toResponse(provider);
+    }
+
+    @Transactional
+    public AuthenticationProviderResponse setVisible(UUID providerId, boolean visible, String actor) {
+        AuthenticationProvider provider = getEntity(providerId);
+        provider.setVisible(visible);
+        auditService.record(actor, visible ? "authentication_provider.show" : "authentication_provider.hide", "authentication_provider", providerId.toString(), provider.getProviderKey());
         return toResponse(provider);
     }
 
@@ -133,6 +151,14 @@ public class AuthenticationProviderService {
             || contains(provider.getDescription(), keyword)
             || provider.getProvider().name().toLowerCase().contains(keyword)
             || provider.getType().name().toLowerCase().contains(keyword);
+    }
+
+    private boolean supportsPublicLogin(AuthenticationProvider provider) {
+        return provider.getProvider() == AuthenticationProviderKind.WECHAT
+            || provider.getProvider() == AuthenticationProviderKind.WECHAT_WORK
+            || provider.getProvider() == AuthenticationProviderKind.QQ
+            || provider.getProvider() == AuthenticationProviderKind.FEISHU
+            || provider.getProvider() == AuthenticationProviderKind.DINGTALK;
     }
 
     private boolean contains(String value, String keyword) {

@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
 
 class IdentitySourceRealtimeSyncTest {
@@ -82,7 +83,9 @@ class IdentitySourceRealtimeSyncTest {
         assertThat(result.organizationsCreated()).isEqualTo(1);
         assertThat(result.usersCreated()).isEqualTo(1);
         verify(organizations).save(any(Organization.class));
-        verify(users).save(any(UserAccount.class));
+        ArgumentCaptor<UserAccount> userCaptor = ArgumentCaptor.forClass(UserAccount.class);
+        verify(users).save(userCaptor.capture());
+        assertThat(userCaptor.getValue().getIdentitySource()).isSameAs(source);
         verify(auditService).record(any(), any(), any(), any(), any());
     }
 

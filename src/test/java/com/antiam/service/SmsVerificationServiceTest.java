@@ -37,6 +37,15 @@ class SmsVerificationServiceTest {
     }
 
     @Test
+    void verifiesLongCodeReturnedByFixedCodeSms4jChannel() {
+        SmsVerificationService service = serviceWithFixedCode("123456789012");
+
+        service.sendVerificationCode("13800000000", "LOGIN");
+
+        service.verify("13800000000", "LOGIN", "123456789012");
+    }
+
+    @Test
     void consumesVerificationCodeAfterSuccessfulVerification() {
         SmsVerificationService service = serviceWithFixedCode("666666");
 

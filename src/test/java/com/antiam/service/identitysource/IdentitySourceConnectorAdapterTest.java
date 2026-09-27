@@ -5,10 +5,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.antiam.domain.IdentitySource;
 import com.antiam.domain.IdentitySourceConnector;
 import com.antiam.domain.IdentitySourceType;
+import com.antiam.service.wechatwork.WechatWorkClient;
 import com.dingtalk.api.response.OapiRoleListResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.lark.oapi.service.contact.v3.model.Group;
 import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class IdentitySourceConnectorAdapterTest {
@@ -105,6 +107,58 @@ class IdentitySourceConnectorAdapterTest {
 
         assertThat(adapter.toDirectoryGroup(group, List.of("user-1")))
             .isEqualTo(new DirectoryGroup("feishu:group:ug-1", "Engineering", List.of("user-1")));
+    }
+
+    @Test
+    void wechatWorkOrdersDepartmentsParentFirstUnderTheRoot() throws Exception {
+        WechatWorkIdentitySourceConnectorAdapter adapter = new WechatWorkIdentitySourceConnectorAdapter(objectMapper, jsonAdapter, new WechatWorkClient(objectMapper));
+
+        List<DirectoryOrganization> organizations = adapter.toOrganizations(
+            source(IdentitySourceType.WECHAT_WORK),
+            objectMapper.readTree("{}"),
+            1L,
+            List.of(
+                new WechatWorkIdentitySourceConnectorAdapter.WechatWorkDepartment(3L, 2L, "Backend"),
+                new WechatWorkIdentitySourceConnectorAdapter.WechatWorkDepartment(1L, 0L, "Ant Corp"),
+                new WechatWorkIdentitySourceConnectorAdapter.WechatWorkDepartment(2L, 1L, "R&D")));
+
+        assertThat(organizations).containsExactly(
+            new DirectoryOrganization("wechat-work:1", "Ant Corp", null),
+            new DirectoryOrganization("wechat-work:2", "R&D", "wechat-work:1"),
+            new DirectoryOrganization("wechat-work:3", "Backend", "wechat-work:2"));
+    }
+
+    @Test
+    void wechatWorkUserUsesMainDepartmentAndBizMailFallback() throws Exception {
+        WechatWorkIdentitySourceConnectorAdapter adapter = new WechatWorkIdentitySourceConnectorAdapter(objectMapper, jsonAdapter, new WechatWorkClient(objectMapper));
+
+        DirectoryUser user = adapter.toDirectoryUser(objectMapper.readTree("""
+            {"userid":"zhangsan","name":"张三","department":[2,3],"main_department":3,"biz_mail":"zs@corp.com","mobile":"13800000000"}
+            """), Set.of(1L, 2L, 3L), 1L);
+
+        assertThat(user).isEqualTo(new DirectoryUser("zhangsan", "张三", "zs@corp.com", "13800000000", "wechat-work:3"));
+    }
+
+    @Test
+    void wechatWorkMapsTagsToUserGroups() {
+        WechatWorkIdentitySourceConnectorAdapter adapter = new WechatWorkIdentitySourceConnectorAdapter(objectMapper, jsonAdapter, new WechatWorkClient(objectMapper));
+
+        assertThat(adapter.toDirectoryGroup(7L, "Admins", List.of("zhangsan")))
+            .isEqualTo(new DirectoryGroup("wechat-work:tag:7", "Admins", List.of("zhangsan")));
+    }
+
+    @Test
+    void wechatWorkMapsTagDepartmentsToSyncedUsers() throws Exception {
+        WechatWorkIdentitySourceConnectorAdapter adapter = new WechatWorkIdentitySourceConnectorAdapter(objectMapper, jsonAdapter, new WechatWorkClient(objectMapper));
+
+        assertThat(adapter.tagMembers(
+            objectMapper.readTree("""
+                {"userlist":[{"userid":"zhangsan"}],"partylist":[2]}
+                """),
+            List.of(
+                new DirectoryUser("zhangsan", "张三", null, null, "wechat-work:1"),
+                new DirectoryUser("lisi", "李四", null, null, "wechat-work:2"))))
+            .containsExactly("zhangsan", "lisi");
     }
 
     private IdentitySource source(IdentitySourceType type) {

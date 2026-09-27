@@ -215,17 +215,18 @@ Feishu connectors can use app credentials to import departments and department u
 
 The Feishu app must have contact department and user read permissions. The connector prefers the official Feishu Java SDK for `contact/v3` department children and department user APIs, and follows `has_more` / `page_token` pagination; set `endpoint` only for private deployments or API gateways.
 
-WeCom identity sources can use the corporate ID and contact secret to import departments and users:
+WeCom identity sources can use the corporate ID and a self-built app secret to import departments, members, and tags (as user groups):
 
 ```json
 {
   "corpId": "wwxxxxxxxx",
-  "corpSecret": "wechat-work-contact-secret",
-  "rootDeptId": 1
+  "corpSecret": "wechat-work-app-secret",
+  "rootDeptId": 1,
+  "syncTags": true
 }
 ```
 
-The WeCom app must have contact department and member read permissions. The connector calls the official WeCom contact APIs directly; set `endpoint` only for private deployments or API gateways. Sync jobs with `cronExpression` are executed by the background scheduler. By default it scans due jobs every 60 seconds; tune it with the `ant-iam.identity-sync.scheduler-delay-ms` property.
+The WeCom app's visibility scope decides which departments and members can be read, and the server egress IP must be in the app's trusted IP list. The connector caches `access_token`, imports departments parent-first, deduplicates members across departments using `main_department`, and falls back to `department/simplelist` + `user/list_id` when `department/list` / `user/list` are restricted for newer apps. Set `endpoint` only for private deployments or API gateways. Sync jobs with `cronExpression` are executed by the background scheduler. By default it scans due jobs every 60 seconds; tune it with the `ant-iam.identity-sync.scheduler-delay-ms` property.
 
 Third-party login uses public authorization and callback endpoints. The callback should send back the signed `state` returned by `authorize`:
 
@@ -239,7 +240,7 @@ curl -H 'Content-Type: application/json' \
   http://localhost:8080/api/v1/authentication/third-party/wechat/callback
 ```
 
-WeChat, QQ, Feishu and DingTalk authentication providers use `appId`, `appSecret` and `redirectUri`. Feishu login prefers the official Feishu Java SDK `authen/v1` APIs, and DingTalk login uses the current OAuth 2.0 authorization, user access token and `/v1.0/contact/users/me` APIs. WeChat and QQ use their official OAuth endpoints directly. Optional fields include `scope`, `usernameClaim`, `usernamePrefix`, `autoCreateUser`, `sessionTtlMinutes`, `stateTtlSeconds` and platform endpoint overrides.
+WeChat, QQ, Feishu and DingTalk authentication providers use `appId`, `appSecret` and `redirectUri`. WeCom providers use the CorpID as `appId`, the self-built app secret as `appSecret`, plus `agentId`; `loginMode` is `qrcode` (web QR login, default) or `oauth` (in-app OAuth2). WeCom login only accepts enterprise members, uses the WeCom `userid` as the subject, so with `usernamePrefix: ""` it maps to users imported by the WeCom identity source. The redirect URI host must be configured as the app's trusted/authorized callback domain. Feishu login prefers the official Feishu Java SDK `authen/v1` APIs, and DingTalk login uses the current OAuth 2.0 authorization, user access token and `/v1.0/contact/users/me` APIs. WeChat and QQ use their official OAuth endpoints directly. Optional fields include `scope`, `usernameClaim`, `usernamePrefix`, `autoCreateUser`, `sessionTtlMinutes`, `stateTtlSeconds` and platform endpoint overrides.
 
 ## Roadmap
 

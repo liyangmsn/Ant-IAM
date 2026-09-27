@@ -216,6 +216,7 @@ public final class UserDtos {
         AccountStatus status,
         UUID tenantId,
         UUID organizationId,
+        String identitySourceType,
         Set<String> groups,
         Set<String> roles
     ) {

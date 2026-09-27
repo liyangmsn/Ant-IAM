@@ -62,4 +62,9 @@ public final class AuthenticationProviderDtos {
         Instant updatedAt
     ) {
     }
+
+    public record PublicAuthenticationProviderResponse(
+        String providerKey
+    ) {
+    }
 }

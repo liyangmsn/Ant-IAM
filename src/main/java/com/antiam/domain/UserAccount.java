@@ -37,6 +37,10 @@ public class UserAccount extends BaseEntity {
     @JoinColumn(name = "organization_id")
     private Organization organization;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "identity_source_id")
+    private IdentitySource identitySource;
+
     @ManyToMany
     @JoinTable(
         name = "user_group_members",
@@ -68,12 +72,29 @@ public class UserAccount extends BaseEntity {
         this.status = AccountStatus.ACTIVE;
     }
 
+    public UserAccount(
+        String username,
+        String displayName,
+        String email,
+        String mobile,
+        Tenant tenant,
+        Organization organization,
+        IdentitySource identitySource
+    ) {
+        this(username, displayName, email, mobile, tenant, organization);
+        this.identitySource = identitySource;
+    }
+
     public void join(UserGroup group) {
         groups.add(group);
     }
 
     public void leave(UserGroup group) {
         groups.remove(group);
+    }
+
+    public void assignIdentitySource(IdentitySource identitySource) {
+        this.identitySource = identitySource;
     }
 
     public void grant(Role role) {

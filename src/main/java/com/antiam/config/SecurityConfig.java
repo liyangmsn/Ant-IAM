@@ -40,6 +40,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/v1/synchronizer/event_receive/*").permitAll()
                 .requestMatchers(HttpMethod.GET, "/oauth2/userinfo").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/catalog").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/authentication-providers/public").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/authentication/third-party/*/authorize").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/authentication/third-party/*/callback").permitAll()
                 .anyRequest().authenticated())
