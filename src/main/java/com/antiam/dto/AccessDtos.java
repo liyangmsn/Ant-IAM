@@ -345,6 +345,7 @@ public final class AccessDtos {
         String samlAcsUrl,
         String casServiceUrl,
         String jwtAudience,
+        String formLoginTemplate,
         Set<String> idTokenClaims,
         Map<String, String> customClaims,
         boolean enabled

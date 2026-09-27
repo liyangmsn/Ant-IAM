@@ -105,4 +105,36 @@ class OAuthServiceTest {
         assertThat(response.consentRequired()).isTrue();
         assertThat(response.redirectTo()).contains("nonce=client-nonce-1");
     }
+
+    @Test
+    void allowsAuthorizationWithoutPkceWhenClientDoesNotRequireIt() {
+        Application application = mock(Application.class);
+        ApplicationSsoConfig config = mock(ApplicationSsoConfig.class);
+        UserAccount user = mock(UserAccount.class);
+        UUID userId = UUID.randomUUID();
+        when(ssoConfigs.findByClientId("client-1")).thenReturn(Optional.of(config));
+        when(config.isEnabled()).thenReturn(true);
+        when(config.isPkceRequired()).thenReturn(false);
+        when(config.getApplication()).thenReturn(application);
+        when(application.isEnabled()).thenReturn(true);
+        when(config.getProtocol()).thenReturn(ApplicationProtocol.OIDC);
+        when(config.getRedirectUris()).thenReturn("https://client.example.com/callback");
+        when(config.getScopes()).thenReturn("openid\nprofile");
+        when(users.findByUsername("alice")).thenReturn(Optional.of(user));
+        when(user.getId()).thenReturn(userId);
+        when(consents.findByClientIdAndUserId("client-1", userId)).thenReturn(Optional.empty());
+
+        var response = service.authorize(
+            "code",
+            "client-1",
+            "https://client.example.com/callback",
+            "openid",
+            "state-1",
+            null,
+            null,
+            null,
+            "alice");
+
+        assertThat(response.consentRequired()).isTrue();
+    }
 }

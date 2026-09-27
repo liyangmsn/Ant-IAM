@@ -87,7 +87,7 @@ public class OAuthService {
         }
         ApplicationSsoConfig config = getOauthClient(clientId);
         validateRedirectUri(config, redirectUri);
-        validatePkceChallenge(codeChallenge, codeChallengeMethod);
+        validatePkceChallenge(config.isPkceRequired(), codeChallenge, codeChallengeMethod);
         Set<String> approvedScopes = validateScopes(config, scope);
         UserAccount user = users.findByUsername(username)
             .orElseThrow(() -> new NotFoundException("User not found: " + username));
@@ -694,9 +694,12 @@ public class OAuthService {
         }
     }
 
-    private void validatePkceChallenge(String codeChallenge, String codeChallengeMethod) {
+    private void validatePkceChallenge(boolean required, String codeChallenge, String codeChallengeMethod) {
         if (codeChallenge == null || codeChallenge.isBlank()) {
-            throw new IllegalArgumentException("code_challenge is required");
+            if (required) {
+                throw new IllegalArgumentException("code_challenge is required");
+            }
+            return;
         }
         String method = normalizeCodeChallengeMethod(codeChallengeMethod);
         if (!"S256".equals(method) && !"plain".equals(method)) {

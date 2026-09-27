@@ -84,7 +84,7 @@ class AccessServiceTest {
             null,
             null,
             null,
-            null,
+            "https://example.com/form-login",
             Set.of("email"),
             Map.of("tenant", "ant"));
         when(applications.findById(applicationId)).thenReturn(Optional.of(application));
@@ -107,5 +107,6 @@ class AccessServiceTest {
         assertThat(response.reuseRefreshTokens()).isTrue();
         assertThat(response.idTokenSignatureAlgorithm()).isEqualTo("RS256");
         assertThat(response.scopes()).containsExactlyInAnyOrder("openid", "profile");
+        assertThat(response.formLoginTemplate()).isEqualTo("https://example.com/form-login");
     }
 }

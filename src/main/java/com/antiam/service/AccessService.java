@@ -1105,6 +1105,7 @@ public class AccessService {
             config.getSamlAcsUrl(),
             config.getCasServiceUrl(),
             config.getJwtAudience(),
+            config.getFormLoginTemplate(),
             splitValues(config.getIdTokenClaims()),
             splitEntries(config.getCustomClaims()),
             config.isEnabled());
