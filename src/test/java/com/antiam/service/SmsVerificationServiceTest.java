@@ -59,7 +59,7 @@ class SmsVerificationServiceTest {
 
     @Test
     void failsWhenConfiguredSms4jChannelDoesNotExist() {
-        SmsVerificationService service = new SmsVerificationService();
+        SmsVerificationService service = new SmsVerificationService(org.mockito.Mockito.mock(com.antiam.repository.SystemSettingRepository.class), new com.fasterxml.jackson.databind.ObjectMapper());
         ReflectionTestUtils.setField(service, "smsBlendId", "missing-" + UUID.randomUUID());
         ReflectionTestUtils.setField(service, "codeTtlSeconds", 300L);
 
@@ -75,7 +75,7 @@ class SmsVerificationServiceTest {
         config.setCode(code);
         SmsFactory.register(new TestFixedCodeSms(config));
 
-        SmsVerificationService service = new SmsVerificationService();
+        SmsVerificationService service = new SmsVerificationService(org.mockito.Mockito.mock(com.antiam.repository.SystemSettingRepository.class), new com.fasterxml.jackson.databind.ObjectMapper());
         ReflectionTestUtils.setField(service, "smsBlendId", configId);
         ReflectionTestUtils.setField(service, "codeTtlSeconds", 300L);
         return service;

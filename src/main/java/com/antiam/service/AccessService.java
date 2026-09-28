@@ -1,5 +1,6 @@
 package com.antiam.service;
 
+import static com.antiam.dto.AccessDtos.ClientSecretResponse;
 import static com.antiam.dto.AccessDtos.ApplicationResponse;
 import static com.antiam.dto.AccessDtos.ApplicationRoleResponse;
 import static com.antiam.dto.AccessDtos.ApplicationAccessReviewEntryResponse;
@@ -110,6 +111,8 @@ public class AccessService {
     private final OrganizationRepository organizations;
     private final TenantService tenantService;
     private final AuditService auditService;
+    private static final java.security.SecureRandom CLIENT_SECRET_RANDOM = new java.security.SecureRandom();
+
     private final PasswordEncoder passwordEncoder;
 
     /**
@@ -311,6 +314,19 @@ public class AccessService {
             .orElseGet(() -> ssoConfigs.save(replacement));
         auditService.record(actor, "application.sso.configure", "application", applicationId.toString(), request.protocol().name());
         return toResponse(saved);
+    }
+
+    @Transactional
+    // 重新生成应用客户端密钥，明文只在本次响应中返回一次。
+    public ClientSecretResponse resetClientSecret(UUID applicationId, String actor) {
+        ApplicationSsoConfig config = ssoConfigs.findByApplicationId(applicationId)
+            .orElseThrow(() -> new IllegalArgumentException("请先在协议配置中保存应用的 SSO 配置"));
+        byte[] bytes = new byte[32];
+        CLIENT_SECRET_RANDOM.nextBytes(bytes);
+        String secret = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        config.rotateClientSecret(passwordEncoder.encode(secret));
+        auditService.record(actor, "application.client_secret.reset", "application", applicationId.toString(), config.getClientId());
+        return new ClientSecretResponse(config.getClientId() == null ? applicationId.toString() : config.getClientId(), secret);
     }
 
     @Transactional(readOnly = true)

@@ -120,10 +120,17 @@ public class ApplicationSsoConfig extends BaseEntity {
         this.enabled = true;
     }
 
+    public void rotateClientSecret(String clientSecretHash) {
+        this.clientSecretHash = clientSecretHash;
+    }
+
     public void replaceWith(ApplicationSsoConfig replacement) {
         this.protocol = replacement.protocol;
         this.clientId = replacement.clientId;
-        this.clientSecretHash = replacement.clientSecretHash;
+        // 未提交新密钥时保留原有密钥哈希，避免保存协议配置时清空客户端密钥。
+        if (replacement.clientSecretHash != null) {
+            this.clientSecretHash = replacement.clientSecretHash;
+        }
         this.redirectUris = replacement.redirectUris;
         this.grantTypes = replacement.grantTypes;
         this.pkceRequired = replacement.pkceRequired;

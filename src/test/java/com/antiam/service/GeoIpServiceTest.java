@@ -54,6 +54,28 @@ class GeoIpServiceTest {
             .hasMessageContaining("Failed to open MaxMind database");
     }
 
+    @Test
+    void prefersDatabasePathFromSystemSettings() {
+        String configuredPath = "/tmp/configured-" + System.nanoTime() + ".mmdb";
+        when(settings.findBySettingKey("geoip.provider"))
+            .thenReturn(Optional.of(setting("maxmind")));
+        when(settings.findBySettingKey("geoip.databasePath"))
+            .thenReturn(Optional.of(new SystemSetting("geoip.databasePath", "geo-ip", SettingValueType.STRING, configuredPath, "path", false)));
+
+        assertThatThrownBy(() -> service.location("8.8.8.8"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining(configuredPath);
+    }
+
+    @Test
+    void looksUpSystemLocationDetails() {
+        when(settings.findBySettingKey("geoip.provider"))
+            .thenReturn(Optional.of(setting("system")));
+
+        assertThat(service.lookup(" 10.0.0.1 ").location()).isEqualTo("内网");
+        assertThat(service.lookup("10.0.0.1").provider()).isEqualTo("system");
+    }
+
     private SystemSetting setting(String value) {
         return new SystemSetting("geoip.provider", "geo-ip", SettingValueType.STRING, value, "geoip.provider", false);
     }

@@ -69,3 +69,5 @@ databaseChangeLog:
       file: db/changelog/034-user-identity-source-schema.sql
   - include:
       file: db/changelog/035-application-access-policy-schema.sql
+  - include:
+      file: db/changelog/036-user-avatar-schema.sql

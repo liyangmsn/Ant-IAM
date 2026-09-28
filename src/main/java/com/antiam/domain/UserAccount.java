@@ -25,6 +25,7 @@ public class UserAccount extends BaseEntity {
     private String displayName;
     private String email;
     private String mobile;
+    private String avatarUrl;
 
     @Enumerated(EnumType.STRING)
     private AccountStatus status;
@@ -110,6 +111,10 @@ public class UserAccount extends BaseEntity {
         this.email = email;
         this.mobile = mobile;
         this.organization = organization;
+    }
+
+    public void changeAvatar(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
     }
 
     public void activate() {

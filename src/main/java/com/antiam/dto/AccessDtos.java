@@ -124,6 +124,13 @@ public final class AccessDtos {
     ) {
     }
 
+    @Schema(description = "应用客户端密钥，仅在重置时返回一次")
+    public record ClientSecretResponse(
+        @Schema(description = "客户端 ID") String clientId,
+        @Schema(description = "客户端密钥明文") String clientSecret
+    ) {
+    }
+
     public record ConfigureApplicationSsoRequest(
         @Schema(description = "SSO 协议类型")
         @NotNull ApplicationProtocol protocol,

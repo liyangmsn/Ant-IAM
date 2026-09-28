@@ -36,4 +36,32 @@ public final class SettingDtos {
         boolean sensitive
     ) {
     }
+
+    @Schema(description = "集成测试结果")
+    public record IntegrationTestResponse(
+        @Schema(description = "是否成功") boolean success,
+        @Schema(description = "结果说明") String message
+    ) {
+    }
+
+    @Schema(description = "测试邮件请求")
+    public record MailTestRequest(
+        @Schema(description = "测试收件人邮箱") @NotBlank String to,
+        @Schema(description = "邮件模板键", example = "login_verify") String templateKey
+    ) {
+    }
+
+    @Schema(description = "测试短信请求")
+    public record SmsTestRequest(
+        @Schema(description = "测试手机号") @NotBlank String mobile,
+        @Schema(description = "发送场景模板类型", example = "登录验证") String templateType
+    ) {
+    }
+
+    @Schema(description = "GeoIP 数据库更新请求")
+    public record GeoIpUpdateRequest(
+        @Schema(description = "MaxMind License Key") String licenseKey,
+        @Schema(description = "数据库保存路径") String databasePath
+    ) {
+    }
 }

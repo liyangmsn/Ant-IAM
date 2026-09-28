@@ -1,5 +1,6 @@
 package com.antiam.web;
 
+import static com.antiam.dto.AccessDtos.ClientSecretResponse;
 import static com.antiam.dto.AccessDtos.ApplicationResponse;
 import static com.antiam.dto.AccessDtos.ApplicationRoleResponse;
 import static com.antiam.dto.AccessDtos.ApplicationAccessReviewEntryResponse;
@@ -546,6 +547,18 @@ public class AccessController {
         Principal principal
     ) {
         return access.configureApplicationSso(applicationId, request, principal.getName());
+    }
+
+    /**
+     * 重置应用客户端密钥。
+     */
+    @Operation(summary = "重置客户端密钥", description = "重新生成应用的 OAuth/OIDC 客户端密钥，明文只返回一次。")
+    @PostMapping("/applications/{applicationId}/client-secret")
+    ClientSecretResponse resetClientSecret(
+        @Parameter(description = "应用 UUID") @PathVariable UUID applicationId,
+        Principal principal
+    ) {
+        return access.resetClientSecret(applicationId, principal.getName());
     }
 
     /**

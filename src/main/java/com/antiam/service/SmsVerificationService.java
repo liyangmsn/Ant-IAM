@@ -2,16 +2,26 @@ package com.antiam.service;
 
 import static com.antiam.dto.AuthenticationDtos.SendSmsCodeResponse;
 
+import com.antiam.repository.SystemSettingRepository;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
+import org.dromara.sms4j.aliyun.config.AlibabaConfig;
 import org.dromara.sms4j.api.SmsBlend;
 import org.dromara.sms4j.api.entity.SmsResponse;
 import org.dromara.sms4j.core.factory.SmsFactory;
+import org.dromara.sms4j.provider.config.BaseConfig;
+import org.dromara.sms4j.qiniu.config.QiNiuConfig;
+import org.dromara.sms4j.tencent.config.TencentConfig;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -22,7 +32,21 @@ public class SmsVerificationService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final Pattern VERIFICATION_CODE_PATTERN = Pattern.compile("\\d{4,32}");
 
+    private static final String SERVICE_SETTING_KEY = "message.sms.service";
+    private static final String CONFIGURED_BLEND_ID = "iam-configured-sms";
+    private static final String DEFAULT_TEMPLATE_TYPE = "登录验证";
+    // 验证码用途与短信服务配置中“发送场景”模板类型的对应关系。
+    private static final Map<String, String> PURPOSE_TEMPLATE_TYPES = Map.of(
+        "LOGIN", "登录验证",
+        "BIND_MOBILE", "绑定手机号",
+        "CHANGE_MOBILE", "修改手机号",
+        "FORGOT_PASSWORD", "忘记密码",
+        "CHANGE_PASSWORD", "修改密码");
+
     private final Map<VerificationKey, VerificationCode> codes = new ConcurrentHashMap<>();
+    private final SystemSettingRepository settings;
+    private final ObjectMapper objectMapper;
+    private String configuredBlendSignature;
 
     @Value("${iam.sms.blend-id:fixed-code}")
     private String smsBlendId;
@@ -34,10 +58,7 @@ public class SmsVerificationService {
         String normalizedMobile = normalizeMobile(mobile);
         String normalizedPurpose = normalizePurpose(purpose);
         String generatedCode = generateCode();
-        SmsResponse response = smsBlend().sendMessage(normalizedMobile, generatedCode);
-        if (response == null || !response.isSuccess()) {
-            throw new IllegalStateException("SMS verification code delivery failed");
-        }
+        SmsResponse response = deliver(normalizedMobile, normalizedPurpose, generatedCode);
         Instant expiresAt = Instant.now().plusSeconds(codeTtlSeconds);
         codes.put(new VerificationKey(normalizedMobile, normalizedPurpose), new VerificationCode(resolveCode(response, generatedCode), expiresAt));
         return new SendSmsCodeResponse(normalizedMobile, normalizedPurpose, expiresAt);
@@ -59,6 +80,126 @@ public class SmsVerificationService {
             throw new IllegalArgumentException("SMS verification code is invalid");
         }
         codes.remove(key);
+    }
+
+    /**
+     * 使用系统设置中的短信服务向指定手机号发送一条测试验证码，不保存验证码。
+     */
+    public String sendTest(String mobile, String templateType) {
+        String normalizedMobile = normalizeMobile(mobile);
+        JsonNode config = configuredService()
+            .orElseThrow(() -> new IllegalArgumentException("短信服务未启用，请先开启并保存短信服务配置"));
+        String type = templateType == null || templateType.isBlank() ? DEFAULT_TEMPLATE_TYPE : templateType.trim();
+        SmsResponse response = sendWithConfig(config, normalizedMobile, type, generateCode());
+        if (response == null || !response.isSuccess()) {
+            throw new IllegalArgumentException("测试短信发送失败：" + (response == null ? "无响应" : String.valueOf(response.getData())));
+        }
+        return "测试短信已发送至 " + normalizedMobile;
+    }
+
+    private SmsResponse deliver(String mobile, String purpose, String code) {
+        Optional<JsonNode> config = configuredService();
+        SmsResponse response = config.isPresent()
+            ? sendWithConfig(config.get(), mobile, PURPOSE_TEMPLATE_TYPES.getOrDefault(purpose, DEFAULT_TEMPLATE_TYPE), code)
+            : smsBlend().sendMessage(mobile, code);
+        if (response == null || !response.isSuccess()) {
+            throw new IllegalStateException("SMS verification code delivery failed");
+        }
+        return response;
+    }
+
+    // 读取系统设置中的短信服务；未配置或未启用时回退到 iam.sms.blend-id 指定的通道。
+    private Optional<JsonNode> configuredService() {
+        return settings.findBySettingKey(SERVICE_SETTING_KEY)
+            .map(setting -> readJson(setting.getSettingValue()))
+            .filter(node -> node.path("enabled").asBoolean(false));
+    }
+
+    private SmsResponse sendWithConfig(JsonNode config, String mobile, String templateType, String code) {
+        String templateId = text(config.path("templates"), templateType);
+        if (templateId == null) {
+            templateId = text(config.path("templates"), DEFAULT_TEMPLATE_TYPE);
+        }
+        if (templateId == null) {
+            throw new IllegalArgumentException("短信模板未配置：" + templateType);
+        }
+        LinkedHashMap<String, String> variables = new LinkedHashMap<>();
+        variables.put("code", code);
+        variables.put("time", String.valueOf(Math.max(1, codeTtlSeconds / 60)));
+        return configuredBlend(config).sendMessage(mobile, templateId, variables);
+    }
+
+    private synchronized SmsBlend configuredBlend(JsonNode config) {
+        String signature = config.toString();
+        SmsBlend blend = SmsFactory.getSmsBlend(CONFIGURED_BLEND_ID);
+        if (blend != null && signature.equals(configuredBlendSignature)) {
+            return blend;
+        }
+        if (blend != null) {
+            SmsFactory.unregister(CONFIGURED_BLEND_ID);
+        }
+        SmsFactory.createSmsBlend(supplierConfig(config));
+        configuredBlendSignature = signature;
+        blend = SmsFactory.getSmsBlend(CONFIGURED_BLEND_ID);
+        if (blend == null) {
+            throw new IllegalStateException("SMS channel could not be created: " + CONFIGURED_BLEND_ID);
+        }
+        return blend;
+    }
+
+    private BaseConfig supplierConfig(JsonNode config) {
+        String provider = text(config, "provider");
+        BaseConfig supplier;
+        if ("tencent".equals(provider)) {
+            TencentConfig tencent = new TencentConfig();
+            tencent.setAccessKeyId(required(config, "secretId"));
+            tencent.setAccessKeySecret(required(config, "secretKey"));
+            tencent.setSdkAppId(required(config, "sdkAppId"));
+            tencent.setSignature(required(config, "signature"));
+            String region = text(config, "region");
+            if (region != null) {
+                tencent.setTerritory(region);
+            }
+            supplier = tencent;
+        } else if ("qiniu".equals(provider)) {
+            QiNiuConfig qiniu = new QiNiuConfig();
+            qiniu.setAccessKeyId(required(config, "accessKey"));
+            qiniu.setAccessKeySecret(required(config, "secretKey"));
+            supplier = qiniu;
+        } else {
+            AlibabaConfig aliyun = new AlibabaConfig();
+            aliyun.setAccessKeyId(required(config, "accessKeyId"));
+            aliyun.setAccessKeySecret(required(config, "accessKeySecret"));
+            aliyun.setSignature(required(config, "signature"));
+            supplier = aliyun;
+        }
+        supplier.setConfigId(CONFIGURED_BLEND_ID);
+        return supplier;
+    }
+
+    private JsonNode readJson(String value) {
+        try {
+            return objectMapper.readTree(value);
+        } catch (JsonProcessingException ex) {
+            throw new IllegalArgumentException("SMS setting value must be valid JSON", ex);
+        }
+    }
+
+    private String text(JsonNode node, String field) {
+        JsonNode value = node.path(field);
+        if (value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        String text = value.asText();
+        return text.isBlank() ? null : text;
+    }
+
+    private String required(JsonNode node, String field) {
+        String value = text(node, field);
+        if (value == null) {
+            throw new IllegalArgumentException("短信服务字段未配置：" + field);
+        }
+        return value;
     }
 
     private SmsBlend smsBlend() {

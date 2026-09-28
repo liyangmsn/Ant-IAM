@@ -76,6 +76,22 @@ public class MailDeliveryService {
         auditService.record("mail-delivery", "mail.send", "mail_template", templateKey, recipient);
     }
 
+    /**
+     * 使用当前邮件服务配置发送一封测试邮件，模板变量填充示例值。
+     */
+    public String sendTest(String recipient, String templateKey) {
+        if (recipient == null || recipient.isBlank()) {
+            throw new IllegalArgumentException("请输入测试收件人邮箱");
+        }
+        String key = templateKey == null || templateKey.isBlank() ? "login_verify" : templateKey;
+        try {
+            send(key, recipient.trim(), Map.of("code", "123456", "client_name", "IAM", "time", "5"));
+        } catch (IllegalStateException | org.springframework.mail.MailException ex) {
+            throw new IllegalArgumentException("测试邮件发送失败：" + ex.getMessage(), ex);
+        }
+        return "测试邮件已发送至 " + recipient.trim();
+    }
+
     private JsonNode serviceConfig() {
         SystemSetting setting = settings.findBySettingKey(SERVICE_SETTING_KEY)
             .orElseThrow(() -> new IllegalStateException("Mail service is not configured: " + SERVICE_SETTING_KEY));

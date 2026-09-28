@@ -295,6 +295,18 @@ public class UserService {
     }
 
     /**
+     * 更新当前用户头像地址。
+     */
+    @Transactional
+    public UserResponse changeOwnAvatar(String username, String avatarUrl) {
+        UserAccount user = users.findByUsername(username)
+            .orElseThrow(() -> new NotFoundException("User not found: " + username));
+        user.changeAvatar(avatarUrl);
+        auditService.record(username, "user.avatar.update", "user", user.getId().toString(), avatarUrl);
+        return toResponse(user);
+    }
+
+    /**
      * 创建一次性密码重置票据，仅在创建响应中返回明文 resetToken。
      */
     @Transactional
@@ -813,7 +825,8 @@ public class UserService {
             identitySourceType,
             identitySourceName,
             groupCodes,
-            roleCodes);
+            roleCodes,
+            user.getAvatarUrl());
     }
 
     private boolean matchesKeyword(UserAccount user, String keyword) {

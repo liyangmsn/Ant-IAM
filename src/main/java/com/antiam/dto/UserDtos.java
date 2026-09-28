@@ -222,7 +222,9 @@ public final class UserDtos {
         String identitySourceType,
         String identitySourceName,
         Set<String> groups,
-        Set<String> roles
+        Set<String> roles,
+        @Schema(description = "头像地址")
+        String avatarUrl
     ) {
     }
 

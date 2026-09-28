@@ -31,11 +31,15 @@ import com.antiam.domain.AccountStatus;
 import com.antiam.domain.MfaChallengeStatus;
 import com.antiam.domain.MfaFactorType;
 import com.antiam.service.UserService;
+import com.antiam.service.storage.FileStorageService;
+import com.antiam.service.storage.StoredFile;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.io.IOException;
 import java.security.Principal;
+import java.util.Set;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -51,6 +55,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/v1/users")
@@ -60,6 +65,10 @@ public class UserController {
 
     private final UserService users;
     private final ConsoleAuthorityResolver consoleAuthorities;
+    private final FileStorageService fileStorage;
+
+    private static final long AVATAR_MAX_BYTES = 2L * 1024 * 1024;
+    private static final Set<String> AVATAR_CONTENT_TYPES = Set.of("image/png", "image/jpeg", "image/gif", "image/webp");
 
     /**
      * 查询用户目录，支持按租户、组织、状态和关键字过滤。
@@ -240,6 +249,22 @@ public class UserController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void changeOwnPassword(@Parameter(description = "自助改密请求") @Valid @RequestBody ChangeOwnPasswordRequest request, Principal principal) {
         users.changeOwnPassword(principal.getName(), request);
+    }
+
+    @Operation(summary = "当前用户更换头像", description = "上传 PNG、JPEG、GIF 或 WebP 图片（不超过 2MB）到已配置的对象存储，并更新当前用户头像。")
+    @PostMapping("/me/avatar")
+    UserResponse changeOwnAvatar(
+        @Parameter(description = "头像图片") @RequestParam("file") MultipartFile file,
+        Principal principal
+    ) throws IOException {
+        if (file.isEmpty() || file.getSize() > AVATAR_MAX_BYTES) {
+            throw new IllegalArgumentException("头像图片不能为空且不能超过 2MB");
+        }
+        if (!AVATAR_CONTENT_TYPES.contains(file.getContentType())) {
+            throw new IllegalArgumentException("头像仅支持 PNG、JPEG、GIF 或 WebP 图片");
+        }
+        StoredFile stored = fileStorage.store(file.getOriginalFilename(), file.getContentType(), file.getBytes());
+        return users.changeOwnAvatar(principal.getName(), stored.url());
     }
 
     @Operation(summary = "当前用户发送绑定手机号验证码", description = "向当前用户准备绑定的手机号发送固定验证码；默认验证码为 666666，可通过配置覆盖。")
