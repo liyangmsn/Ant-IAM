@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.antiam.domain.ApplicationAuthorizationType;
 import com.antiam.domain.ApplicationProtocol;
 import com.antiam.dto.AccessDtos.ApplicationGroupResponse;
 import com.antiam.dto.AccessDtos.ApplicationResponse;
@@ -35,7 +36,8 @@ class AccessControllerTest {
             null,
             null,
             true,
-            true);
+            true,
+            ApplicationAuthorizationType.MANUAL);
         when(access.listApplications(null, true, "jwt")).thenReturn(List.of(application));
 
         List<ApplicationResponse> response = controller.applications(null, true, "jwt");

@@ -43,7 +43,8 @@ class FederationServiceTest {
         users,
         authenticationEvents,
         new TokenSupport(),
-        jwtService);
+        jwtService,
+        mock(AccessService.class));
 
     @Test
     void issuesJwtSsoTokenWithConfiguredAudienceAndTtl() {

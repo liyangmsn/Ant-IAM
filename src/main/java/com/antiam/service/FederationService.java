@@ -50,6 +50,7 @@ public class FederationService {
     private final AuthenticationEventRepository authenticationEvents;
     private final TokenSupport tokens;
     private final JwtService jwtService;
+    private final AccessService access;
 
     // 生成 SAML 身份提供方元数据的结构化视图。
     public SamlMetadataResponse samlMetadata(String issuer) {
@@ -79,6 +80,7 @@ public class FederationService {
         }
         UserAccount user = users.findByUsername(username)
             .orElseThrow(() -> new NotFoundException("User not found: " + username));
+        access.requireApplicationAccess(config.getApplication(), user);
         Instant now = Instant.now();
         String assertionId = "_" + tokens.generateToken(24);
         Map<String, String> attributes = userAttributes(user);
@@ -179,6 +181,7 @@ public class FederationService {
         }
         UserAccount user = users.findByUsername(username)
             .orElseThrow(() -> new NotFoundException("User not found: " + username));
+        access.requireApplicationAccess(config.getApplication(), user);
         String ticket = "ST-" + tokens.generateToken(32);
         casTickets.save(new CasServiceTicket(
             tokens.sha256(ticket),
@@ -250,6 +253,7 @@ public class FederationService {
         ApplicationSsoConfig config = jwtSsoConfig(audience);
         UserAccount user = users.findByUsername(username)
             .orElseThrow(() -> new NotFoundException("User not found: " + username));
+        access.requireApplicationAccess(config.getApplication(), user);
         Instant issuedAt = Instant.now();
         Instant expiresAt = issuedAt.plus(Duration.ofMinutes(Math.max(1, config.getAccessTokenTtlMinutes())));
         String resolvedAudience = jwtAudience(config);

@@ -2,6 +2,7 @@ package com.antiam.web;
 
 import static com.antiam.dto.AccessDtos.GrantRequest;
 import static com.antiam.dto.UserDtos.ChangeOwnPasswordRequest;
+import static com.antiam.dto.UserDtos.ConsoleAccessResponse;
 import static com.antiam.dto.UserDtos.BindMobileRequest;
 import static com.antiam.dto.UserDtos.CreateUserRequest;
 import static com.antiam.dto.UserDtos.ConsumePasswordResetTicketRequest;
@@ -25,6 +26,7 @@ import static com.antiam.dto.UserDtos.VerifyMfaChallengeResponse;
 import static com.antiam.dto.UserDtos.VerifyPasswordRequest;
 import static com.antiam.dto.UserDtos.VerifyPasswordResponse;
 
+import com.antiam.config.ConsoleAuthorityResolver;
 import com.antiam.domain.AccountStatus;
 import com.antiam.domain.MfaChallengeStatus;
 import com.antiam.domain.MfaFactorType;
@@ -38,6 +40,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -56,6 +59,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class UserController {
 
     private final UserService users;
+    private final ConsoleAuthorityResolver consoleAuthorities;
 
     /**
      * 查询用户目录，支持按租户、组织、状态和关键字过滤。
@@ -76,6 +80,7 @@ public class UserController {
      */
     @Operation(summary = "创建用户", description = "创建用户账号，可绑定租户和组织，并可设置初始临时密码。")
     @PostMapping
+    @PreAuthorize("@iamAuthorization.canCreateUser(#request.userType(), authentication)")
     @ResponseStatus(HttpStatus.CREATED)
     UserResponse create(@Parameter(description = "用户创建请求") @Valid @RequestBody CreateUserRequest request, Principal principal) {
         return users.create(request, principal.getName());
@@ -88,6 +93,16 @@ public class UserController {
     @GetMapping("/me")
     UserResponse currentUser(Principal principal) {
         return users.currentUser(principal.getName());
+    }
+
+    /**
+     * 查询当前登录用户的控制台权限，供前端决定可进入的菜单和可执行的操作。
+     */
+    @Operation(summary = "获取当前用户控制台权限", description = "聚合直接角色和用户组角色，返回当前用户生效的控制台权限点。")
+    @GetMapping("/me/console-access")
+    ConsoleAccessResponse currentConsoleAccess(Principal principal) {
+        ConsoleAuthorityResolver.ConsoleAccess access = consoleAuthorities.resolve(principal.getName());
+        return new ConsoleAccessResponse(access.superAdmin(), access.permissions());
     }
 
     /**
@@ -104,6 +119,7 @@ public class UserController {
      */
     @Operation(summary = "更新用户", description = "更新显示名、邮箱、手机号和所属组织。")
     @PutMapping("/{userId}")
+    @PreAuthorize("@iamAuthorization.canManageUser(#userId, authentication)")
     UserResponse update(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,
         @Parameter(description = "用户更新请求") @Valid @RequestBody UpdateUserRequest request,
@@ -117,6 +133,7 @@ public class UserController {
      */
     @Operation(summary = "激活用户", description = "将用户账号恢复为 ACTIVE 状态，并重置密码失败计数。")
     @PostMapping("/{userId}/activate")
+    @PreAuthorize("@iamAuthorization.canAdministerUser(#userId, authentication)")
     UserResponse activate(@Parameter(description = "用户 UUID") @PathVariable UUID userId, Principal principal) {
         return users.activate(userId, principal.getName());
     }
@@ -126,6 +143,7 @@ public class UserController {
      */
     @Operation(summary = "暂停用户", description = "暂停账号并禁用直接应用授权、结束活跃会话、撤销 OAuth token。")
     @PostMapping("/{userId}/suspend")
+    @PreAuthorize("@iamAuthorization.canAdministerUser(#userId, authentication)")
     UserResponse suspend(@Parameter(description = "用户 UUID") @PathVariable UUID userId, Principal principal) {
         return users.suspend(userId, principal.getName());
     }
@@ -135,6 +153,7 @@ public class UserController {
      */
     @Operation(summary = "锁定用户", description = "锁定账号并禁用直接应用授权、结束活跃会话、撤销 OAuth token。")
     @PostMapping("/{userId}/lock")
+    @PreAuthorize("@iamAuthorization.canAdministerUser(#userId, authentication)")
     UserResponse lock(@Parameter(description = "用户 UUID") @PathVariable UUID userId, Principal principal) {
         return users.lock(userId, principal.getName());
     }
@@ -144,6 +163,7 @@ public class UserController {
      */
     @Operation(summary = "用户离职", description = "将账号标记为 DEPARTED，并禁用直接应用授权、结束活跃会话、撤销 OAuth token。")
     @PostMapping("/{userId}/depart")
+    @PreAuthorize("@iamAuthorization.canAdministerUser(#userId, authentication)")
     UserResponse depart(@Parameter(description = "用户 UUID") @PathVariable UUID userId, Principal principal) {
         return users.depart(userId, principal.getName());
     }
@@ -153,6 +173,7 @@ public class UserController {
      */
     @Operation(summary = "加入用户组", description = "通过 GrantRequest.subjectId 指定用户，targetId 指定用户组。")
     @PostMapping("/group-memberships")
+    @PreAuthorize("@iamAuthorization.canManageGroupMembership(#request.targetId(), authentication)")
     UserResponse joinGroup(@Parameter(description = "用户和用户组绑定请求") @Valid @RequestBody GrantRequest request, Principal principal) {
         return users.joinGroup(request.subjectId(), request.targetId(), principal.getName());
     }
@@ -162,6 +183,7 @@ public class UserController {
      */
     @Operation(summary = "移出用户组", description = "通过 GrantRequest.subjectId 指定用户，targetId 指定用户组。")
     @DeleteMapping("/group-memberships")
+    @PreAuthorize("@iamAuthorization.canManageGroupMembership(#request.targetId(), authentication)")
     UserResponse leaveGroup(@Parameter(description = "用户和用户组解绑请求") @Valid @RequestBody GrantRequest request, Principal principal) {
         return users.leaveGroup(request.subjectId(), request.targetId(), principal.getName());
     }
@@ -171,6 +193,7 @@ public class UserController {
      */
     @Operation(summary = "授予用户角色", description = "通过 GrantRequest.subjectId 指定用户，targetId 指定角色。")
     @PostMapping("/role-assignments")
+    @PreAuthorize("@iamAuthorization.canManageRole(#request.targetId(), authentication)")
     UserResponse grantRole(@Parameter(description = "用户和角色绑定请求") @Valid @RequestBody GrantRequest request, Principal principal) {
         return users.grantRole(request.subjectId(), request.targetId(), principal.getName());
     }
@@ -180,6 +203,7 @@ public class UserController {
      */
     @Operation(summary = "撤销用户角色", description = "通过 GrantRequest.subjectId 指定用户，targetId 指定角色。")
     @DeleteMapping("/role-assignments")
+    @PreAuthorize("@iamAuthorization.canManageRole(#request.targetId(), authentication)")
     UserResponse revokeRole(@Parameter(description = "用户和角色解绑请求") @Valid @RequestBody GrantRequest request, Principal principal) {
         return users.revokeRole(request.subjectId(), request.targetId(), principal.getName());
     }
@@ -198,6 +222,7 @@ public class UserController {
      */
     @Operation(summary = "设置用户密码", description = "管理员为指定用户设置密码，可标记为临时密码。")
     @PostMapping("/{userId}/password")
+    @PreAuthorize("@iamAuthorization.canAdministerUser(#userId, authentication)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void setPassword(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,
@@ -240,6 +265,7 @@ public class UserController {
 
     @Operation(summary = "发送绑定手机号验证码", description = "向目标手机号发送固定验证码；默认验证码为 666666，可通过配置覆盖。")
     @PostMapping("/{userId}/mobile-binding-code")
+    @PreAuthorize("@iamAuthorization.canAdministerUser(#userId, authentication)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void sendMobileBindingCode(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,
@@ -250,6 +276,7 @@ public class UserController {
 
     @Operation(summary = "绑定手机号", description = "校验短信验证码后为指定用户绑定手机号。")
     @PostMapping("/{userId}/mobile")
+    @PreAuthorize("@iamAuthorization.canAdministerUser(#userId, authentication)")
     UserResponse bindMobile(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,
         @Parameter(description = "绑定手机号请求") @Valid @RequestBody BindMobileRequest request,
@@ -263,6 +290,7 @@ public class UserController {
      */
     @Operation(summary = "创建密码重置票据", description = "为指定用户创建密码重置票据；响应中的 resetToken 只在创建时返回一次。")
     @PostMapping("/password-reset-tickets")
+    @PreAuthorize("@iamAuthorization.canAdministerUser(#request.userId(), authentication)")
     @ResponseStatus(HttpStatus.CREATED)
     PasswordResetTicketResponse createPasswordResetTicket(
         @Parameter(description = "密码重置票据创建请求") @Valid @RequestBody CreatePasswordResetTicketRequest request,
@@ -331,6 +359,7 @@ public class UserController {
      */
     @Operation(summary = "查询用户 MFA 因子", description = "返回指定用户已注册的 MFA 因子列表。")
     @GetMapping("/{userId}/mfa-factors")
+    @PreAuthorize("@iamAuthorization.canReadUser(#userId, authentication)")
     List<MfaFactorResponse> mfaFactors(@Parameter(description = "用户 UUID") @PathVariable UUID userId) {
         return users.listMfaFactors(userId);
     }
@@ -340,6 +369,7 @@ public class UserController {
      */
     @Operation(summary = "注册 MFA 因子", description = "为指定用户注册 MFA 因子，TOTP 可自动生成密钥。")
     @PostMapping("/{userId}/mfa-factors")
+    @PreAuthorize("@iamAuthorization.canManageUser(#userId, authentication)")
     @ResponseStatus(HttpStatus.CREATED)
     MfaFactorResponse registerMfaFactor(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,
@@ -354,6 +384,7 @@ public class UserController {
      */
     @Operation(summary = "获取 MFA 因子详情", description = "根据用户 UUID 和因子 UUID 返回 MFA 因子详情。")
     @GetMapping("/{userId}/mfa-factors/{factorId}")
+    @PreAuthorize("@iamAuthorization.canReadUser(#userId, authentication)")
     MfaFactorResponse mfaFactor(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,
         @Parameter(description = "MFA 因子 UUID") @PathVariable UUID factorId
@@ -366,6 +397,7 @@ public class UserController {
      */
     @Operation(summary = "更新 MFA 因子", description = "更新指定 MFA 因子的展示名称。")
     @PutMapping("/{userId}/mfa-factors/{factorId}")
+    @PreAuthorize("@iamAuthorization.canManageUser(#userId, authentication)")
     MfaFactorResponse updateMfaFactor(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,
         @Parameter(description = "MFA 因子 UUID") @PathVariable UUID factorId,
@@ -380,6 +412,7 @@ public class UserController {
      */
     @Operation(summary = "启用 MFA 因子", description = "将指定 MFA 因子设置为可用于挑战验证。")
     @PostMapping("/{userId}/mfa-factors/{factorId}/enable")
+    @PreAuthorize("@iamAuthorization.canManageUser(#userId, authentication)")
     MfaFactorResponse enableMfaFactor(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,
         @Parameter(description = "MFA 因子 UUID") @PathVariable UUID factorId,
@@ -393,6 +426,7 @@ public class UserController {
      */
     @Operation(summary = "停用 MFA 因子", description = "停用指定 MFA 因子，保留历史挑战记录。")
     @PostMapping("/{userId}/mfa-factors/{factorId}/disable")
+    @PreAuthorize("@iamAuthorization.canManageUser(#userId, authentication)")
     MfaFactorResponse disableMfaFactor(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,
         @Parameter(description = "MFA 因子 UUID") @PathVariable UUID factorId,
@@ -406,6 +440,7 @@ public class UserController {
      */
     @Operation(summary = "删除 MFA 因子", description = "删除未产生挑战历史的 MFA 因子；已有挑战历史的因子只能停用。")
     @DeleteMapping("/{userId}/mfa-factors/{factorId}")
+    @PreAuthorize("@iamAuthorization.canManageUser(#userId, authentication)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void deleteMfaFactor(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,
@@ -420,6 +455,7 @@ public class UserController {
      */
     @Operation(summary = "生成 MFA 恢复码", description = "生成一组新的恢复码，旧恢复码会被替换。")
     @PostMapping("/{userId}/mfa-recovery-codes")
+    @PreAuthorize("@iamAuthorization.canManageUser(#userId, authentication)")
     @ResponseStatus(HttpStatus.CREATED)
     RecoveryCodesResponse generateRecoveryCodes(@Parameter(description = "用户 UUID") @PathVariable UUID userId, Principal principal) {
         return users.generateRecoveryCodes(userId, principal.getName());
@@ -430,6 +466,7 @@ public class UserController {
      */
     @Operation(summary = "发起 MFA 挑战", description = "为指定用户和 MFA 因子创建挑战，短信/邮件/WebAuthn 原型会返回验证码。")
     @PostMapping("/{userId}/mfa-challenges")
+    @PreAuthorize("@iamAuthorization.canManageUser(#userId, authentication)")
     @ResponseStatus(HttpStatus.CREATED)
     MfaChallengeResponse startMfaChallenge(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,

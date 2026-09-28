@@ -30,6 +30,9 @@ public class Application extends BaseEntity {
     @Enumerated(EnumType.STRING)
     private ApplicationProtocol protocol;
 
+    @Enumerated(EnumType.STRING)
+    private ApplicationAuthorizationType authorizationType = ApplicationAuthorizationType.MANUAL;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "tenant_id")
     private Tenant tenant;
@@ -62,6 +65,14 @@ public class Application extends BaseEntity {
         this.loginUrl = loginUrl;
         this.description = description;
         this.group = group;
+    }
+
+    public void changeAuthorizationType(ApplicationAuthorizationType authorizationType) {
+        this.authorizationType = authorizationType == null ? ApplicationAuthorizationType.MANUAL : authorizationType;
+    }
+
+    public boolean isAllAccess() {
+        return authorizationType == ApplicationAuthorizationType.ALL_ACCESS;
     }
 
     public void enable() {

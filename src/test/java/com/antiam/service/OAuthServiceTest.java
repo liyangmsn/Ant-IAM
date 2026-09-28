@@ -39,7 +39,8 @@ class OAuthServiceTest {
         new TokenSupport(),
         mock(JwtService.class),
         mock(PasswordEncoder.class),
-        mock(AuditService.class));
+        mock(AuditService.class),
+        mock(AccessService.class));
 
     @Test
     void rejectsMalformedS256ChallengeBeforeIssuingAuthorizationCode() {

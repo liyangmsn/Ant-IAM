@@ -13,7 +13,13 @@ public interface ApplicationAssignmentRepository extends JpaRepository<Applicati
 
     List<ApplicationAssignment> findByUserId(UUID userId);
 
+    List<ApplicationAssignment> findByGroupId(UUID groupId);
+
+    List<ApplicationAssignment> findByOrganizationId(UUID organizationId);
+
     Optional<ApplicationAssignment> findByApplicationIdAndUserId(UUID applicationId, UUID userId);
 
     Optional<ApplicationAssignment> findByApplicationIdAndGroupId(UUID applicationId, UUID groupId);
+
+    Optional<ApplicationAssignment> findByApplicationIdAndOrganizationId(UUID applicationId, UUID organizationId);
 }

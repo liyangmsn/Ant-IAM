@@ -68,6 +68,7 @@ public class OAuthService {
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
+    private final AccessService access;
 
     @Transactional
     // 处理 OAuth2 授权请求，校验客户端、回调地址、scope 和 PKCE，必要时要求用户同意。
@@ -91,6 +92,7 @@ public class OAuthService {
         Set<String> approvedScopes = validateScopes(config, scope);
         UserAccount user = users.findByUsername(username)
             .orElseThrow(() -> new NotFoundException("User not found: " + username));
+        access.requireApplicationAccess(config.getApplication(), user);
         if (!hasConsent(clientId, user, approvedScopes)) {
             return new AuthorizationResponse(consentRedirect(clientId, redirectUri, scope, state, nonce, codeChallenge, codeChallengeMethod), null, state, true, List.copyOf(approvedScopes));
         }

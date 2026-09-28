@@ -1,12 +1,15 @@
 package com.antiam.dto;
 
+import com.antiam.domain.ApplicationAuthorizationType;
 import com.antiam.domain.ApplicationProtocol;
 import com.antiam.domain.ApplicationAccessRequestStatus;
 import com.antiam.domain.AccountStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -97,7 +100,9 @@ public final class AccessDtos {
         @Schema(description = "应用备注")
         String description,
         @Schema(description = "应用分组 UUID；为空表示未分组")
-        UUID groupId
+        UUID groupId,
+        @Schema(description = "授权范围；为空时保持不变")
+        ApplicationAuthorizationType authorizationType
     ) {
     }
 
@@ -300,7 +305,9 @@ public final class AccessDtos {
         UUID tenantId,
         UUID groupId,
         boolean enabled,
-        boolean selfServiceAccessRequestEnabled
+        boolean selfServiceAccessRequestEnabled,
+        @Schema(description = "授权范围：MANUAL 手动授权，ALL_ACCESS 全员可访问")
+        ApplicationAuthorizationType authorizationType
     ) {
     }
 
@@ -353,13 +360,40 @@ public final class AccessDtos {
     }
 
     public record ApplicationAssignmentRequest(
-        @Schema(description = "用户 UUID；userId 和 groupId 必须且只能填写一个")
+        @Schema(description = "用户 UUID；userId、groupId、organizationId 必须且只能填写一个")
         UUID userId,
-        @Schema(description = "用户组 UUID；userId 和 groupId 必须且只能填写一个")
+        @Schema(description = "用户组 UUID；userId、groupId、organizationId 必须且只能填写一个")
         UUID groupId,
+        @Schema(description = "组织 UUID，授权后组织及其下级组织的成员均可访问；userId、groupId、organizationId 必须且只能填写一个")
+        UUID organizationId,
         @Schema(description = "授权过期时间，ISO-8601 格式；为空表示不过期")
         Instant expiresAt
     ) {
+        public ApplicationAssignmentRequest(UUID userId, UUID groupId, Instant expiresAt) {
+            this(userId, groupId, null, expiresAt);
+        }
+    }
+
+    public record BatchApplicationAssignmentRequest(
+        @Schema(description = "授权主体类型")
+        @NotNull ApplicationAssignmentSubjectType subjectType,
+        @Schema(description = "授权主体 UUID 列表")
+        @NotEmpty List<UUID> subjectIds,
+        @Schema(description = "授权过期时间，ISO-8601 格式；为空表示不过期")
+        Instant expiresAt
+    ) {
+    }
+
+    public record DeleteApplicationAssignmentsRequest(
+        @Schema(description = "应用授权记录 UUID 列表")
+        @NotEmpty List<UUID> assignmentIds
+    ) {
+    }
+
+    public enum ApplicationAssignmentSubjectType {
+        USER,
+        GROUP,
+        ORGANIZATION
     }
 
     public record CreateApplicationAccessRequest(
@@ -393,8 +427,38 @@ public final class AccessDtos {
         UUID applicationId,
         UUID userId,
         UUID groupId,
+        @Schema(description = "组织 UUID")
+        UUID organizationId,
+        @Schema(description = "授权主体类型")
+        ApplicationAssignmentSubjectType subjectType,
+        @Schema(description = "授权主体名称")
+        String subjectName,
         Instant expiresAt,
         boolean expired,
+        boolean enabled,
+        @Schema(description = "授权添加时间")
+        Instant createdAt
+    ) {
+    }
+
+    public record SubjectApplicationAssignmentResponse(
+        @Schema(description = "应用授权记录 UUID")
+        UUID id,
+        @Schema(description = "应用 UUID")
+        UUID applicationId,
+        @Schema(description = "应用编码")
+        String applicationCode,
+        @Schema(description = "应用名称")
+        String applicationName,
+        @Schema(description = "应用协议")
+        ApplicationProtocol protocol,
+        @Schema(description = "应用是否启用")
+        boolean applicationEnabled,
+        @Schema(description = "授权过期时间；为空表示不过期")
+        Instant expiresAt,
+        @Schema(description = "授权是否已过期")
+        boolean expired,
+        @Schema(description = "授权是否启用")
         boolean enabled
     ) {
     }

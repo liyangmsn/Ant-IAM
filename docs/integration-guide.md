@@ -1,6 +1,6 @@
-# Ant IAM 第三方应用接入指南
+# 系统第三方应用接入指南
 
-本文档面向需要接入 Ant IAM 的第三方应用开发者，说明系统提供哪些接入能力、如何取得凭据、以及如何完成单点登录与通讯录同步。具体接入地址、应用凭据和回调地址由管理员在你的环境中分配。
+本文档面向需要接入系统的第三方应用开发者，说明系统提供哪些接入能力、如何取得凭据、以及如何完成单点登录与通讯录同步。具体接入地址、应用凭据和回调地址由管理员在你的环境中分配。
 
 ## 目录
 
@@ -543,6 +543,31 @@ displayName sw "研发"
 ## 9. 管理 API 能力清单
 
 以下接口均需要携带访问令牌。完整路径前缀为 `{Base URL}`。
+
+### 9.0 控制台权限模型
+
+管理接口按模块授权，权限点编码为 `iam:<模块>:<read|write>`，服务启动时自动写入权限表。拥有 `write` 即隐含 `read`。
+
+| 模块 | 权限点 | 覆盖接口 |
+| --- | --- | --- |
+| 概览 | `iam:dashboard:read` | `/api/v1/dashboard/**` |
+| 用户与组织 | `iam:user:read` / `iam:user:write` | 用户、组织、用户组、SCIM |
+| 角色与权限 | `iam:role:read` / `iam:role:write` | 角色、权限、角色授权、`/api/v1/users/role-assignments` |
+| 应用 | `iam:application:read` / `iam:application:write` | 应用、应用分组、访问申请、令牌、签名密钥 |
+| 身份源 | `iam:identity-source:read` / `iam:identity-source:write` | `/api/v1/identity-sources/**` |
+| 认证 | `iam:authentication:read` / `iam:authentication:write` | 认证源、认证策略、会话、认证事件 |
+| 安全 | `iam:security:read` / `iam:security:write` | 安全设置、风险规则 |
+| 系统 | `iam:system:read` / `iam:system:write` | 系统参数、租户、文件上传 |
+| 审计 | `iam:audit:read` | `/api/v1/audit-events/**` |
+
+规则：
+
+- `GET` 请求需要模块的 `read` 权限点，其余方法需要 `write` 权限点；未归入任何模块的管理接口仅 IAM 管理员可访问。
+- 持有 `iam_admin` 角色（直接授予或通过用户组继承）的用户是 IAM 管理员，拥有全部权限点。
+- 防提权：凡是会改变控制台权限归属的操作只允许 IAM 管理员执行，包括创建管理员账号、修改或重置控制台用户、变更携带控制台权限的角色或用户组、创建或授予 `iam:*` 权限点。
+- 用户本人可访问自己的资料、MFA、第三方绑定、会话和授权记录，不需要控制台权限。
+- `GET /api/v1/users/me/console-access` 返回当前用户的 `superAdmin` 标记和权限点列表，前端据此决定是否展示后台入口和菜单。
+
 
 ### 9.1 组织目录
 

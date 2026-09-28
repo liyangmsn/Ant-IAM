@@ -17,6 +17,14 @@ public class ApiExceptionHandler {
         return detail;
     }
 
+    @ExceptionHandler(ApplicationAccessDeniedException.class)
+    ProblemDetail applicationAccessDenied(ApplicationAccessDeniedException ex) {
+        ProblemDetail detail = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, ex.getMessage());
+        detail.setType(URI.create("urn:ant-iam:error:application-access-denied"));
+        detail.setProperty("reason", ex.reason());
+        return detail;
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ProblemDetail validation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()

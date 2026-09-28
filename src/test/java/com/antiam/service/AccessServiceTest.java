@@ -22,6 +22,7 @@ import com.antiam.repository.OAuthAuthorizationCodeRepository;
 import com.antiam.repository.OAuthConsentRepository;
 import com.antiam.repository.OAuthRefreshTokenRepository;
 import com.antiam.repository.PermissionRepository;
+import com.antiam.repository.OrganizationRepository;
 import com.antiam.repository.RoleRepository;
 import com.antiam.repository.SamlAssertionRepository;
 import com.antiam.repository.UserAccountRepository;
@@ -56,6 +57,7 @@ class AccessServiceTest {
         mock(AuthenticationSessionRepository.class),
         mock(AuthenticationEventRepository.class),
         mock(UserAccountRepository.class),
+        mock(OrganizationRepository.class),
         mock(TenantService.class),
         mock(AuditService.class),
         passwordEncoder);

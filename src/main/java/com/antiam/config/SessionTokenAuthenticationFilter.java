@@ -7,10 +7,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.time.Instant;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -20,6 +18,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 public class SessionTokenAuthenticationFilter extends OncePerRequestFilter {
 
     private final AuthenticationSessionRepository sessions;
+    private final ConsoleAuthorityResolver consoleAuthorities;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
@@ -28,10 +27,11 @@ public class SessionTokenAuthenticationFilter extends OncePerRequestFilter {
             sessions.findBySessionIndexAndActive(token, true)
                 .filter(session -> session.getUser() != null)
                 .filter(session -> session.getExpiresAt() == null || session.getExpiresAt().isAfter(Instant.now()))
-                .ifPresent(session -> SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
-                    session.getUser().getUsername(),
-                    null,
-                    List.of(new SimpleGrantedAuthority("ROLE_USER")))));
+                .ifPresent(session -> {
+                    String username = session.getUser().getUsername();
+                    SecurityContextHolder.getContext().setAuthentication(
+                        new UsernamePasswordAuthenticationToken(username, null, consoleAuthorities.authorities(username)));
+                });
         }
         filterChain.doFilter(request, response);
     }

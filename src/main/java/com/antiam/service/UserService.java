@@ -25,6 +25,7 @@ import static com.antiam.dto.UserDtos.VerifyPasswordResponse;
 
 import com.antiam.common.NotFoundException;
 import com.antiam.common.TokenSupport;
+import com.antiam.config.SecurityAuthorities;
 import com.antiam.domain.AccountStatus;
 import com.antiam.domain.ApplicationAssignment;
 import com.antiam.domain.AuthenticationEvent;
@@ -124,6 +125,11 @@ public class UserService {
             request.mobile(),
             tenant,
             organization));
+        if ("admin".equals(request.userType())) {
+            Role adminRole = roles.findByCode(SecurityAuthorities.IAM_ADMIN_ROLE)
+                .orElseThrow(() -> new IllegalStateException("IAM admin role is not initialized"));
+            saved.grant(adminRole);
+        }
         if (request.initialPassword() != null && !request.initialPassword().isBlank()) {
             validatePasswordPolicy(saved, request.initialPassword());
             credentials.save(new UserCredential(
@@ -1292,8 +1298,8 @@ public class UserService {
     }
 
     private String provisioningUri(MfaFactor factor) {
-        String label = url("Ant IAM:" + factor.getUser().getUsername());
-        String issuer = url("Ant IAM");
+        String label = url("系统:" + factor.getUser().getUsername());
+        String issuer = url("系统");
         return "otpauth://totp/" + label + "?secret=" + factor.getSecret() + "&issuer=" + issuer + "&algorithm=SHA1&digits=6&period=30";
     }
 

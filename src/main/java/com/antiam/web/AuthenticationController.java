@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -73,6 +74,7 @@ public class AuthenticationController {
      */
     @Operation(summary = "查询认证会话", description = "查询登录会话记录，支持按用户、应用和是否活跃过滤。")
     @GetMapping("/sessions")
+    @PreAuthorize("@iamAuthorization.canReadAuthentication(#userId, authentication)")
     List<AuthenticationSessionResponse> sessions(
         @Parameter(description = "用户 UUID，不传则查询全部用户") @RequestParam(required = false) UUID userId,
         @Parameter(description = "应用 UUID，不传则查询全部应用") @RequestParam(required = false) UUID applicationId,
@@ -99,6 +101,7 @@ public class AuthenticationController {
      */
     @Operation(summary = "结束认证会话", description = "结束指定认证会话，使其不再作为活跃会话使用。")
     @PostMapping("/sessions/{sessionId}/end")
+    @PreAuthorize("@iamAuthorization.canEndSession(#sessionId, authentication)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void endSession(@Parameter(description = "认证会话 UUID") @PathVariable UUID sessionId, Principal principal) {
         authentication.endSession(sessionId, principal.getName());
@@ -121,6 +124,7 @@ public class AuthenticationController {
      */
     @Operation(summary = "查询认证事件", description = "查询登录、登出、失败、MFA 等认证事件，支持多维度过滤。")
     @GetMapping("/events")
+    @PreAuthorize("@iamAuthorization.canReadAuthentication(#userId, authentication)")
     List<AuthenticationEventResponse> events(
         @Parameter(description = "认证事件类型") @RequestParam(required = false) AuthenticationEventType type,
         @Parameter(description = "用户 UUID") @RequestParam(required = false) UUID userId,

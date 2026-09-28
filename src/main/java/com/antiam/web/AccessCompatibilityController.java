@@ -21,6 +21,7 @@ import java.security.Principal;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,7 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
-@Tag(name = "TOPIAM 兼容入口", description = "为前端 TOPIAM 风格资源路径提供访问控制资源别名")
+@Tag(name = "兼容入口", description = "为兼容路径提供访问控制资源别名")
 public class AccessCompatibilityController {
 
     private final AccessService access;
@@ -49,6 +50,7 @@ public class AccessCompatibilityController {
 
     @Operation(summary = "创建权限（兼容路径）", description = "等价于 /api/v1/access/permissions。")
     @PostMapping("/api/v1/permissions")
+    @PreAuthorize("@iamAuthorization.canCreatePermission(#request.code(), authentication)")
     @ResponseStatus(HttpStatus.CREATED)
     PermissionResponse createPermission(@Valid @RequestBody CreatePermissionRequest request, Principal principal) {
         return access.createPermission(request, principal.getName());
@@ -62,6 +64,7 @@ public class AccessCompatibilityController {
 
     @Operation(summary = "更新权限（兼容路径）", description = "等价于 /api/v1/access/permissions/{permissionId}。")
     @PutMapping("/api/v1/permissions/{permissionId}")
+    @PreAuthorize("@iamAuthorization.canManagePermission(#permissionId, authentication)")
     PermissionResponse updatePermission(
         @PathVariable UUID permissionId,
         @Valid @RequestBody UpdatePermissionRequest request,
@@ -93,6 +96,7 @@ public class AccessCompatibilityController {
 
     @Operation(summary = "更新角色（兼容路径）", description = "等价于 /api/v1/access/roles/{roleId}。")
     @PutMapping("/api/v1/roles/{roleId}")
+    @PreAuthorize("@iamAuthorization.canManageRole(#roleId, authentication)")
     RoleResponse updateRole(
         @PathVariable UUID roleId,
         @Valid @RequestBody UpdateRoleRequest request,
@@ -124,6 +128,7 @@ public class AccessCompatibilityController {
 
     @Operation(summary = "更新用户组（兼容路径）", description = "等价于 /api/v1/access/groups/{groupId}。")
     @PutMapping("/api/v1/groups/{groupId}")
+    @PreAuthorize("@iamAuthorization.canManageGroupMembership(#groupId, authentication)")
     GroupResponse updateGroup(
         @PathVariable UUID groupId,
         @Valid @RequestBody UpdateGroupRequest request,
@@ -134,6 +139,7 @@ public class AccessCompatibilityController {
 
     @Operation(summary = "删除用户组（兼容路径）", description = "等价于 /api/v1/access/groups/{groupId}。")
     @DeleteMapping("/api/v1/groups/{groupId}")
+    @PreAuthorize("@iamAuthorization.canManageGroupMembership(#groupId, authentication)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void deleteGroup(@PathVariable UUID groupId, Principal principal) {
         access.deleteGroup(groupId, principal.getName());
@@ -147,6 +153,7 @@ public class AccessCompatibilityController {
 
     @Operation(summary = "添加用户组成员（兼容路径）", description = "等价于 /api/v1/access/groups/{groupId}/members。")
     @PostMapping("/api/v1/groups/{groupId}/members")
+    @PreAuthorize("@iamAuthorization.canManageGroupMembership(#groupId, authentication)")
     @ResponseStatus(HttpStatus.CREATED)
     GroupMemberResponse addGroupMember(
         @PathVariable UUID groupId,
@@ -158,6 +165,7 @@ public class AccessCompatibilityController {
 
     @Operation(summary = "移除用户组成员（兼容路径）", description = "等价于 /api/v1/access/groups/{groupId}/members/{userId}。")
     @DeleteMapping("/api/v1/groups/{groupId}/members/{userId}")
+    @PreAuthorize("@iamAuthorization.canManageGroupMembership(#groupId, authentication)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void removeGroupMember(
         @PathVariable UUID groupId,

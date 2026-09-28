@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -89,6 +90,7 @@ public class OAuthController {
      */
     @Operation(summary = "查询授权同意", description = "查询用户对 OAuth 客户端的 scope 授权同意记录。")
     @GetMapping("/oauth2/consents")
+    @PreAuthorize("@iamAuthorization.canReadConsents(#userId, authentication)")
     List<ConsentResponse> consents(
         @Parameter(description = "用户 UUID") @RequestParam(required = false) UUID userId,
         @Parameter(description = "OAuth 客户端 ID") @RequestParam(required = false) String clientId,
@@ -117,6 +119,7 @@ public class OAuthController {
      */
     @Operation(summary = "获取授权同意详情", description = "根据授权同意 UUID 返回详情。")
     @GetMapping("/oauth2/consents/{consentId}")
+    @PreAuthorize("@iamAuthorization.canReadConsent(#consentId, authentication)")
     ConsentResponse consent(@Parameter(description = "授权同意 UUID") @PathVariable UUID consentId) {
         return oauth.getConsent(consentId);
     }
@@ -126,6 +129,7 @@ public class OAuthController {
      */
     @Operation(summary = "撤销授权同意", description = "撤销用户对客户端的授权同意。")
     @PostMapping("/oauth2/consents/{consentId}/revoke")
+    @PreAuthorize("@iamAuthorization.canRevokeConsent(#consentId, authentication)")
     ConsentResponse revokeConsent(@Parameter(description = "授权同意 UUID") @PathVariable UUID consentId, Principal principal) {
         return oauth.revokeConsent(consentId, principal.getName());
     }

@@ -1,4 +1,4 @@
-# Ant IAM 待办清单
+# 系统待办清单
 
 本清单由「前端入口 / 配置项」与「后端实现」逐项对照得出，每条都标注了证据位置。
 
@@ -21,7 +21,16 @@
   - 实现：`geoip.provider=maxmind` 时用 MaxMind 数据库解析国家与城市，`system` 模式保留本机/内网/公网分类；登录位置统计与审计自动受益。
   - 位置：`src/main/java/com/antiam/service/GeoIpService.java`
 
+- [x] **控制台细粒度授权**
+  - 实现：内置 `iam:<模块>:<read|write>` 权限点，URL 按模块校验，写操作做防提权检查；`GET /api/v1/users/me/console-access` 供前端裁剪入口与菜单。
+  - 位置：`src/main/java/com/antiam/config/SecurityConfig.java`、`src/main/java/com/antiam/config/IamAuthorizationService.java`、`src/main/java/com/antiam/config/ConsoleAuthorityResolver.java`
+
 ## P1 原型待生产化
+
+- [ ] **控制台多租户隔离与按钮级权限**
+  - 现状：模块管理员可以看到全部租户的数据；前端只按读权限隐藏菜单，没有写权限的用户仍能看到操作按钮，点击后才返回 403。
+  - 验收：管理员只能访问所属租户的数据；前端按 `write` 权限点隐藏或禁用操作按钮。
+
 
 - [~] **MFA 短信 / WebAuthn 校验器**
   - 现状：邮箱因子已走真实投递；短信仍由本地生成随机码后返回响应，WebAuthn 无任何库或浏览器 API 支持。

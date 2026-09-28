@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Set;
@@ -22,6 +23,8 @@ public final class UserDtos {
         @NotBlank String username,
         @Schema(description = "用户显示名称", example = "张三")
         @NotBlank String displayName,
+        @Schema(description = "用户类型：user 或 admin", example = "user")
+        @NotBlank @Pattern(regexp = "user|admin") String userType,
         @Schema(description = "邮箱地址", example = "zhangsan@example.com")
         @Email String email,
         @Schema(description = "手机号", example = "13800000000")
@@ -220,6 +223,14 @@ public final class UserDtos {
         String identitySourceName,
         Set<String> groups,
         Set<String> roles
+    ) {
+    }
+
+    public record ConsoleAccessResponse(
+        @Schema(description = "是否为 IAM 管理员（拥有全部控制台权限并可管理控制台授权）")
+        boolean superAdmin,
+        @Schema(description = "当前用户生效的控制台权限点，write 权限会同时带出对应 read 权限", example = "[\"iam:user:read\"]")
+        Set<String> permissions
     ) {
     }
 
