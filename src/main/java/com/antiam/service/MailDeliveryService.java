@@ -42,7 +42,7 @@ public class MailDeliveryService {
         "reset_password_success", new DefaultTemplate("重置密码成功", "<p>您的账户密码已重置成功。</p>"),
         "login_verify", new DefaultTemplate("登录验证码", "<p>您的登录验证码为 ${code}，请尽快完成验证。</p>"),
         "password_expiring", new DefaultTemplate("密码即将到期提醒", "<p>您的账户密码即将到期，请及时修改。</p>"),
-        "welcome", new DefaultTemplate("欢迎使用 Ant IAM", "<p>欢迎加入 ${client_name}。</p>"));
+        "welcome", new DefaultTemplate("欢迎使用系统", "<p>欢迎加入 ${client_name}。</p>"));
 
     private record Template(String sender, String subject, String content) {
     }

@@ -1,6 +1,6 @@
-# Ant IAM
+# Identity Management System
 
-Ant IAM is a standalone enterprise IAM / IDaaS backend built with Spring Boot 4. It covers organization directory, user lifecycle management, groups, RBAC, application access, identity sources and audit.
+This is a standalone enterprise identity and access management backend built with Spring Boot 4. It covers organization directory, user lifecycle management, groups, RBAC, application access, identity sources and audit.
 
 For third-party integration, see [docs/integration-guide.md](docs/integration-guide.md) (Chinese), which covers integration options, single sign-on and directory sync flows, API capabilities and FAQs.
 

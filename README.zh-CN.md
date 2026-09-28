@@ -1,6 +1,6 @@
-# Ant IAM
+# 身份管理系统
 
-Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS 后端项目，覆盖组织目录、用户生命周期、用户组、RBAC、应用访问、身份源同步和审计等能力。
+系统是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS 后端项目，覆盖组织目录、用户生命周期、用户组、RBAC、应用访问、身份源同步和审计等能力。
 
 第三方应用接入指南见 [docs/integration-guide.md](docs/integration-guide.md)，其中包含接入方式选择、单点登录与通讯录同步流程、接口能力清单和常见问题。
 

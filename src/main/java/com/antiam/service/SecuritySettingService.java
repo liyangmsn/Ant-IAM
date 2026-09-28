@@ -29,7 +29,7 @@ public class SecuritySettingService {
     private final AuditService auditService;
 
     @Transactional(readOnly = true)
-    // 查询控制台通用安全设置，默认值与 TOPIAM 风格安全页面保持一致。
+    // 查询控制台通用安全设置，默认值与系统安全页面保持一致。
     public GeneralSecuritySettingsResponse general() {
         return new GeneralSecuritySettingsResponse(
             intValue("security.general.user_concurrent_sessions", -1),

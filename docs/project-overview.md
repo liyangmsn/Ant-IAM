@@ -1,4 +1,4 @@
-# Ant IAM 项目说明
+# 系统项目说明
 
 本文面向产品、研发、运维与集成方，讲解系统的定位、作用范围与功能构成。接口清单见 `README.zh-CN.md`，第三方接入步骤见 `docs/integration-guide.md`，未完成事项见 `docs/todo.md`。
 
