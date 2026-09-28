@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="系统企业身份与访问管理文档中心" />
+    <title>系统文档中心</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./">
+        <span class="brand-mark">J</span>
+        <span><strong>系统</strong><small>文档中心</small></span>
+      </a>
+      <nav aria-label="快捷入口">
+        <a href="./usage.html">使用说明</a>
+        <a href="./integration.html">对接文档</a>
+        <a href="../swagger-ui/index.html">API 文档</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <p class="eyebrow">ENTERPRISE IDENTITY PLATFORM</p>
+        <h1>统一身份与访问管理文档</h1>
+        <p class="hero-copy">面向企业用户、管理员和系统集成方，快速了解系统的使用方式与对接流程。</p>
+        <div class="hero-actions">
+          <a class="button primary" href="./usage.html">开始阅读使用说明</a>
+          <a class="button secondary" href="./integration.html">查看对接文档</a>
+        </div>
+      </section>
+
+      <section class="doc-grid" aria-label="文档分类">
+        <a class="doc-card" href="./usage.html">
+          <span class="card-icon blue">01</span>
+          <h2>使用说明</h2>
+          <p>介绍登录、门户应用、账号安全、会话管理和常见问题，适合普通用户与管理员阅读。</p>
+          <span class="card-link">阅读使用说明 →</span>
+        </a>
+        <a class="doc-card" href="./integration.html">
+          <span class="card-icon purple">02</span>
+          <h2>对接文档</h2>
+          <p>介绍 OIDC、OAuth2、SAML、CAS、JWT、SCIM 和管理 API 的接入方式与自查清单。</p>
+          <span class="card-link">阅读对接文档 →</span>
+        </a>
+      </section>
+
+      <section class="quick-links">
+        <div>
+          <p class="eyebrow">QUICK LINKS</p>
+          <h2>常用入口</h2>
+        </div>
+        <div class="link-list">
+          <a href="../login">登录门户 <span>→</span></a>
+          <a href="../swagger-ui/index.html">Swagger API 调试 <span>→</span></a>
+          <a href="../v3/api-docs">OpenAPI JSON <span>→</span></a>
+          <a href="../actuator/health">服务健康检查 <span>→</span></a>
+        </div>
+      </section>
+    </main>
+
+    <footer>系统文档中心 · 以当前部署环境的管理员配置为准</footer>
+  </body>
+</html>

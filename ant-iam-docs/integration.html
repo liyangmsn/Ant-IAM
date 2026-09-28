@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>对接文档 · 系统文档中心</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./">
+        <span class="brand-mark">J</span>
+        <span><strong>系统</strong><small>文档中心</small></span>
+      </a>
+      <nav aria-label="快捷入口">
+        <a href="./usage.html">使用说明</a>
+        <a class="active" href="./integration.html">对接文档</a>
+        <a href="../swagger-ui/index.html">API 文档</a>
+      </nav>
+    </header>
+
+    <div class="docs-layout">
+      <aside class="toc">
+        <p>对接文档</p>
+        <a href="#prepare">接入前准备</a>
+        <a href="#choose">选择接入方式</a>
+        <a href="#conventions">调用约定</a>
+        <a href="#oidc">OIDC / OAuth2</a>
+        <a href="#directory">SCIM / 管理 API</a>
+        <a href="#checklist">接入自查</a>
+      </aside>
+
+      <main class="article">
+        <p class="eyebrow">INTEGRATION GUIDE</p>
+        <h1>对接文档</h1>
+        <p class="lead">面向需要接入系统的第三方应用开发者，说明统一登录、通讯录同步和管理 API 的基本接入路径。</p>
+
+        <section id="prepare" class="article-section">
+          <h2>接入前准备</h2>
+          <p>请先向管理员获取以下信息：</p>
+          <table>
+            <thead><tr><th>信息</th><th>用途</th></tr></thead>
+            <tbody>
+              <tr><td>Base URL</td><td>所有接口的访问前缀，例如 <code>https://iam.example.com</code></td></tr>
+              <tr><td>client_id / client_secret</td><td>OIDC、OAuth2 或其他协议的应用凭据</td></tr>
+              <tr><td>回调地址</td><td>接收登录结果，必须提前登记且保持完全一致</td></tr>
+              <tr><td>SCIM Token 或管理 Token</td><td>目录同步或管理 API 调用</td></tr>
+            </tbody>
+          </table>
+          <pre><code>GET {Base URL}/actuator/health</code></pre>
+          <p>返回 <code>UP</code> 表示服务健康。</p>
+        </section>
+
+        <section id="choose" class="article-section">
+          <h2>选择接入方式</h2>
+          <table>
+            <thead><tr><th>场景</th><th>推荐方式</th></tr></thead>
+            <tbody>
+              <tr><td>自研 Web 应用统一登录</td><td>OIDC 授权码 + PKCE</td></tr>
+              <tr><td>已有 SAML 2.0 能力的 SaaS</td><td>SAML 2.0</td></tr>
+              <tr><td>传统系统只支持 Service Ticket</td><td>CAS</td></tr>
+              <tr><td>只需要校验签名令牌</td><td>JWT</td></tr>
+              <tr><td>同步上游用户、组织和用户组</td><td>SCIM 2.0 或身份源连接器</td></tr>
+              <tr><td>管理用户、角色和权限</td><td>管理 API</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="conventions" class="article-section">
+          <h2>通用调用约定</h2>
+          <ul>
+            <li>普通接口使用 JSON；OAuth2 Token 端点使用表单格式。</li>
+            <li>字段使用小驼峰，资源标识使用 UUID，时间使用 ISO-8601 UTC。</li>
+            <li>管理 API 和 SCIM 使用 <code>Authorization: Bearer &lt;token&gt;</code>。</li>
+            <li>常见状态码：<code>200</code> 成功、<code>201</code> 创建成功、<code>400</code> 参数错误、<code>401</code> 未认证、<code>404</code> 资源不存在。</li>
+          </ul>
+          <pre><code>POST {Base URL}/api/v1/authentication/password-login
+Content-Type: application/json
+
+{
+  "username": "zhangsan",
+  "password": "********"
+}</code></pre>
+          <p>登录响应中的 <code>session.sessionIndex</code> 是管理 API 使用的会话令牌。若 <code>passwordChangeRequired</code> 为 <code>true</code>，应先引导用户修改密码。</p>
+        </section>
+
+        <section id="oidc" class="article-section">
+          <h2>OIDC / OAuth2</h2>
+          <p>推荐使用授权码流程，浏览器端应用必须启用 PKCE。应用回调地址需先在控制台登记。</p>
+          <ul>
+            <li>发现文档：<a href="../.well-known/openid-configuration"><code>/.well-known/openid-configuration</code></a></li>
+            <li>授权入口：<code>/oidc/authorize</code></li>
+            <li>令牌端点：<code>/oauth2/token</code></li>
+            <li>用户信息：<code>/oauth2/userinfo</code></li>
+            <li>公钥：<code>/oauth2/jwks</code></li>
+          </ul>
+          <p>完整参数以发现文档和管理员分配的应用配置为准，不要在前端代码中保存 client_secret。</p>
+        </section>
+
+        <section id="directory" class="article-section">
+          <h2>SCIM 与管理 API</h2>
+          <p>目录同步使用 SCIM 2.0：</p>
+          <ul>
+            <li><code>/scim/v2/Users</code>：用户列表、创建和详情</li>
+            <li><code>/scim/v2/Groups</code>：用户组列表、创建和详情</li>
+            <li><code>/scim/v2/Organizations</code>：组织列表、创建和详情</li>
+            <li><code>/scim/v2/ServiceProviderConfig</code>、<code>/ResourceTypes</code>、<code>/Schemas</code>：能力发现</li>
+          </ul>
+          <p>管理 API 覆盖用户、组织、角色、权限、应用、授权、访问申请、审计和身份源。接口详情请查看<a href="../swagger-ui/index.html">Swagger UI</a>或<a href="../v3/api-docs">OpenAPI JSON</a>。</p>
+        </section>
+
+        <section id="checklist" class="article-section">
+          <h2>接入自查清单</h2>
+          <ul class="checklist">
+            <li>已确认 Base URL、环境和证书有效。</li>
+            <li>已登记并逐字核对回调地址。</li>
+            <li>已区分前端公开配置与后端密钥。</li>
+            <li>已处理 401、令牌过期和密码改密要求。</li>
+            <li>已在测试环境完成登录、退出、刷新令牌和异常回调验证。</li>
+            <li>已限制 SCIM / 管理 Token 的权限、来源和保存位置。</li>
+          </ul>
+        </section>
+      </main>
+    </div>
+
+    <footer>系统文档中心 · <a href="./">返回文档首页</a></footer>
+  </body>
+</html>
