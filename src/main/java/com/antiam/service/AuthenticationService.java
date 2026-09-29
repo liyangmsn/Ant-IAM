@@ -39,12 +39,19 @@ import com.antiam.repository.MfaFactorRepository;
 import com.antiam.repository.UserAccountRepository;
 import com.antiam.repository.UserCredentialRepository;
 import com.antiam.service.AuthenticationPolicyService.LoginDecision;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.Predicate;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,6 +63,7 @@ public class AuthenticationService {
     private static final String INVALID_CREDENTIALS = "用户名或密码错误";
     private static final Duration LOGIN_MFA_TTL = Duration.ofMinutes(5);
     private static final int MFA_RESEND_INTERVAL_SECONDS = 60;
+    private static final int RECENT_EVENT_LIMIT = 100;
 
     private final AuthenticationSessionRepository sessions;
     private final AuthenticationEventRepository events;
@@ -340,18 +348,55 @@ public class AuthenticationService {
         String ipAddress,
         String keyword
     ) {
-        String normalizedKeyword = keyword == null ? null : keyword.trim().toLowerCase();
-        List<AuthenticationEvent> values = type == null
-            ? events.findTop100ByOrderByCreatedAtDesc()
-            : events.findTop100ByTypeOrderByCreatedAtDesc(type);
-        return values.stream()
-            .filter(event -> userId == null || (event.getUser() != null && event.getUser().getId().equals(userId)))
-            .filter(event -> applicationId == null || (event.getApplication() != null && event.getApplication().getId().equals(applicationId)))
-            .filter(event -> sessionId == null || (event.getSession() != null && event.getSession().getId().equals(sessionId)))
-            .filter(event -> ipAddress == null || ipAddress.equals(event.getIpAddress()))
-            .filter(event -> matchesKeyword(event, normalizedKeyword))
+        // 条件必须下推到数据库后再取最近 100 条，先截断再过滤会让单个用户的记录被其他用户挤掉。
+        Specification<AuthenticationEvent> spec = eventSpecification(type, userId, applicationId, sessionId, ipAddress, keyword);
+        return events.findAll(spec, PageRequest.of(0, RECENT_EVENT_LIMIT, Sort.by(Sort.Direction.DESC, "createdAt")))
+            .stream()
             .map(this::toResponse)
             .toList();
+    }
+
+    private Specification<AuthenticationEvent> eventSpecification(
+        AuthenticationEventType type,
+        UUID userId,
+        UUID applicationId,
+        UUID sessionId,
+        String ipAddress,
+        String keyword
+    ) {
+        return (root, query, builder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (type != null) {
+                predicates.add(builder.equal(root.get("type"), type));
+            }
+            if (userId != null) {
+                predicates.add(builder.equal(root.get("user").get("id"), userId));
+            }
+            if (applicationId != null) {
+                predicates.add(builder.equal(root.get("application").get("id"), applicationId));
+            }
+            if (sessionId != null) {
+                predicates.add(builder.equal(root.get("session").get("id"), sessionId));
+            }
+            if (ipAddress != null) {
+                predicates.add(builder.equal(root.get("ipAddress"), ipAddress));
+            }
+            if (keyword != null && !keyword.isBlank()) {
+                // 转义 LIKE 通配符，关键字中的 % 和 _ 按字面匹配。
+                String pattern = "%" + keyword.trim().toLowerCase()
+                    .replace("\\", "\\\\")
+                    .replace("%", "\\%")
+                    .replace("_", "\\_") + "%";
+                Join<AuthenticationEvent, UserAccount> user = root.join("user", JoinType.LEFT);
+                predicates.add(builder.or(
+                    builder.like(builder.lower(root.get("detail")), pattern, '\\'),
+                    builder.like(builder.lower(user.get("username")), pattern, '\\'),
+                    builder.like(builder.lower(user.get("displayName")), pattern, '\\'),
+                    builder.like(builder.lower(root.get("userAgent")), pattern, '\\'),
+                    builder.like(builder.lower(root.get("ipAddress")), pattern, '\\')));
+            }
+            return builder.and(predicates.toArray(Predicate[]::new));
+        };
     }
 
     private UserAccount getUser(UUID userId) {
@@ -540,19 +585,5 @@ public class AuthenticationService {
             event.getUserAgent(),
             event.getDetail(),
             event.getCreatedAt());
-    }
-
-    private boolean matchesKeyword(AuthenticationEvent event, String keyword) {
-        if (keyword == null || keyword.isBlank()) {
-            return true;
-        }
-        return contains(event.getDetail(), keyword)
-            || (event.getUser() != null && (contains(event.getUser().getUsername(), keyword) || contains(event.getUser().getDisplayName(), keyword)))
-            || contains(event.getUserAgent(), keyword)
-            || contains(event.getIpAddress(), keyword);
-    }
-
-    private boolean contains(String value, String keyword) {
-        return value != null && value.toLowerCase().contains(keyword);
     }
 }

@@ -6,14 +6,11 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-public interface AuthenticationEventRepository extends JpaRepository<AuthenticationEvent, UUID> {
-    List<AuthenticationEvent> findTop100ByOrderByCreatedAtDesc();
-
-    List<AuthenticationEvent> findTop100ByTypeOrderByCreatedAtDesc(AuthenticationEventType type);
-
+public interface AuthenticationEventRepository extends JpaRepository<AuthenticationEvent, UUID>, JpaSpecificationExecutor<AuthenticationEvent> {
     List<AuthenticationEvent> findByCreatedAtGreaterThanEqualOrderByCreatedAtAsc(Instant createdAt);
 
     void deleteByApplicationId(UUID applicationId);
