@@ -3,6 +3,7 @@ package com.antiam.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.Set;
 
 public final class SecuritySettingDtos {
@@ -37,7 +38,7 @@ public final class SecuritySettingDtos {
         @Schema(description = "自动解锁时间，单位分钟")
         @Min(1) int autoUnlockMinutes,
         @Schema(description = "内容安全策略 CSP")
-        @NotBlank String contentSecurityPolicy
+        @NotBlank @Size(max = 4096) String contentSecurityPolicy
     ) {
     }
 

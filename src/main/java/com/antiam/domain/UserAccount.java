@@ -25,6 +25,7 @@ public class UserAccount extends BaseEntity {
     private String displayName;
     private String email;
     private String mobile;
+    private String avatarUrl;
 
     @Enumerated(EnumType.STRING)
     private AccountStatus status;
@@ -36,6 +37,10 @@ public class UserAccount extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "organization_id")
     private Organization organization;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "identity_source_id")
+    private IdentitySource identitySource;
 
     @ManyToMany
     @JoinTable(
@@ -68,12 +73,29 @@ public class UserAccount extends BaseEntity {
         this.status = AccountStatus.ACTIVE;
     }
 
+    public UserAccount(
+        String username,
+        String displayName,
+        String email,
+        String mobile,
+        Tenant tenant,
+        Organization organization,
+        IdentitySource identitySource
+    ) {
+        this(username, displayName, email, mobile, tenant, organization);
+        this.identitySource = identitySource;
+    }
+
     public void join(UserGroup group) {
         groups.add(group);
     }
 
     public void leave(UserGroup group) {
         groups.remove(group);
+    }
+
+    public void assignIdentitySource(IdentitySource identitySource) {
+        this.identitySource = identitySource;
     }
 
     public void grant(Role role) {
@@ -89,6 +111,10 @@ public class UserAccount extends BaseEntity {
         this.email = email;
         this.mobile = mobile;
         this.organization = organization;
+    }
+
+    public void changeAvatar(String avatarUrl) {
+        this.avatarUrl = avatarUrl;
     }
 
     public void activate() {

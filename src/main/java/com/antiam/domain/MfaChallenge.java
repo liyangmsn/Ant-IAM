@@ -19,6 +19,10 @@ import lombok.NoArgsConstructor;
 @Table(name = "mfa_challenges")
 public class MfaChallenge extends BaseEntity {
 
+    public static final String PURPOSE_GENERAL = "GENERAL";
+    public static final String PURPOSE_LOGIN = "LOGIN";
+    public static final int MAX_ATTEMPTS = 5;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)
     private UserAccount user;
@@ -40,6 +44,9 @@ public class MfaChallenge extends BaseEntity {
     private Instant verifiedAt;
     private int attempts;
 
+    @Column(nullable = false)
+    private String purpose = PURPOSE_GENERAL;
+
     public MfaChallenge(UserAccount user, MfaFactor factor, String challengeId, String codeHash, Instant expiresAt) {
         this.user = user;
         this.factor = factor;
@@ -47,6 +54,11 @@ public class MfaChallenge extends BaseEntity {
         this.codeHash = codeHash;
         this.expiresAt = expiresAt;
         this.status = MfaChallengeStatus.PENDING;
+    }
+
+    public MfaChallenge(UserAccount user, MfaFactor factor, String challengeId, String codeHash, Instant expiresAt, String purpose) {
+        this(user, factor, challengeId, codeHash, expiresAt);
+        this.purpose = purpose;
     }
 
     public boolean isUsable(Instant now) {
@@ -58,9 +70,24 @@ public class MfaChallenge extends BaseEntity {
         this.verifiedAt = Instant.now();
     }
 
+    /**
+     * 记录一次校验失败，达到最大尝试次数后挑战失效。
+     */
     public void fail() {
-        this.status = MfaChallengeStatus.FAILED;
         this.attempts++;
+        if (attempts >= MAX_ATTEMPTS) {
+            this.status = MfaChallengeStatus.FAILED;
+        }
+    }
+
+    /**
+     * 切换 MFA 因子时沿用原挑战的失败次数，避免通过切换绕过尝试上限。
+     */
+    public void inheritAttempts(int attempts) {
+        this.attempts = attempts;
+        if (this.attempts >= MAX_ATTEMPTS) {
+            this.status = MfaChallengeStatus.FAILED;
+        }
     }
 
     public void expire() {

@@ -6,6 +6,7 @@ import static com.antiam.dto.OrganizationDtos.OrganizationTreeResponse;
 import static com.antiam.dto.OrganizationDtos.OrganizationUserResponse;
 import static com.antiam.dto.OrganizationDtos.UpdateOrganizationRequest;
 
+import com.antiam.common.ConflictException;
 import com.antiam.common.NotFoundException;
 import com.antiam.domain.Organization;
 import com.antiam.domain.UserAccount;
@@ -64,10 +65,10 @@ public class OrganizationService {
     public void delete(UUID organizationId, String actor) {
         Organization organization = getEntity(organizationId);
         if (organizations.existsByParentId(organizationId)) {
-            throw new IllegalArgumentException("Organization has child organizations");
+            throw new ConflictException("组织下仍有子组织，请先删除或移动子组织");
         }
         if (users.existsByOrganizationId(organizationId)) {
-            throw new IllegalArgumentException("Organization has users");
+            throw new ConflictException("组织下仍有用户，请先移出用户");
         }
         String code = organization.getCode();
         organizations.delete(organization);
@@ -83,6 +84,22 @@ public class OrganizationService {
         Organization saved = organizations.save(new Organization(code, name, parent));
         auditService.record(actor, "scim.organization.create", "organization", saved.getId().toString(), saved.getCode());
         return organizationMapper.toResponse(saved);
+    }
+
+    /**
+     * 通过 SCIM 更新组织名称和父级；外部 ID（组织编码）不可修改。
+     */
+    @Transactional
+    public OrganizationResponse updateScimOrganization(UUID organizationId, String code, String name, UUID parentId, String actor) {
+        Organization organization = getEntity(organizationId);
+        if (code != null && !code.equals(organization.getCode())) {
+            throw new IllegalArgumentException("SCIM 不支持修改组织 externalId");
+        }
+        Organization parent = parentId == null ? null : getEntity(parentId);
+        validateParent(organization, parent);
+        organization.update(name, parent);
+        auditService.record(actor, "scim.organization.update", "organization", organizationId.toString(), organization.getCode());
+        return organizationMapper.toResponse(organization);
     }
 
     /**

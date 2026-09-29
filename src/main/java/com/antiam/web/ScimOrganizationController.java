@@ -14,9 +14,11 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -68,6 +70,29 @@ public class ScimOrganizationController {
         Principal principal
     ) {
         return organizations.create(request, principal.getName());
+    }
+
+    /**
+     * 使用完整 SCIM Organization 资源更新组织名称和父级。
+     */
+    @Operation(summary = "替换 SCIM 组织", description = "更新组织名称和父组织；externalId 不可修改。")
+    @PutMapping("/{organizationId}")
+    ScimOrganizationResponse replace(
+        @Parameter(description = "组织 UUID") @PathVariable UUID organizationId,
+        @Parameter(description = "SCIM Organization 资源") @Valid @RequestBody CreateScimOrganizationRequest request,
+        Principal principal
+    ) {
+        return organizations.replace(organizationId, request, principal.getName());
+    }
+
+    /**
+     * 删除 SCIM 组织。
+     */
+    @Operation(summary = "删除 SCIM 组织", description = "删除空组织节点；存在子组织或成员时拒绝删除。")
+    @DeleteMapping("/{organizationId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void delete(@Parameter(description = "组织 UUID") @PathVariable UUID organizationId, Principal principal) {
+        organizations.delete(organizationId, principal.getName());
     }
 
     private boolean supportsFilter(ScimQuerySupport.ScimFilter filter) {

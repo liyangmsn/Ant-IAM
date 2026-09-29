@@ -2,6 +2,7 @@ package com.antiam.web;
 
 import static com.antiam.dto.AuthenticationProviderDtos.AuthenticationProviderResponse;
 import static com.antiam.dto.AuthenticationProviderDtos.CreateAuthenticationProviderRequest;
+import static com.antiam.dto.AuthenticationProviderDtos.PublicAuthenticationProviderResponse;
 import static com.antiam.dto.AuthenticationProviderDtos.UpdateAuthenticationProviderRequest;
 
 import com.antiam.domain.AuthenticationProviderKind;
@@ -46,6 +47,12 @@ public class AuthenticationProviderController {
         return providers.list(type, provider, enabled, keyword);
     }
 
+    @Operation(summary = "查询登录页认证源", description = "返回已启用且允许在登录页展示的认证源编码，不包含凭据配置。")
+    @GetMapping("/public")
+    List<PublicAuthenticationProviderResponse> publicList() {
+        return providers.publicList();
+    }
+
     @Operation(summary = "创建身份提供商", description = "创建新的第三方认证源配置。")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -82,6 +89,18 @@ public class AuthenticationProviderController {
     @PostMapping("/{providerId}/disable")
     AuthenticationProviderResponse disable(@Parameter(description = "身份提供商 UUID") @PathVariable UUID providerId, Principal principal) {
         return providers.disable(providerId, principal.getName());
+    }
+
+    @Operation(summary = "隐藏身份提供商", description = "隐藏登录页认证源图标，不修改 AppId、AppSecret 等配置。")
+    @PostMapping("/{providerId}/hide")
+    AuthenticationProviderResponse hide(@Parameter(description = "身份提供商 UUID") @PathVariable UUID providerId, Principal principal) {
+        return providers.setVisible(providerId, false, principal.getName());
+    }
+
+    @Operation(summary = "显示身份提供商", description = "显示登录页认证源图标，不修改 AppId、AppSecret 等配置。")
+    @PostMapping("/{providerId}/show")
+    AuthenticationProviderResponse show(@Parameter(description = "身份提供商 UUID") @PathVariable UUID providerId, Principal principal) {
+        return providers.setVisible(providerId, true, principal.getName());
     }
 
     @Operation(summary = "删除身份提供商", description = "删除认证源配置。")

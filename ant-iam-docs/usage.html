@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>使用说明 · Js IAM 文档中心</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="./">
+        <span class="brand-mark">J</span>
+        <span><strong>系统</strong><small>文档中心</small></span>
+      </a>
+      <nav aria-label="快捷入口">
+        <a class="active" href="./usage.html">使用说明</a>
+        <a href="./integration.html">对接文档</a>
+        <a href="../swagger-ui/index.html">API 文档</a>
+      </nav>
+    </header>
+
+    <div class="docs-layout">
+      <aside class="toc">
+        <p>使用说明</p>
+        <a href="#login">登录系统</a>
+        <a href="#portal">门户中心</a>
+        <a href="#account">账号安全</a>
+        <a href="#sessions">会话与日志</a>
+        <a href="#faq">常见问题</a>
+      </aside>
+
+      <main class="article">
+        <p class="eyebrow">USER GUIDE</p>
+        <h1>使用说明</h1>
+        <p class="lead">本页帮助普通用户完成登录、访问应用和维护账号安全。管理员分配应用后，用户即可在门户中心使用对应应用。</p>
+
+        <section id="login" class="article-section">
+          <h2>登录系统</h2>
+          <ol>
+            <li>打开企业提供的系统登录地址。</li>
+            <li>输入用户名和登录密码，点击“登录”。</li>
+            <li>也可以切换到“验证码登录”，使用已绑定手机号完成验证。</li>
+          </ol>
+          <div class="note">如果账号被锁定、停用或密码过期，请联系管理员处理。临时密码登录后应立即修改密码。</div>
+        </section>
+
+        <section id="portal" class="article-section">
+          <h2>门户中心</h2>
+          <p>登录后进入“我的应用”，这里展示当前账号已经获得授权的应用。</p>
+          <ul>
+            <li>使用应用名称或编码搜索目标应用。</li>
+            <li>点击应用卡片打开应用登录地址。</li>
+            <li>没有目标应用时，提交访问申请并等待管理员审批。</li>
+          </ul>
+        </section>
+
+        <section id="account" class="article-section">
+          <h2>账号安全</h2>
+          <p>在“我的账户”中维护个人信息和登录安全设置。</p>
+          <ul>
+            <li>确认姓名、邮箱、手机号等基础信息准确。</li>
+            <li>定期修改密码，不要与其他系统共用密码。</li>
+            <li>按需绑定企业微信、飞书、钉钉等第三方身份。</li>
+            <li>妥善保存恢复码，恢复码不应发送给他人。</li>
+          </ul>
+        </section>
+
+        <section id="sessions" class="article-section">
+          <h2>会话与日志</h2>
+          <p>“会话管理”可以查看仍然有效的登录会话；“操作日志”可以查看账号相关的关键操作。</p>
+          <div class="note warning">发现陌生设备、异常时间或异常地点的会话时，立即结束该会话并联系管理员。</div>
+        </section>
+
+        <section id="faq" class="article-section">
+          <h2>常见问题</h2>
+          <details open>
+            <summary>为什么看不到某个应用？</summary>
+            <p>应用可能尚未授权给当前账号，或账号不满足自助申请条件。请提交申请或联系管理员。</p>
+          </details>
+          <details>
+            <summary>登录后页面提示会话失效怎么办？</summary>
+            <p>重新登录即可。如果频繁发生，请联系管理员检查会话有效期和系统时间。</p>
+          </details>
+          <details>
+            <summary>需要接入新的业务系统怎么办？</summary>
+            <p>请阅读<a href="./integration.html">对接文档</a>，并向管理员申请应用标识、密钥和回调地址登记。</p>
+          </details>
+        </section>
+      </main>
+    </div>
+
+    <footer>Js IAM 文档中心 · <a href="./">返回文档首页</a></footer>
+  </body>
+</html>

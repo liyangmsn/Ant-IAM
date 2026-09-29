@@ -63,3 +63,19 @@ databaseChangeLog:
       file: db/changelog/031-user-third-party-binding-schema.sql
   - include:
       file: db/changelog/032-authentication-event-method-schema.sql
+  - include:
+      file: db/changelog/033-oauth2-authorization-nonce-schema.sql
+  - include:
+      file: db/changelog/034-user-identity-source-schema.sql
+  - include:
+      file: db/changelog/035-application-access-policy-schema.sql
+  - include:
+      file: db/changelog/036-user-avatar-schema.sql
+  - include:
+      file: db/changelog/037-login-security-schema.sql
+  - include:
+      file: db/changelog/038-oauth-token-binding-schema.sql
+  - include:
+      file: db/changelog/039-application-self-service-schema.sql
+  - include:
+      file: db/changelog/040-audit-client-schema.sql

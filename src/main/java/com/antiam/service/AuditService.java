@@ -8,6 +8,7 @@ import com.antiam.domain.AuditEvent;
 import com.antiam.mapper.AuditMapper;
 import com.antiam.repository.AuditEventRepository;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +19,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 @Service
 @RequiredArgsConstructor
@@ -29,7 +32,29 @@ public class AuditService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     // 记录审计事件，使用独立事务尽量避免被业务事务回滚影响。
     public void record(String actor, String action, String targetType, String targetId, String detail) {
-        auditEvents.save(new AuditEvent(actor, action, targetType, targetId, detail));
+        HttpServletRequest request = currentRequest();
+        String ipAddress = request == null ? null : truncate(clientIp(request), 64);
+        String userAgent = request == null ? null : truncate(request.getHeader("User-Agent"), 512);
+        auditEvents.save(new AuditEvent(actor, action, targetType, targetId, detail, ipAddress, userAgent));
+    }
+
+    // 审计可能在定时任务或异步线程中记录，此时没有 HTTP 请求上下文。
+    private HttpServletRequest currentRequest() {
+        return RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes
+            ? attributes.getRequest()
+            : null;
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
+    }
+
+    private String truncate(String value, int maxLength) {
+        return value == null || value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
     @Transactional(readOnly = true)
@@ -69,14 +94,15 @@ public class AuditService {
         int limit
     ) {
         int size = Math.clamp(limit, 1, 500);
-        int pageIndex = Math.max(page, 1) - 1;
+        // 偏移量最终按 int 传给数据库，页码过大时截断，避免溢出成负数。
+        int pageIndex = Math.min(Math.max(page, 1) - 1, Integer.MAX_VALUE / size - 1);
         Specification<AuditEvent> spec = specification(actor, action, targetType, targetId, from, to, keyword);
         List<AuditEventResponse> resources = auditEvents
             .findAll(spec, PageRequest.of(pageIndex, size, Sort.by(Sort.Direction.DESC, "createdAt")))
             .stream()
             .map(auditMapper::toResponse)
             .toList();
-        return new AuditEventListResponse((int) auditEvents.count(spec), size, resources);
+        return new AuditEventListResponse((int) Math.min(auditEvents.count(spec), Integer.MAX_VALUE), size, resources);
     }
 
     @Transactional(readOnly = true)
@@ -132,13 +158,17 @@ public class AuditService {
                 predicates.add(builder.lessThanOrEqualTo(root.get("createdAt"), to));
             }
             if (keyword != null && !keyword.isBlank()) {
-                String pattern = "%" + keyword.trim().toLowerCase() + "%";
+                // 转义 LIKE 通配符，关键字中的 % 和 _ 按字面匹配。
+                String pattern = "%" + keyword.trim().toLowerCase()
+                    .replace("\\", "\\\\")
+                    .replace("%", "\\%")
+                    .replace("_", "\\_") + "%";
                 predicates.add(builder.or(
-                    builder.like(builder.lower(root.get("actor")), pattern),
-                    builder.like(builder.lower(root.get("action")), pattern),
-                    builder.like(builder.lower(root.get("targetType")), pattern),
-                    builder.like(builder.lower(root.get("targetId")), pattern),
-                    builder.like(builder.lower(root.get("detail")), pattern)));
+                    builder.like(builder.lower(root.get("actor")), pattern, '\\'),
+                    builder.like(builder.lower(root.get("action")), pattern, '\\'),
+                    builder.like(builder.lower(root.get("targetType")), pattern, '\\'),
+                    builder.like(builder.lower(root.get("targetId")), pattern, '\\'),
+                    builder.like(builder.lower(root.get("detail")), pattern, '\\')));
             }
             return builder.and(predicates.toArray(Predicate[]::new));
         };
@@ -148,6 +178,8 @@ public class AuditService {
         if (value == null) {
             return "";
         }
-        return "\"" + value.replace("\"", "\"\"") + "\"";
+        // 以 = + - @ 或制表符、回车开头的单元格会被表格软件当作公式执行，前置单引号按文本处理。
+        String safe = !value.isEmpty() && "=+-@\t\r".indexOf(value.charAt(0)) >= 0 ? "'" + value : value;
+        return "\"" + safe.replace("\"", "\"\"") + "\"";
     }
 }

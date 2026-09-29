@@ -1,5 +1,6 @@
 package com.antiam.web;
 
+import static com.antiam.dto.AccessDtos.ClientSecretResponse;
 import static com.antiam.dto.AccessDtos.ApplicationResponse;
 import static com.antiam.dto.AccessDtos.ApplicationRoleResponse;
 import static com.antiam.dto.AccessDtos.ApplicationAccessReviewEntryResponse;
@@ -19,6 +20,9 @@ import static com.antiam.dto.AccessDtos.CreatePermissionRequest;
 import static com.antiam.dto.AccessDtos.CreateRoleRequest;
 import static com.antiam.dto.AccessDtos.DecideApplicationAccessRequest;
 import static com.antiam.dto.AccessDtos.GrantRequest;
+import static com.antiam.dto.AccessDtos.SubjectApplicationAssignmentResponse;
+import static com.antiam.dto.AccessDtos.BatchApplicationAssignmentRequest;
+import static com.antiam.dto.AccessDtos.DeleteApplicationAssignmentsRequest;
 import static com.antiam.dto.AccessDtos.GroupEffectiveAccessResponse;
 import static com.antiam.dto.AccessDtos.GroupMemberResponse;
 import static com.antiam.dto.AccessDtos.GroupResponse;
@@ -45,6 +49,7 @@ import java.security.Principal;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -81,6 +86,7 @@ public class AccessController {
      */
     @Operation(summary = "创建权限", description = "创建可授予角色的权限资源。")
     @PostMapping("/permissions")
+    @PreAuthorize("@iamAuthorization.canCreatePermission(#request.code(), authentication)")
     @ResponseStatus(HttpStatus.CREATED)
     PermissionResponse createPermission(
         @Parameter(description = "权限创建请求") @Valid @RequestBody CreatePermissionRequest request,
@@ -103,12 +109,24 @@ public class AccessController {
      */
     @Operation(summary = "更新权限", description = "更新权限名称和描述，不修改权限编码。")
     @PutMapping("/permissions/{permissionId}")
+    @PreAuthorize("@iamAuthorization.canManagePermission(#permissionId, authentication)")
     PermissionResponse updatePermission(
         @Parameter(description = "权限 UUID") @PathVariable UUID permissionId,
         @Parameter(description = "权限更新请求") @Valid @RequestBody UpdatePermissionRequest request,
         Principal principal
     ) {
         return access.updatePermission(permissionId, request, principal.getName());
+    }
+
+    /**
+     * 删除权限点。
+     */
+    @Operation(summary = "删除权限", description = "删除权限点并解除其与角色的绑定；控制台内置权限点不可删除。")
+    @DeleteMapping("/permissions/{permissionId}")
+    @PreAuthorize("@iamAuthorization.canManagePermission(#permissionId, authentication)")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deletePermission(@Parameter(description = "权限 UUID") @PathVariable UUID permissionId, Principal principal) {
+        access.deletePermission(permissionId, principal.getName());
     }
 
     /**
@@ -158,12 +176,24 @@ public class AccessController {
      */
     @Operation(summary = "更新角色", description = "更新角色名称和描述，不修改角色编码。")
     @PutMapping("/roles/{roleId}")
+    @PreAuthorize("@iamAuthorization.canManageRole(#roleId, authentication)")
     RoleResponse updateRole(
         @Parameter(description = "角色 UUID") @PathVariable UUID roleId,
         @Parameter(description = "角色更新请求") @Valid @RequestBody UpdateRoleRequest request,
         Principal principal
     ) {
         return access.updateRole(roleId, request, principal.getName());
+    }
+
+    /**
+     * 删除角色。
+     */
+    @Operation(summary = "删除角色", description = "删除角色并解除其与用户、用户组和应用的绑定；IAM 管理员角色不可删除。")
+    @DeleteMapping("/roles/{roleId}")
+    @PreAuthorize("@iamAuthorization.canManageRole(#roleId, authentication)")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deleteRole(@Parameter(description = "角色 UUID") @PathVariable UUID roleId, Principal principal) {
+        access.deleteRole(roleId, principal.getName());
     }
 
     /**
@@ -180,6 +210,7 @@ public class AccessController {
      */
     @Operation(summary = "角色绑定权限", description = "通过 GrantRequest.subjectId 指定角色，targetId 指定权限。")
     @PostMapping("/role-permissions")
+    @PreAuthorize("@iamAuthorization.canGrantPermissionToRole(#request.subjectId(), #request.targetId(), authentication)")
     RoleResponse grantPermissionToRole(
         @Parameter(description = "角色和权限绑定请求") @Valid @RequestBody GrantRequest request,
         Principal principal
@@ -192,6 +223,7 @@ public class AccessController {
      */
     @Operation(summary = "角色解绑权限", description = "通过 GrantRequest.subjectId 指定角色，targetId 指定权限。")
     @DeleteMapping("/role-permissions")
+    @PreAuthorize("@iamAuthorization.canGrantPermissionToRole(#request.subjectId(), #request.targetId(), authentication)")
     RoleResponse revokePermissionFromRole(
         @Parameter(description = "角色和权限解绑请求") @Valid @RequestBody GrantRequest request,
         Principal principal
@@ -237,6 +269,7 @@ public class AccessController {
      */
     @Operation(summary = "更新用户组", description = "更新用户组名称，不修改用户组编码。")
     @PutMapping("/groups/{groupId}")
+    @PreAuthorize("@iamAuthorization.canManageGroupMembership(#groupId, authentication)")
     GroupResponse updateGroup(
         @Parameter(description = "用户组 UUID") @PathVariable UUID groupId,
         @Parameter(description = "用户组更新请求") @Valid @RequestBody UpdateGroupRequest request,
@@ -250,6 +283,7 @@ public class AccessController {
      */
     @Operation(summary = "删除用户组", description = "删除用户组，并级联清理该组的成员关系和角色关系。")
     @DeleteMapping("/groups/{groupId}")
+    @PreAuthorize("@iamAuthorization.canManageGroupMembership(#groupId, authentication)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void deleteGroup(
         @Parameter(description = "用户组 UUID") @PathVariable UUID groupId,
@@ -268,6 +302,33 @@ public class AccessController {
     }
 
     /**
+     * 查询用户组的应用授权。
+     */
+    @Operation(summary = "查询用户组应用授权", description = "返回授予该用户组的应用授权记录，包含应用名称和授权状态。")
+    @GetMapping("/groups/{groupId}/application-assignments")
+    List<SubjectApplicationAssignmentResponse> groupApplicationAssignments(@Parameter(description = "用户组 UUID") @PathVariable UUID groupId) {
+        return access.listGroupApplicationAssignments(groupId);
+    }
+
+    /**
+     * 查询直接授权给用户的应用。
+     */
+    @Operation(summary = "查询用户应用授权", description = "返回直接授予该用户的应用授权记录，不含经用户组或组织继承的授权。")
+    @GetMapping("/users/{userId}/application-assignments")
+    List<SubjectApplicationAssignmentResponse> userApplicationAssignments(@Parameter(description = "用户 UUID") @PathVariable UUID userId) {
+        return access.listUserApplicationAssignments(userId);
+    }
+
+    /**
+     * 查询授权给组织的应用。
+     */
+    @Operation(summary = "查询组织应用授权", description = "返回授予该组织的应用授权记录；组织授权对其下级组织成员同样生效。")
+    @GetMapping("/organizations/{organizationId}/application-assignments")
+    List<SubjectApplicationAssignmentResponse> organizationApplicationAssignments(@Parameter(description = "组织 UUID") @PathVariable UUID organizationId) {
+        return access.listOrganizationApplicationAssignments(organizationId);
+    }
+
+    /**
      * 查询用户组成员。
      */
     @Operation(summary = "查询用户组成员", description = "返回指定用户组下的用户成员列表。")
@@ -281,6 +342,7 @@ public class AccessController {
      */
     @Operation(summary = "添加用户组成员", description = "将指定用户加入用户组。")
     @PostMapping("/groups/{groupId}/members")
+    @PreAuthorize("@iamAuthorization.canManageGroupMembership(#groupId, authentication)")
     @ResponseStatus(HttpStatus.CREATED)
     GroupMemberResponse addGroupMember(
         @Parameter(description = "用户组 UUID") @PathVariable UUID groupId,
@@ -295,6 +357,7 @@ public class AccessController {
      */
     @Operation(summary = "移除用户组成员", description = "将指定用户移出用户组。")
     @DeleteMapping("/groups/{groupId}/members/{userId}")
+    @PreAuthorize("@iamAuthorization.canManageGroupMembership(#groupId, authentication)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void removeGroupMember(
         @Parameter(description = "用户组 UUID") @PathVariable UUID groupId,
@@ -309,6 +372,7 @@ public class AccessController {
      */
     @Operation(summary = "用户组绑定角色", description = "通过 GrantRequest.subjectId 指定用户组，targetId 指定角色。")
     @PostMapping("/group-roles")
+    @PreAuthorize("@iamAuthorization.canManageRole(#request.targetId(), authentication)")
     GroupResponse grantRoleToGroup(
         @Parameter(description = "用户组和角色绑定请求") @Valid @RequestBody GrantRequest request,
         Principal principal
@@ -321,6 +385,7 @@ public class AccessController {
      */
     @Operation(summary = "用户组解绑角色", description = "通过 GrantRequest.subjectId 指定用户组，targetId 指定角色。")
     @DeleteMapping("/group-roles")
+    @PreAuthorize("@iamAuthorization.canManageRole(#request.targetId(), authentication)")
     GroupResponse revokeRoleFromGroup(
         @Parameter(description = "用户组和角色解绑请求") @Valid @RequestBody GrantRequest request,
         Principal principal
@@ -507,9 +572,21 @@ public class AccessController {
     }
 
     /**
+     * 重置应用客户端密钥。
+     */
+    @Operation(summary = "重置客户端密钥", description = "重新生成应用的 OAuth/OIDC 客户端密钥，明文只返回一次。")
+    @PostMapping("/applications/{applicationId}/client-secret")
+    ClientSecretResponse resetClientSecret(
+        @Parameter(description = "应用 UUID") @PathVariable UUID applicationId,
+        Principal principal
+    ) {
+        return access.resetClientSecret(applicationId, principal.getName());
+    }
+
+    /**
      * 查询应用授权记录。
      */
-    @Operation(summary = "查询应用授权", description = "返回应用的用户或用户组授权记录。")
+    @Operation(summary = "查询应用授权", description = "返回应用的用户、用户组或组织授权记录，包含主体名称和添加时间。")
     @GetMapping("/applications/{applicationId}/assignments")
     List<ApplicationAssignmentResponse> applicationAssignments(@Parameter(description = "应用 UUID") @PathVariable UUID applicationId) {
         return access.listApplicationAssignments(applicationId);
@@ -539,6 +616,34 @@ public class AccessController {
         Principal principal
     ) {
         return access.assignApplication(applicationId, request, principal.getName());
+    }
+
+    /**
+     * 批量给同一类型的主体分配应用访问权。
+     */
+    @Operation(summary = "批量创建应用授权", description = "一次为多个用户、用户组或组织授予应用访问权；已存在的授权会重新启用并更新过期时间。")
+    @PostMapping("/applications/{applicationId}/assignments/batch")
+    @ResponseStatus(HttpStatus.CREATED)
+    List<ApplicationAssignmentResponse> assignApplicationBatch(
+        @Parameter(description = "应用 UUID") @PathVariable UUID applicationId,
+        @Parameter(description = "批量应用授权请求") @Valid @RequestBody BatchApplicationAssignmentRequest request,
+        Principal principal
+    ) {
+        return access.assignApplicationBatch(applicationId, request, principal.getName());
+    }
+
+    /**
+     * 取消应用授权，删除授权记录。
+     */
+    @Operation(summary = "取消应用授权", description = "删除一条或多条应用授权记录；仅需暂停访问时请使用停用接口。")
+    @PostMapping("/applications/{applicationId}/assignments/batch-delete")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deleteApplicationAssignments(
+        @Parameter(description = "应用 UUID") @PathVariable UUID applicationId,
+        @Parameter(description = "待删除的授权记录") @Valid @RequestBody DeleteApplicationAssignmentsRequest request,
+        Principal principal
+    ) {
+        access.deleteApplicationAssignments(applicationId, request.assignmentIds(), principal.getName());
     }
 
     /**
@@ -638,7 +743,7 @@ public class AccessController {
     @PostMapping("/me/application-access-requests/{requestId}/cancel")
     ApplicationAccessRequestResponse cancelCurrentUserApplicationAccessRequest(
         @Parameter(description = "应用访问申请 UUID") @PathVariable UUID requestId,
-        @Parameter(description = "取消原因请求，可为空") @RequestBody DecideApplicationAccessRequest request,
+        @Parameter(description = "取消原因请求，可为空") @RequestBody(required = false) DecideApplicationAccessRequest request,
         Principal principal
     ) {
         return access.cancelCurrentUserApplicationAccessRequest(requestId, request, principal.getName());
@@ -676,7 +781,7 @@ public class AccessController {
     @PostMapping("/application-access-requests/{requestId}/approve")
     ApplicationAccessRequestResponse approveApplicationAccessRequest(
         @Parameter(description = "应用访问申请 UUID") @PathVariable UUID requestId,
-        @Parameter(description = "审批请求，可填写原因和授权过期时间") @RequestBody DecideApplicationAccessRequest request,
+        @Parameter(description = "审批请求，可填写原因和授权过期时间") @RequestBody(required = false) DecideApplicationAccessRequest request,
         Principal principal
     ) {
         return access.approveApplicationAccessRequest(requestId, request, principal.getName());
@@ -689,7 +794,7 @@ public class AccessController {
     @PostMapping("/application-access-requests/{requestId}/reject")
     ApplicationAccessRequestResponse rejectApplicationAccessRequest(
         @Parameter(description = "应用访问申请 UUID") @PathVariable UUID requestId,
-        @Parameter(description = "审批请求，可填写拒绝原因") @RequestBody DecideApplicationAccessRequest request,
+        @Parameter(description = "审批请求，可填写拒绝原因") @RequestBody(required = false) DecideApplicationAccessRequest request,
         Principal principal
     ) {
         return access.rejectApplicationAccessRequest(requestId, request, principal.getName());
@@ -702,7 +807,7 @@ public class AccessController {
     @PostMapping("/application-access-requests/{requestId}/cancel")
     ApplicationAccessRequestResponse cancelApplicationAccessRequest(
         @Parameter(description = "应用访问申请 UUID") @PathVariable UUID requestId,
-        @Parameter(description = "取消原因请求，可为空") @RequestBody DecideApplicationAccessRequest request,
+        @Parameter(description = "取消原因请求，可为空") @RequestBody(required = false) DecideApplicationAccessRequest request,
         Principal principal
     ) {
         return access.cancelApplicationAccessRequest(requestId, request, principal.getName());

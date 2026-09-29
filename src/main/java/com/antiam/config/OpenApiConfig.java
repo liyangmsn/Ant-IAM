@@ -22,8 +22,8 @@ public class OpenApiConfig {
                 .scheme("basic")))
             .addSecurityItem(new SecurityRequirement().addList("basicAuth"))
             .info(new Info()
-                .title("Ant IAM 接口文档")
+                .title("系统接口文档")
                 .version("0.1.0")
-                .description("基于 Spring Boot 4、PostgreSQL、JPA 和 Liquibase 构建的 IAM / IDaaS 后端接口。"));
+                .description("身份与访问管理系统的后端接口。"));
     }
 }

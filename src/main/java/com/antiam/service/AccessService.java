@@ -1,5 +1,6 @@
 package com.antiam.service;
 
+import static com.antiam.dto.AccessDtos.ClientSecretResponse;
 import static com.antiam.dto.AccessDtos.ApplicationResponse;
 import static com.antiam.dto.AccessDtos.ApplicationRoleResponse;
 import static com.antiam.dto.AccessDtos.ApplicationAccessReviewEntryResponse;
@@ -7,6 +8,8 @@ import static com.antiam.dto.AccessDtos.ApplicationAccessRequestResponse;
 import static com.antiam.dto.AccessDtos.ApplicationAccessDecisionResponse;
 import static com.antiam.dto.AccessDtos.ApplicationAssignmentRequest;
 import static com.antiam.dto.AccessDtos.ApplicationAssignmentResponse;
+import static com.antiam.dto.AccessDtos.ApplicationAssignmentSubjectType;
+import static com.antiam.dto.AccessDtos.BatchApplicationAssignmentRequest;
 import static com.antiam.dto.AccessDtos.ApplicationGroupResponse;
 import static com.antiam.dto.AccessDtos.ApplicationSsoConfigResponse;
 import static com.antiam.dto.AccessDtos.ConfigureApplicationSsoRequest;
@@ -18,6 +21,7 @@ import static com.antiam.dto.AccessDtos.CreatePermissionRequest;
 import static com.antiam.dto.AccessDtos.CreateRoleRequest;
 import static com.antiam.dto.AccessDtos.DecideApplicationAccessRequest;
 import static com.antiam.dto.AccessDtos.GroupEffectiveAccessResponse;
+import static com.antiam.dto.AccessDtos.SubjectApplicationAssignmentResponse;
 import static com.antiam.dto.AccessDtos.GroupEffectivePermissionResponse;
 import static com.antiam.dto.AccessDtos.GroupMemberResponse;
 import static com.antiam.dto.AccessDtos.GroupResponse;
@@ -39,17 +43,25 @@ import static com.antiam.dto.AccessDtos.UpdatePermissionRequest;
 import static com.antiam.dto.AccessDtos.UpdateRoleRequest;
 import static com.antiam.dto.AccessDtos.UserApplicationResponse;
 
+import com.antiam.common.ApplicationAccessDeniedException;
+import com.antiam.common.ConflictException;
+import com.antiam.common.ForbiddenException;
 import com.antiam.common.NotFoundException;
+import com.antiam.config.ConsolePermission;
+import com.antiam.config.SecurityAuthorities;
 import com.antiam.domain.AccountStatus;
 import com.antiam.domain.Application;
 import com.antiam.domain.ApplicationAccessRequest;
 import com.antiam.domain.ApplicationAccessRequestStatus;
 import com.antiam.domain.ApplicationAssignment;
 import com.antiam.domain.ApplicationGroup;
+import com.antiam.domain.ApplicationProtocol;
 import com.antiam.domain.ApplicationSsoConfig;
+import com.antiam.domain.Organization;
 import com.antiam.domain.Permission;
 import com.antiam.domain.Role;
 import com.antiam.domain.Tenant;
+import com.antiam.domain.TenantStatus;
 import com.antiam.domain.UserAccount;
 import com.antiam.domain.UserGroup;
 import com.antiam.repository.ApplicationAccessRequestRepository;
@@ -64,6 +76,7 @@ import com.antiam.repository.OAuthAccessTokenRepository;
 import com.antiam.repository.OAuthAuthorizationCodeRepository;
 import com.antiam.repository.OAuthConsentRepository;
 import com.antiam.repository.OAuthRefreshTokenRepository;
+import com.antiam.repository.OrganizationRepository;
 import com.antiam.repository.PermissionRepository;
 import com.antiam.repository.RoleRepository;
 import com.antiam.repository.SamlAssertionRepository;
@@ -72,6 +85,7 @@ import com.antiam.repository.UserGroupRepository;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.time.Instant;
@@ -101,8 +115,12 @@ public class AccessService {
     private final AuthenticationSessionRepository authenticationSessions;
     private final AuthenticationEventRepository authenticationEvents;
     private final UserAccountRepository users;
+    private final OrganizationRepository organizations;
     private final TenantService tenantService;
     private final AuditService auditService;
+    private static final java.security.SecureRandom CLIENT_SECRET_RANDOM = new java.security.SecureRandom();
+    private static final Set<String> SUPPORTED_GRANT_TYPES = Set.of("authorization_code", "refresh_token");
+
     private final PasswordEncoder passwordEncoder;
 
     /**
@@ -158,6 +176,13 @@ public class AccessService {
         Application application = getApplication(applicationId);
         ApplicationGroup group = request.groupId() == null ? null : getApplicationGroup(request.groupId());
         application.update(request.name(), request.protocol(), request.loginUrl(), request.description(), group);
+        if (request.authorizationType() != null && request.authorizationType() != application.getAuthorizationType()) {
+            application.changeAuthorizationType(request.authorizationType());
+            auditService.record(actor, "application.authorization_type.update", "application", applicationId.toString(), request.authorizationType().name());
+        }
+        if (request.selfServiceAccessRequestEnabled() != null) {
+            application.changeSelfServiceAccessRequest(request.selfServiceAccessRequestEnabled());
+        }
         auditService.record(actor, "application.update", "application", applicationId.toString(), application.getCode());
         return toResponse(application);
     }
@@ -265,34 +290,39 @@ public class AccessService {
     // 保存应用 SSO 配置，客户端密钥只保存加密后的哈希。
     public ApplicationSsoConfigResponse configureApplicationSso(UUID applicationId, ConfigureApplicationSsoRequest request, String actor) {
         Application application = getApplication(applicationId);
+        validateSsoRequest(applicationId, request);
+        Optional<ApplicationSsoConfig> current = ssoConfigs.findByApplicationId(applicationId);
+        boolean pkceRequired = request.pkceRequired() != null
+            ? request.pkceRequired()
+            : current.map(ApplicationSsoConfig::isPkceRequired).orElse(false);
         String secretHash = request.clientSecret() == null || request.clientSecret().isBlank()
             ? null
             : passwordEncoder.encode(request.clientSecret());
         ApplicationSsoConfig replacement = new ApplicationSsoConfig(
             application,
             request.protocol(),
-            request.clientId(),
+            blankToNull(request.clientId()),
             secretHash,
-            joinValues(request.redirectUris()),
-            joinValues(defaultSet(request.grantTypes(), Set.of("authorization_code", "refresh_token"))),
-            request.pkceRequired(),
-            joinValues(request.postLogoutRedirectUris()),
-            request.loginInitiationUri(),
+            joinValues(trimmedSet(request.redirectUris())),
+            joinValues(defaultSet(trimmedSet(request.grantTypes()), SUPPORTED_GRANT_TYPES)),
+            pkceRequired,
+            joinValues(trimmedSet(request.postLogoutRedirectUris())),
+            blankToNull(request.loginInitiationUri()),
             positiveOrDefault(request.accessTokenTtlMinutes(), 20),
             positiveOrDefault(request.authorizationCodeTtlMinutes(), 5),
             positiveOrDefault(request.refreshTokenTtlMinutes(), 43_200),
             positiveOrDefault(request.idTokenTtlMinutes(), 30),
             request.reuseRefreshTokens() != null && request.reuseRefreshTokens(),
             defaultString(request.idTokenSignatureAlgorithm(), "RS256"),
-            joinValues(request.scopes()),
-            request.samlEntityId(),
-            request.samlAcsUrl(),
-            request.casServiceUrl(),
-            request.jwtAudience(),
+            joinValues(trimmedSet(request.scopes())),
+            blankToNull(request.samlEntityId()),
+            blankToNull(request.samlAcsUrl()),
+            blankToNull(request.casServiceUrl()),
+            blankToNull(request.jwtAudience()),
             request.formLoginTemplate(),
             joinValues(request.idTokenClaims()),
             joinEntries(request.customClaims()));
-        ApplicationSsoConfig saved = ssoConfigs.findByApplicationId(applicationId)
+        ApplicationSsoConfig saved = current
             .map(existing -> {
                 existing.replaceWith(replacement);
                 return existing;
@@ -300,6 +330,20 @@ public class AccessService {
             .orElseGet(() -> ssoConfigs.save(replacement));
         auditService.record(actor, "application.sso.configure", "application", applicationId.toString(), request.protocol().name());
         return toResponse(saved);
+    }
+
+    @Transactional
+    // 重新生成应用客户端密钥，明文只在本次响应中返回一次。
+    public ClientSecretResponse resetClientSecret(UUID applicationId, String actor) {
+        getApplication(applicationId);
+        ApplicationSsoConfig config = ssoConfigs.findByApplicationId(applicationId)
+            .orElseThrow(() -> new IllegalArgumentException("请先在协议配置中保存应用的 SSO 配置"));
+        byte[] bytes = new byte[32];
+        CLIENT_SECRET_RANDOM.nextBytes(bytes);
+        String secret = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        config.rotateClientSecret(passwordEncoder.encode(secret));
+        auditService.record(actor, "application.client_secret.reset", "application", applicationId.toString(), config.getClientId());
+        return new ClientSecretResponse(config.getClientId() == null ? applicationId.toString() : config.getClientId(), secret);
     }
 
     @Transactional(readOnly = true)
@@ -311,30 +355,52 @@ public class AccessService {
     }
 
     @Transactional
-    // 给用户或用户组分配应用访问权，同一主体重复授权时会重新启用并更新过期时间。
+    // 给用户、用户组或组织分配应用访问权，同一主体重复授权时会重新启用并更新过期时间。
     public ApplicationAssignmentResponse assignApplication(UUID applicationId, ApplicationAssignmentRequest request, String actor) {
-        if ((request.userId() == null && request.groupId() == null) || (request.userId() != null && request.groupId() != null)) {
-            throw new IllegalArgumentException("Exactly one of userId or groupId is required");
+        if (request.expiresAt() != null && !request.expiresAt().isAfter(Instant.now())) {
+            throw new IllegalArgumentException("授权过期时间必须晚于当前时间");
+        }
+        long subjects = java.util.stream.Stream.of(request.userId(), request.groupId(), request.organizationId()).filter(Objects::nonNull).count();
+        if (subjects != 1) {
+            throw new IllegalArgumentException("Exactly one of userId, groupId or organizationId is required");
         }
         Application application = getApplication(applicationId);
         UserAccount user = request.userId() == null ? null : users.findById(request.userId())
             .orElseThrow(() -> new NotFoundException("User not found: " + request.userId()));
         UserGroup group = request.groupId() == null ? null : groups.findById(request.groupId())
             .orElseThrow(() -> new NotFoundException("User group not found: " + request.groupId()));
+        Organization organization = request.organizationId() == null ? null : organizations.findById(request.organizationId())
+            .orElseThrow(() -> new NotFoundException("Organization not found: " + request.organizationId()));
         ApplicationAssignment saved = findExistingAssignment(applicationId, request)
             .map(existing -> {
                 existing.enable();
                 existing.updateExpiry(request.expiresAt());
                 return existing;
             })
-            .orElseGet(() -> applicationAssignments.save(new ApplicationAssignment(application, user, group, request.expiresAt())));
+            .orElseGet(() -> applicationAssignments.save(organization == null
+                ? new ApplicationAssignment(application, user, group, request.expiresAt())
+                : new ApplicationAssignment(application, organization, request.expiresAt())));
         auditService.record(actor, "application.assign", "application", applicationId.toString(), assignmentDetail(saved));
         return toResponse(saved);
+    }
+
+    @Transactional
+    // 批量授权同一类型的多个主体，对齐 TopIAM 访问授权弹窗一次选择多个用户、用户组或组织。
+    public List<ApplicationAssignmentResponse> assignApplicationBatch(UUID applicationId, BatchApplicationAssignmentRequest request, String actor) {
+        return request.subjectIds().stream()
+            .distinct()
+            .map(subjectId -> assignApplication(applicationId, switch (request.subjectType()) {
+                case USER -> new ApplicationAssignmentRequest(subjectId, null, null, request.expiresAt());
+                case GROUP -> new ApplicationAssignmentRequest(null, subjectId, null, request.expiresAt());
+                case ORGANIZATION -> new ApplicationAssignmentRequest(null, null, subjectId, request.expiresAt());
+            }, actor))
+            .toList();
     }
 
     @Transactional(readOnly = true)
     // 查询应用的授权记录列表。
     public List<ApplicationAssignmentResponse> listApplicationAssignments(UUID applicationId) {
+        getApplication(applicationId);
         return applicationAssignments.findByApplicationId(applicationId).stream().map(this::toResponse).toList();
     }
 
@@ -348,6 +414,17 @@ public class AccessService {
             .toList();
         List<ApplicationAccessReviewEntryResponse> roleEntries = reviewApplicationRoleAccess(application, assignmentEntries);
         return java.util.stream.Stream.concat(assignmentEntries.stream(), roleEntries.stream()).toList();
+    }
+
+    @Transactional
+    // 取消应用授权并删除授权记录，删除动作写入审计便于追溯。
+    public void deleteApplicationAssignments(UUID applicationId, List<UUID> assignmentIds, String actor) {
+        List<ApplicationAssignment> targets = assignmentIds.stream()
+            .distinct()
+            .map(assignmentId -> getApplicationAssignment(applicationId, assignmentId))
+            .toList();
+        targets.forEach(assignment -> auditService.record(actor, "application_assignment.delete", "application", applicationId.toString(), assignmentDetail(assignment)));
+        applicationAssignments.deleteAll(targets);
     }
 
     @Transactional
@@ -380,29 +457,42 @@ public class AccessService {
         if (user.getStatus() != AccountStatus.ACTIVE) {
             return new ApplicationAccessDecisionResponse(applicationId, userId, false, "user_not_active", null);
         }
+        if (user.getTenant() != null && user.getTenant().getStatus() == TenantStatus.SUSPENDED) {
+            return new ApplicationAccessDecisionResponse(applicationId, userId, false, "tenant_suspended", null);
+        }
         if (application.getTenant() != null && (user.getTenant() == null
             || !application.getTenant().getId().equals(user.getTenant().getId()))) {
             return new ApplicationAccessDecisionResponse(applicationId, userId, false, "tenant_mismatch", null);
+        }
+        if (application.isAllAccess()) {
+            return new ApplicationAccessDecisionResponse(applicationId, userId, true, "all_access", null);
         }
         java.util.Optional<ApplicationAssignment> direct = applicationAssignments.findByApplicationIdAndUserId(applicationId, userId)
             .filter(assignment -> assignment.isUsable(Instant.now()));
         if (direct.isPresent()) {
             return new ApplicationAccessDecisionResponse(applicationId, userId, true, "direct_assignment", direct.get().getId());
         }
-        Set<UUID> groupIds = user.getGroups().stream().map(UserGroup::getId).collect(java.util.stream.Collectors.toSet());
-        return applicationAssignments.findByApplicationId(applicationId).stream()
-            .filter(assignment -> assignment.isUsable(Instant.now()))
-            .filter(assignment -> assignment.getGroup() != null && groupIds.contains(assignment.getGroup().getId()))
-            .findFirst()
-            .map(assignment -> new ApplicationAccessDecisionResponse(
+        return findSubjectAssignment(application, user, userGroupIds(user), userOrganizationIds(user))
+            .map(match -> new ApplicationAccessDecisionResponse(
                 applicationId,
                 userId,
                 true,
-                "group_assignment",
-                assignment.getId()))
+                match.source() + "_assignment",
+                match.assignment().getId()))
             .orElseGet(() -> userHasApplicationRole(application, user)
                 ? new ApplicationAccessDecisionResponse(applicationId, userId, true, "application_role", null)
                 : new ApplicationAccessDecisionResponse(applicationId, userId, false, "no_assignment", null));
+    }
+
+    /**
+     * SSO 签发凭据前的访问校验：未通过授权判定的用户不能登录该应用。
+     */
+    @Transactional(readOnly = true)
+    public void requireApplicationAccess(Application application, UserAccount user) {
+        ApplicationAccessDecisionResponse decision = decideApplicationAccess(application.getId(), user.getId());
+        if (!decision.allowed()) {
+            throw new ApplicationAccessDeniedException(application.getCode(), decision.reason());
+        }
     }
 
     @Transactional(readOnly = true)
@@ -438,6 +528,7 @@ public class AccessService {
                 java.util.LinkedHashMap::new));
         return applications.findAll().stream()
             .filter(Application::isEnabled)
+            .filter(Application::isSelfServiceAccessRequestEnabled)
             .filter(application -> tenantMatches(application, user))
             .filter(application -> !decideApplicationAccess(application.getId(), user.getId()).allowed())
             .map(application -> toRequestableApplication(application, pendingRequests.get(application.getId())))
@@ -460,6 +551,9 @@ public class AccessService {
         String username
     ) {
         Application application = getApplication(request.applicationId());
+        if (!application.isSelfServiceAccessRequestEnabled()) {
+            throw new IllegalArgumentException("该应用未开启自助访问申请");
+        }
         UserAccount user = users.findByUsername(username)
             .orElseThrow(() -> new NotFoundException("User not found: " + username));
         return requestApplicationAccess(application, user, request.reason(), username);
@@ -501,6 +595,10 @@ public class AccessService {
         String actor
     ) {
         ApplicationAccessRequest accessRequest = getAccessRequest(requestId);
+        // 先确认申请仍待审批，避免已拒绝或已取消的申请被重新批准并生成授权。
+        if (accessRequest.getStatus() != ApplicationAccessRequestStatus.PENDING) {
+            throw new IllegalArgumentException("Application access request is already decided");
+        }
         assignApplication(
             accessRequest.getApplication().getId(),
             new ApplicationAssignmentRequest(accessRequest.getUser().getId(), null, assignmentExpiresAt(request)),
@@ -547,7 +645,7 @@ public class AccessService {
             .orElseThrow(() -> new NotFoundException("User not found: " + username));
         ApplicationAccessRequest accessRequest = getAccessRequest(requestId);
         if (!accessRequest.getUser().getId().equals(user.getId())) {
-            throw new IllegalArgumentException("Application access request does not belong to current user");
+            throw new ForbiddenException("Application access request does not belong to current user");
         }
         accessRequest.cancel(username, decisionReason(request));
         auditService.record(username, "application_access_request.self_cancel", "application", accessRequest.getApplication().getId().toString(), user.getUsername());
@@ -589,11 +687,12 @@ public class AccessService {
         if (user.getStatus() != AccountStatus.ACTIVE) {
             return List.of();
         }
-        Set<UUID> groupIds = user.getGroups().stream().map(UserGroup::getId).collect(java.util.stream.Collectors.toSet());
+        Set<UUID> groupIds = userGroupIds(user);
+        Set<UUID> organizationIds = userOrganizationIds(user);
         return applications.findAll().stream()
             .filter(Application::isEnabled)
             .filter(application -> tenantMatches(application, user))
-            .map(application -> toUserApplication(application, user, groupIds))
+            .map(application -> toUserApplication(application, user, groupIds, organizationIds))
             .filter(Objects::nonNull)
             .toList();
     }
@@ -674,6 +773,20 @@ public class AccessService {
         return toResponse(permission);
     }
 
+    @Transactional
+    // 删除权限点，角色上的授予关系由数据库级联清理；控制台内置权限点不可删除。
+    public void deletePermission(UUID permissionId, String actor) {
+        Permission permission = permissions.findById(permissionId)
+            .orElseThrow(() -> new NotFoundException("Permission not found: " + permissionId));
+        if (ConsolePermission.isConsoleCode(permission.getCode())) {
+            throw new IllegalArgumentException("控制台内置权限不能删除: " + permission.getCode());
+        }
+        String code = permission.getCode();
+        roles.findByPermissionsId(permissionId).forEach(role -> role.revoke(permission));
+        permissions.delete(permission);
+        auditService.record(actor, "permission.delete", "permission", permissionId.toString(), code);
+    }
+
     @Transactional(readOnly = true)
     // 统计权限的角色、用户和用户组影响面，辅助管理员评估变更风险。
     public PermissionImpactResponse permissionImpact(UUID permissionId) {
@@ -738,6 +851,18 @@ public class AccessService {
         role.update(request.name(), request.description());
         auditService.record(actor, "role.update", "role", roleId.toString(), role.getCode());
         return toResponse(role);
+    }
+
+    @Transactional
+    // 删除角色，用户、用户组和应用上的角色关系由数据库级联清理；IAM 管理员角色不可删除。
+    public void deleteRole(UUID roleId, String actor) {
+        Role role = roles.findById(roleId).orElseThrow(() -> new NotFoundException("Role not found: " + roleId));
+        if (SecurityAuthorities.IAM_ADMIN_ROLE.equals(role.getCode())) {
+            throw new IllegalArgumentException("内置管理员角色不能删除");
+        }
+        String code = role.getCode();
+        roles.delete(role);
+        auditService.record(actor, "role.delete", "role", roleId.toString(), code);
     }
 
     @Transactional(readOnly = true)
@@ -846,6 +971,52 @@ public class AccessService {
             .orElseThrow(() -> new NotFoundException("User not found: " + userId));
         user.leave(group);
         auditService.record(actor, "group.member.remove", "group", groupId.toString(), user.getUsername());
+    }
+
+    @Transactional(readOnly = true)
+    // 查询用户组被授权访问的应用，用于用户组详情的授权应用页。
+    public List<SubjectApplicationAssignmentResponse> listGroupApplicationAssignments(UUID groupId) {
+        if (!groups.existsById(groupId)) {
+            throw new NotFoundException("User group not found: " + groupId);
+        }
+        return toSubjectAssignments(applicationAssignments.findByGroupId(groupId));
+    }
+
+    @Transactional(readOnly = true)
+    // 查询直接授权给用户的应用，用于用户详情的已授权应用。
+    public List<SubjectApplicationAssignmentResponse> listUserApplicationAssignments(UUID userId) {
+        if (!users.existsById(userId)) {
+            throw new NotFoundException("User not found: " + userId);
+        }
+        return toSubjectAssignments(applicationAssignments.findByUserId(userId));
+    }
+
+    @Transactional(readOnly = true)
+    // 查询授权给组织的应用，用于组织节点的授权应用视图。
+    public List<SubjectApplicationAssignmentResponse> listOrganizationApplicationAssignments(UUID organizationId) {
+        if (!organizations.existsById(organizationId)) {
+            throw new NotFoundException("Organization not found: " + organizationId);
+        }
+        return toSubjectAssignments(applicationAssignments.findByOrganizationId(organizationId));
+    }
+
+    private List<SubjectApplicationAssignmentResponse> toSubjectAssignments(List<ApplicationAssignment> assignments) {
+        Instant now = Instant.now();
+        return assignments.stream()
+            .map(assignment -> {
+                Application application = assignment.getApplication();
+                return new SubjectApplicationAssignmentResponse(
+                    assignment.getId(),
+                    application.getId(),
+                    application.getCode(),
+                    application.getName(),
+                    application.getProtocol(),
+                    application.isEnabled(),
+                    assignment.getExpiresAt(),
+                    assignment.isExpired(now),
+                    assignment.isEnabled());
+            })
+            .toList();
     }
 
     @Transactional(readOnly = true)
@@ -1060,7 +1231,8 @@ public class AccessService {
             application.getTenant() == null ? null : application.getTenant().getId(),
             application.getGroup() == null ? null : application.getGroup().getId(),
             application.isEnabled(),
-            application.isEnabled());
+            application.isSelfServiceAccessRequestEnabled(),
+            application.getAuthorizationType());
     }
 
     private ApplicationGroupResponse toApplicationGroupResponse(ApplicationGroup group) {
@@ -1105,6 +1277,7 @@ public class AccessService {
             config.getSamlAcsUrl(),
             config.getCasServiceUrl(),
             config.getJwtAudience(),
+            config.getFormLoginTemplate(),
             splitValues(config.getIdTokenClaims()),
             splitEntries(config.getCustomClaims()),
             config.isEnabled());
@@ -1113,19 +1286,107 @@ public class AccessService {
     private ApplicationAssignmentResponse toResponse(ApplicationAssignment assignment) {
         UUID userId = assignment.getUser() == null ? null : assignment.getUser().getId();
         UUID groupId = assignment.getGroup() == null ? null : assignment.getGroup().getId();
+        UUID organizationId = assignment.getOrganization() == null ? null : assignment.getOrganization().getId();
         return new ApplicationAssignmentResponse(
             assignment.getId(),
             assignment.getApplication().getId(),
             userId,
             groupId,
+            organizationId,
+            subjectType(assignment),
+            subjectName(assignment),
             assignment.getExpiresAt(),
             assignment.isExpired(Instant.now()),
-            assignment.isEnabled());
+            assignment.isEnabled(),
+            assignment.getCreatedAt());
+    }
+
+    private ApplicationAssignmentSubjectType subjectType(ApplicationAssignment assignment) {
+        if (assignment.getUser() != null) {
+            return ApplicationAssignmentSubjectType.USER;
+        }
+        return assignment.getOrganization() != null ? ApplicationAssignmentSubjectType.ORGANIZATION : ApplicationAssignmentSubjectType.GROUP;
+    }
+
+    private String subjectName(ApplicationAssignment assignment) {
+        if (assignment.getUser() != null) {
+            UserAccount user = assignment.getUser();
+            return user.getDisplayName() == null || user.getDisplayName().isBlank()
+                ? user.getUsername()
+                : user.getDisplayName() + "（" + user.getUsername() + "）";
+        }
+        if (assignment.getOrganization() != null) {
+            return assignment.getOrganization().getName();
+        }
+        return assignment.getGroup().getName();
+    }
+
+    private record SubjectAssignmentMatch(ApplicationAssignment assignment, String source) {
+    }
+
+    // 按用户组、组织（含上级组织）查找可用授权，组授权优先于组织授权。
+    private java.util.Optional<SubjectAssignmentMatch> findSubjectAssignment(
+        Application application,
+        UserAccount user,
+        Set<UUID> groupIds,
+        Set<UUID> organizationIds
+    ) {
+        Instant now = Instant.now();
+        List<ApplicationAssignment> usable = applicationAssignments.findByApplicationId(application.getId()).stream()
+            .filter(assignment -> assignment.isUsable(now))
+            .toList();
+        return usable.stream()
+            .filter(assignment -> assignment.getGroup() != null && groupIds.contains(assignment.getGroup().getId()))
+            .findFirst()
+            .map(assignment -> new SubjectAssignmentMatch(assignment, "group"))
+            .or(() -> usable.stream()
+                .filter(assignment -> assignment.getOrganization() != null && organizationIds.contains(assignment.getOrganization().getId()))
+                .findFirst()
+                .map(assignment -> new SubjectAssignmentMatch(assignment, "organization")));
+    }
+
+    private Set<UUID> descendantOrganizationIds(UUID rootId) {
+        Map<UUID, List<UUID>> childrenByParent = new java.util.HashMap<>();
+        organizations.findAll().forEach(organization -> {
+            if (organization.getParent() != null) {
+                childrenByParent.computeIfAbsent(organization.getParent().getId(), key -> new java.util.ArrayList<>()).add(organization.getId());
+            }
+        });
+        Set<UUID> ids = new java.util.LinkedHashSet<>();
+        java.util.Deque<UUID> pending = new java.util.ArrayDeque<>(List.of(rootId));
+        while (!pending.isEmpty()) {
+            UUID id = pending.pop();
+            if (ids.add(id)) {
+                pending.addAll(childrenByParent.getOrDefault(id, List.of()));
+            }
+        }
+        return ids;
+    }
+
+    private Set<UUID> userGroupIds(UserAccount user) {
+        return user.getGroups().stream().map(UserGroup::getId).collect(java.util.stream.Collectors.toSet());
+    }
+
+    // 用户所属组织及其全部上级组织；授权给上级组织即覆盖下级组织成员。
+    private Set<UUID> userOrganizationIds(UserAccount user) {
+        Set<UUID> ids = new java.util.LinkedHashSet<>();
+        Organization current = user.getOrganization();
+        while (current != null && ids.add(current.getId())) {
+            current = current.getParent();
+        }
+        return ids;
     }
 
     private List<ApplicationAccessReviewEntryResponse> reviewAssignment(Application application, ApplicationAssignment assignment) {
         if (assignment.getUser() != null) {
             return List.of(toReviewEntry(application, assignment, assignment.getUser(), null));
+        }
+        if (assignment.getOrganization() != null) {
+            Set<UUID> organizationIds = descendantOrganizationIds(assignment.getOrganization().getId());
+            return organizationIds.stream()
+                .flatMap(organizationId -> users.findByOrganizationId(organizationId).stream())
+                .map(user -> toReviewEntry(application, assignment, user, null))
+                .toList();
         }
         if (assignment.getGroup() == null) {
             return List.of();
@@ -1147,7 +1408,7 @@ public class AccessService {
             user.getUsername(),
             user.getDisplayName(),
             user.getStatus(),
-            group == null ? "direct" : "group",
+            group != null ? "group" : assignment.getOrganization() != null ? "organization" : "direct",
             assignment.getId(),
             group == null ? null : group.getId(),
             group == null ? null : group.getCode(),
@@ -1200,18 +1461,18 @@ public class AccessService {
             request.getDecidedAt());
     }
 
-    private UserApplicationResponse toUserApplication(Application application, UserAccount user, Set<UUID> groupIds) {
+    private UserApplicationResponse toUserApplication(Application application, UserAccount user, Set<UUID> groupIds, Set<UUID> organizationIds) {
+        if (application.isAllAccess()) {
+            return toUserApplication(application, "all_access", null);
+        }
         java.util.Optional<ApplicationAssignment> direct = applicationAssignments
             .findByApplicationIdAndUserId(application.getId(), user.getId())
             .filter(assignment -> assignment.isUsable(Instant.now()));
         if (direct.isPresent()) {
             return toUserApplication(application, "direct", direct.get());
         }
-        return applicationAssignments.findByApplicationId(application.getId()).stream()
-            .filter(assignment -> assignment.isUsable(Instant.now()))
-            .filter(assignment -> assignment.getGroup() != null && groupIds.contains(assignment.getGroup().getId()))
-            .findFirst()
-            .map(assignment -> toUserApplication(application, "group", assignment))
+        return findSubjectAssignment(application, user, groupIds, organizationIds)
+            .map(match -> toUserApplication(application, match.source(), match.assignment()))
             .orElseGet(() -> userHasApplicationRole(application, user)
                 ? toUserApplication(application, "application_role", null)
                 : null);
@@ -1268,6 +1529,9 @@ public class AccessService {
         if (request.userId() != null) {
             return applicationAssignments.findByApplicationIdAndUserId(applicationId, request.userId());
         }
+        if (request.organizationId() != null) {
+            return applicationAssignments.findByApplicationIdAndOrganizationId(applicationId, request.organizationId());
+        }
         return applicationAssignments.findByApplicationIdAndGroupId(applicationId, request.groupId());
     }
 
@@ -1284,7 +1548,87 @@ public class AccessService {
         if (assignment.getUser() != null) {
             return "user=" + assignment.getUser().getUsername();
         }
+        if (assignment.getOrganization() != null) {
+            return "organization=" + assignment.getOrganization().getCode();
+        }
         return "group=" + assignment.getGroup().getCode();
+    }
+
+    // 校验 SSO 配置：回调类地址仅允许 http/https，签名算法与授权模式限于服务端已实现的范围，协议标识全局唯一。
+    private void validateSsoRequest(UUID applicationId, ConfigureApplicationSsoRequest request) {
+        trimmedSet(request.redirectUris()).forEach(uri -> requireHttpUrl(uri, "redirectUris", true));
+        trimmedSet(request.postLogoutRedirectUris()).forEach(uri -> requireHttpUrl(uri, "postLogoutRedirectUris", true));
+        requireHttpUrl(blankToNull(request.loginInitiationUri()), "loginInitiationUri", false);
+        requireHttpUrl(blankToNull(request.samlAcsUrl()), "samlAcsUrl", false);
+        requireHttpUrl(blankToNull(request.casServiceUrl()), "casServiceUrl", false);
+        String algorithm = blankToNull(request.idTokenSignatureAlgorithm());
+        if (algorithm != null && !"RS256".equals(algorithm)) {
+            throw new IllegalArgumentException("Unsupported idTokenSignatureAlgorithm: " + algorithm + " (only RS256 is supported)");
+        }
+        Set<String> unsupported = new java.util.LinkedHashSet<>(trimmedSet(request.grantTypes()));
+        unsupported.removeAll(SUPPORTED_GRANT_TYPES);
+        if (!unsupported.isEmpty()) {
+            throw new IllegalArgumentException("Unsupported grantTypes: " + String.join(", ", unsupported)
+                + " (supported: authorization_code, refresh_token)");
+        }
+        if (request.protocol() == ApplicationProtocol.OAUTH2 || request.protocol() == ApplicationProtocol.OIDC) {
+            if (blankToNull(request.clientId()) == null) {
+                throw new IllegalArgumentException("clientId is required for OAuth2/OIDC applications");
+            }
+            if (trimmedSet(request.redirectUris()).isEmpty()) {
+                throw new IllegalArgumentException("At least one redirect URI is required for OAuth2/OIDC applications");
+            }
+        }
+        requireUniqueSsoIdentifier(applicationId, blankToNull(request.clientId()), ssoConfigs::findByClientId, "clientId");
+        requireUniqueSsoIdentifier(applicationId, blankToNull(request.samlEntityId()), ssoConfigs::findBySamlEntityId, "samlEntityId");
+        requireUniqueSsoIdentifier(applicationId, blankToNull(request.casServiceUrl()), ssoConfigs::findByCasServiceUrl, "casServiceUrl");
+        requireUniqueSsoIdentifier(applicationId, blankToNull(request.jwtAudience()), ssoConfigs::findByJwtAudience, "jwtAudience");
+    }
+
+    private void requireUniqueSsoIdentifier(
+        UUID applicationId,
+        String value,
+        java.util.function.Function<String, Optional<ApplicationSsoConfig>> lookup,
+        String field
+    ) {
+        if (value == null) {
+            return;
+        }
+        lookup.apply(value)
+            .filter(existing -> !existing.getApplication().getId().equals(applicationId))
+            .ifPresent(existing -> {
+                throw new ConflictException(field + " is already used by application " + existing.getApplication().getCode());
+            });
+    }
+
+    private void requireHttpUrl(String value, String field, boolean rejectFragment) {
+        if (value == null) {
+            return;
+        }
+        java.net.URI uri;
+        try {
+            uri = new java.net.URI(value);
+        } catch (java.net.URISyntaxException ex) {
+            throw new IllegalArgumentException(field + " is not a valid URL: " + value);
+        }
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(java.util.Locale.ROOT);
+        if (!scheme.equals("http") && !scheme.equals("https") || uri.getHost() == null) {
+            throw new IllegalArgumentException(field + " must be an absolute http(s) URL: " + value);
+        }
+        if (rejectFragment && uri.getFragment() != null) {
+            throw new IllegalArgumentException(field + " must not contain a fragment: " + value);
+        }
+    }
+
+    private Set<String> trimmedSet(Set<String> values) {
+        if (values == null) {
+            return Set.of();
+        }
+        return values.stream()
+            .filter(Objects::nonNull)
+            .map(String::trim)
+            .filter(value -> !value.isEmpty())
+            .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
     }
 
     private String joinValues(Set<String> values) {
@@ -1300,6 +1644,10 @@ public class AccessService {
 
     private int positiveOrDefault(Integer value, int fallback) {
         return value == null || value <= 0 ? fallback : value;
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private String defaultString(String value, String fallback) {

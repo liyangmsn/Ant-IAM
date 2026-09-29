@@ -2,6 +2,7 @@ package com.antiam.service.thirdparty;
 
 import static com.antiam.service.thirdparty.ThirdPartyAuthSupport.redirectUri;
 import static com.antiam.service.thirdparty.ThirdPartyAuthSupport.raw;
+import static com.antiam.service.thirdparty.ThirdPartyAuthSupport.readJson;
 import static com.antiam.service.thirdparty.ThirdPartyAuthSupport.required;
 import static com.antiam.service.thirdparty.ThirdPartyAuthSupport.text;
 import static com.antiam.service.thirdparty.ThirdPartyAuthSupport.textOrDefault;
@@ -40,7 +41,7 @@ public class QqLoginAdapter implements ThirdPartyAuthAdapter {
     @Override
     public ThirdPartyProfile exchange(JsonNode configuration, String code, String redirectUri) {
         String appId = required(configuration, "appId");
-        JsonNode token = RestClient.create()
+        JsonNode token = readJson(RestClient.create()
             .get()
             .uri(uri(textOrDefault(configuration, "tokenEndpoint", DEFAULT_TOKEN_ENDPOINT))
                 .queryParam("grant_type", "authorization_code")
@@ -52,10 +53,10 @@ public class QqLoginAdapter implements ThirdPartyAuthAdapter {
                 .build()
                 .toUriString())
             .retrieve()
-            .body(JsonNode.class);
+            .body(String.class), "QQ token");
         assertNoError(token, "QQ token");
         String accessToken = required(token, "access_token");
-        JsonNode openid = RestClient.create()
+        JsonNode openid = readJson(RestClient.create()
             .get()
             .uri(uri(textOrDefault(configuration, "openidEndpoint", DEFAULT_OPENID_ENDPOINT))
                 .queryParam("access_token", accessToken)
@@ -63,10 +64,10 @@ public class QqLoginAdapter implements ThirdPartyAuthAdapter {
                 .build()
                 .toUriString())
             .retrieve()
-            .body(JsonNode.class);
+            .body(String.class), "QQ openid");
         assertNoError(openid, "QQ openid");
         String subject = required(openid, "openid");
-        JsonNode user = RestClient.create()
+        JsonNode user = readJson(RestClient.create()
             .get()
             .uri(uri(textOrDefault(configuration, "userInfoEndpoint", DEFAULT_USERINFO_ENDPOINT))
                 .queryParam("access_token", accessToken)
@@ -75,7 +76,7 @@ public class QqLoginAdapter implements ThirdPartyAuthAdapter {
                 .build()
                 .toUriString())
             .retrieve()
-            .body(JsonNode.class);
+            .body(String.class), "QQ userinfo");
         assertNoError(user, "QQ userinfo");
         return new ThirdPartyProfile(
             subject,

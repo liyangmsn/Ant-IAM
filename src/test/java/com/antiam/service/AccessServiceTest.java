@@ -1,11 +1,14 @@
 package com.antiam.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.antiam.common.ConflictException;
 import com.antiam.domain.Application;
+import com.antiam.domain.ApplicationSsoConfig;
 import com.antiam.domain.ApplicationProtocol;
 import com.antiam.dto.AccessDtos.ApplicationSsoConfigResponse;
 import com.antiam.dto.AccessDtos.ConfigureApplicationSsoRequest;
@@ -22,6 +25,7 @@ import com.antiam.repository.OAuthAuthorizationCodeRepository;
 import com.antiam.repository.OAuthConsentRepository;
 import com.antiam.repository.OAuthRefreshTokenRepository;
 import com.antiam.repository.PermissionRepository;
+import com.antiam.repository.OrganizationRepository;
 import com.antiam.repository.RoleRepository;
 import com.antiam.repository.SamlAssertionRepository;
 import com.antiam.repository.UserAccountRepository;
@@ -56,6 +60,7 @@ class AccessServiceTest {
         mock(AuthenticationSessionRepository.class),
         mock(AuthenticationEventRepository.class),
         mock(UserAccountRepository.class),
+        mock(OrganizationRepository.class),
         mock(TenantService.class),
         mock(AuditService.class),
         passwordEncoder);
@@ -84,7 +89,7 @@ class AccessServiceTest {
             null,
             null,
             null,
-            null,
+            "https://example.com/form-login",
             Set.of("email"),
             Map.of("tenant", "ant"));
         when(applications.findById(applicationId)).thenReturn(Optional.of(application));
@@ -107,5 +112,47 @@ class AccessServiceTest {
         assertThat(response.reuseRefreshTokens()).isTrue();
         assertThat(response.idTokenSignatureAlgorithm()).isEqualTo("RS256");
         assertThat(response.scopes()).containsExactlyInAnyOrder("openid", "profile");
+        assertThat(response.formLoginTemplate()).isEqualTo("https://example.com/form-login");
+    }
+
+    @Test
+    void rejectsUnsafeRedirectUrisAndUnsupportedSigningSettings() {
+        UUID applicationId = UUID.randomUUID();
+        Application application = new Application("oidc", "OIDC", ApplicationProtocol.OIDC, "https://example.com/login", "OIDC application", null, null);
+        when(applications.findById(applicationId)).thenReturn(Optional.of(application));
+
+        assertThatThrownBy(() -> service.configureApplicationSso(applicationId,
+            oidcRequest("client-id", Set.of("javascript:alert(1)"), Set.of("authorization_code"), "RS256"), "admin"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("redirectUris");
+        assertThatThrownBy(() -> service.configureApplicationSso(applicationId,
+            oidcRequest("client-id", Set.of("https://example.com/cb"), Set.of("authorization_code"), "none"), "admin"))
+            .hasMessageContaining("idTokenSignatureAlgorithm");
+        assertThatThrownBy(() -> service.configureApplicationSso(applicationId,
+            oidcRequest("client-id", Set.of("https://example.com/cb"), Set.of("client_credentials"), "RS256"), "admin"))
+            .hasMessageContaining("grantTypes");
+    }
+
+    @Test
+    void rejectsClientIdUsedByAnotherApplication() {
+        UUID applicationId = UUID.randomUUID();
+        Application application = new Application("oidc", "OIDC", ApplicationProtocol.OIDC, "https://example.com/login", "OIDC application", null, null);
+        Application other = new Application("other", "Other", ApplicationProtocol.OIDC, "https://other.example.com", "Other", null, null);
+        org.springframework.test.util.ReflectionTestUtils.setField(other, "id", UUID.randomUUID());
+        ApplicationSsoConfig otherConfig = org.mockito.Mockito.mock(ApplicationSsoConfig.class);
+        when(otherConfig.getApplication()).thenReturn(other);
+        when(applications.findById(applicationId)).thenReturn(Optional.of(application));
+        when(ssoConfigs.findByClientId("shared-client")).thenReturn(Optional.of(otherConfig));
+
+        assertThatThrownBy(() -> service.configureApplicationSso(applicationId,
+            oidcRequest("shared-client", Set.of("https://example.com/cb"), Set.of("authorization_code"), "RS256"), "admin"))
+            .isInstanceOf(ConflictException.class)
+            .hasMessageContaining("clientId");
+    }
+
+    private ConfigureApplicationSsoRequest oidcRequest(String clientId, Set<String> redirectUris, Set<String> grantTypes, String algorithm) {
+        return new ConfigureApplicationSsoRequest(
+            ApplicationProtocol.OIDC, clientId, null, redirectUris, grantTypes, null, null, null,
+            null, null, null, null, null, algorithm, Set.of("openid"), null, null, null, null, null, null, null);
     }
 }

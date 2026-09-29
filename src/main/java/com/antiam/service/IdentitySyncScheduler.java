@@ -18,7 +18,7 @@ public class IdentitySyncScheduler {
     private final IdentitySyncRunRepository syncRuns;
     private final IdentitySourceService identitySources;
 
-    @Scheduled(fixedDelayString = "${ant-iam.identity-sync.scheduler-delay-ms:60000}")
+    @Scheduled(fixedDelayString = "${iam.identity-sync.scheduler-delay-ms:60000}")
     public void runDueJobs() {
         Instant now = Instant.now();
         syncJobs.findByEnabledTrue().stream()

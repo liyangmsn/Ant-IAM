@@ -1,6 +1,6 @@
-# Ant IAM
+# Identity Management System
 
-Ant IAM is a standalone enterprise IAM / IDaaS backend built with Spring Boot 4. It covers organization directory, user lifecycle management, groups, RBAC, application access, identity sources and audit.
+This is a standalone enterprise identity and access management backend built with Spring Boot 4. It covers organization directory, user lifecycle management, groups, RBAC, application access, identity sources and audit.
 
 For third-party integration, see [docs/integration-guide.md](docs/integration-guide.md) (Chinese), which covers integration options, single sign-on and directory sync flows, API capabilities and FAQs.
 
@@ -56,7 +56,7 @@ For a one-page project brief, see [docs/project-brief.md](docs/project-brief.md)
 - MFA challenges with search/profiles and recovery codes: `/api/v1/users/{userId}/mfa-challenges`, `/api/v1/users/mfa-challenges`, `/api/v1/users/{userId}/mfa-recovery-codes`, `/api/v1/users/mfa-challenge-verifications`
 - SCIM 2.0 users, groups and organizations with list/create/profile endpoints plus filter and pagination support: `/scim/v2/Users`, `/scim/v2/Groups`, `/scim/v2/Organizations`
 - SCIM 2.0 discovery: `/scim/v2/ServiceProviderConfig`, `/scim/v2/ResourceTypes`, `/scim/v2/Schemas`
-- OAuth2 authorization endpoint: `/oauth2/authorize`
+- OIDC browser authorization entry: `/oidc/authorize`; Bearer-protected authorization API: `/oauth2/authorize`
 - OAuth2 token endpoint: `/oauth2/token`
 - OIDC discovery and userinfo: `/.well-known/openid-configuration`, `/oauth2/userinfo`
 - OIDC JWKS and RS256 ID token signing: `/oauth2/jwks`
@@ -114,19 +114,19 @@ docker compose --profile api up --build
 
 When the API container is healthy, `http://localhost:8080/actuator/health` returns `UP`.
 
-The default PostgreSQL settings match `docker-compose.yml`:
+To run locally against the PostgreSQL started by `docker-compose.yml`, set (without these, the app defaults to `localhost:5432/ant_iam` with `ant_iam / ant_iam`):
 
 ```text
-ANT_IAM_DATASOURCE_URL=jdbc:postgresql://localhost:5432/ant_iam
-ANT_IAM_DATASOURCE_USERNAME=ant_iam
-ANT_IAM_DATASOURCE_PASSWORD=ant_iam
+IAM_DATASOURCE_URL=jdbc:postgresql://localhost:5432/ant_iam
+IAM_DATASOURCE_USERNAME=ant_iam
+IAM_DATASOURCE_PASSWORD=ant_iam
 ```
 
 Inside Docker Compose, the API uses `jdbc:postgresql://postgres:5432/ant_iam` to reach PostgreSQL on the compose network.
 
 Password sign-in reads users and password credentials from the `user_accounts` and `user_credentials` database tables. On first install with an empty database, the application initializes the default administrator account `admin / admin123456`; it no longer reads default sign-in credentials from configuration.
 
-SMS verification codes are delivered through sms4j channels. The default local setup enables the `fixed-code` channel with code `666666`, overrideable through `ANT_IAM_SMS_FIXED_CODE`; production deployments can configure another sms4j channel and select it with `ANT_IAM_SMS_BLEND_ID`.
+SMS verification codes are delivered through sms4j channels. The default local setup enables the `fixed-code` channel with code `666666`, overrideable through `IAM_SMS_FIXED_CODE`; production deployments can configure another sms4j channel and select it with `IAM_SMS_BLEND_ID`.
 
 OpenAPI JSON, Swagger UI, health checks, OIDC discovery, JWKS, SAML metadata, CAS validation, JWT verification and OAuth2 token/introspection/revocation endpoints are exposed without sign-in so protocol clients can call them directly; management APIs use the Bearer session token issued by the login endpoints.
 
@@ -189,7 +189,7 @@ Identity source connector configuration can import directory data from JSON. Din
 }
 ```
 
-DingTalk connectors can use Open Platform credentials to import departments and department users:
+DingTalk connectors can use Open Platform credentials to import departments, department users, and role groups with their members:
 
 ```json
 {
@@ -200,7 +200,7 @@ DingTalk connectors can use Open Platform credentials to import departments and 
 }
 ```
 
-The DingTalk app must have contact department and member read permissions. The connector prefers the official DingTalk Java SDK for `oapi` contact APIs; set `endpoint` only for private deployments or API gateways.
+The DingTalk app must have contact department, member, role-list, and role-member read permissions. The connector prefers the official DingTalk Java SDK for `oapi` contact APIs; set `endpoint` only for private deployments or API gateways.
 
 Feishu connectors can use app credentials to import departments and department users:
 
@@ -215,17 +215,18 @@ Feishu connectors can use app credentials to import departments and department u
 
 The Feishu app must have contact department and user read permissions. The connector prefers the official Feishu Java SDK for `contact/v3` department children and department user APIs, and follows `has_more` / `page_token` pagination; set `endpoint` only for private deployments or API gateways.
 
-WeCom identity sources can use the corporate ID and contact secret to import departments and users:
+WeCom identity sources can use the corporate ID and a self-built app secret to import departments, members, and tags (as user groups):
 
 ```json
 {
   "corpId": "wwxxxxxxxx",
-  "corpSecret": "wechat-work-contact-secret",
-  "rootDeptId": 1
+  "corpSecret": "wechat-work-app-secret",
+  "rootDeptId": 1,
+  "syncTags": true
 }
 ```
 
-The WeCom app must have contact department and member read permissions. The connector calls the official WeCom contact APIs directly; set `endpoint` only for private deployments or API gateways. Sync jobs with `cronExpression` are executed by the background scheduler. By default it scans due jobs every 60 seconds; tune it with the `ant-iam.identity-sync.scheduler-delay-ms` property.
+The WeCom app's visibility scope decides which departments and members can be read, and the server egress IP must be in the app's trusted IP list. The connector caches `access_token`, imports departments parent-first, deduplicates members across departments using `main_department`, and falls back to `department/simplelist` + `user/list_id` when `department/list` / `user/list` are restricted for newer apps. Set `endpoint` only for private deployments or API gateways. Sync jobs with `cronExpression` are executed by the background scheduler. By default it scans due jobs every 60 seconds; tune it with the `iam.identity-sync.scheduler-delay-ms` property.
 
 Third-party login uses public authorization and callback endpoints. The callback should send back the signed `state` returned by `authorize`:
 
@@ -239,7 +240,7 @@ curl -H 'Content-Type: application/json' \
   http://localhost:8080/api/v1/authentication/third-party/wechat/callback
 ```
 
-WeChat, QQ, Feishu and DingTalk authentication providers use `appId`, `appSecret` and `redirectUri`. Feishu login prefers the official Feishu Java SDK `authen/v1` APIs, and DingTalk login prefers the official DingTalk Java SDK `sns/getuserinfo_bycode` API. WeChat and QQ use their official OAuth endpoints directly. Optional fields include `scope`, `usernameClaim`, `usernamePrefix`, `autoCreateUser`, `sessionTtlMinutes`, `stateTtlSeconds` and platform endpoint overrides.
+WeChat, QQ, Feishu and DingTalk authentication providers use `appId`, `appSecret` and `redirectUri`. WeCom providers use the CorpID as `appId`, the self-built app secret as `appSecret`, plus `agentId`; `loginMode` is `qrcode` (web QR login, default) or `oauth` (in-app OAuth2). WeCom login only accepts enterprise members, uses the WeCom `userid` as the subject, so with `usernamePrefix: ""` it maps to users imported by the WeCom identity source. The redirect URI host must be configured as the app's trusted/authorized callback domain. Feishu login prefers the official Feishu Java SDK `authen/v1` APIs, and DingTalk login uses the current OAuth 2.0 authorization, user access token and `/v1.0/contact/users/me` APIs. WeChat and QQ use their official OAuth endpoints directly. Optional fields include `scope`, `usernameClaim`, `usernamePrefix`, `autoCreateUser`, `sessionTtlMinutes`, `stateTtlSeconds` and platform endpoint overrides.
 
 ## Roadmap
 

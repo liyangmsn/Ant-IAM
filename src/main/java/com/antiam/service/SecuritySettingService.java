@@ -22,14 +22,18 @@ public class SecuritySettingService {
 
     private static final String GENERAL_CATEGORY = "security.general";
     private static final String PASSWORD_CATEGORY = "security.password";
-    private static final String DEFAULT_CSP = "default-src 'self' data:; frame-src 'self' login.dingtalk.com open.weixin.qq.com open.work.weixin.qq.com passport.feishu.cn data:; frame-ancestors 'self' eiam.topiam.cn data:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://storage.googleapis.com sf3-cn.feishucdn.com; style-src 'self' https://fonts.googleapis.com https://cdn.jsdelivr.net 'unsafe-inline'; img-src 'self' https://img.alicdn.com https://static-legacy.dingtalk.com https://api.multiavatar.com blob: data: http://www.xix.top:9999; font-src 'self' https://fonts.gstatic.com data:; worker-src 'self' https://storage.googleapis.com blob:";
+    private static final String DEFAULT_CSP = "default-src 'self' data:; frame-src 'self' login.dingtalk.com open.weixin.qq.com open.work.weixin.qq.com passport.feishu.cn data:; frame-ancestors 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' sf3-cn.feishucdn.com; style-src 'self' 'unsafe-inline'; img-src 'self' https: blob: data:; font-src 'self' data:; worker-src 'self' blob:";
+    private static final long CSP_CACHE_MILLIS = 30_000;
+
+    private volatile String cachedContentSecurityPolicy;
+    private volatile long cachedContentSecurityPolicyAt;
 
     private final SystemSettingRepository settings;
     private final AuthenticationPolicyService authenticationPolicies;
     private final AuditService auditService;
 
     @Transactional(readOnly = true)
-    // 查询控制台通用安全设置，默认值与 TOPIAM 风格安全页面保持一致。
+    // 查询控制台通用安全设置，默认值与系统安全页面保持一致。
     public GeneralSecuritySettingsResponse general() {
         return new GeneralSecuritySettingsResponse(
             intValue("security.general.user_concurrent_sessions", -1),
@@ -52,9 +56,24 @@ public class SecuritySettingService {
         upsert("security.general.login_failure_window_minutes", GENERAL_CATEGORY, request.loginFailureWindowMinutes(), false);
         upsert("security.general.login_failure_max_attempts", GENERAL_CATEGORY, request.loginFailureMaxAttempts(), false);
         upsert("security.general.auto_unlock_minutes", GENERAL_CATEGORY, request.autoUnlockMinutes(), false);
-        upsert("security.general.content_security_policy", GENERAL_CATEGORY, request.contentSecurityPolicy(), false);
+        upsert("security.general.content_security_policy", GENERAL_CATEGORY, normalizeContentSecurityPolicy(request.contentSecurityPolicy()), false);
+        cachedContentSecurityPolicy = null;
         auditService.record(actor, "security_settings.general.update", "security_settings", "general", "updated");
         return general();
+    }
+
+    @Transactional(readOnly = true)
+    // 返回当前生效的 CSP 响应头值，短时缓存避免每个请求都查询数据库。
+    public String contentSecurityPolicy() {
+        String cached = cachedContentSecurityPolicy;
+        long now = System.currentTimeMillis();
+        if (cached != null && now - cachedContentSecurityPolicyAt < CSP_CACHE_MILLIS) {
+            return cached;
+        }
+        String value = normalizeContentSecurityPolicy(stringValue("security.general.content_security_policy", DEFAULT_CSP));
+        cachedContentSecurityPolicy = value;
+        cachedContentSecurityPolicyAt = now;
+        return value;
     }
 
     @Transactional(readOnly = true)
@@ -79,6 +98,9 @@ public class SecuritySettingService {
     @Transactional
     // 保存控制台密码策略页面设置，保留认证策略服务已有的运行时校验能力。
     public PasswordPolicySettingsResponse updatePasswordPolicy(UpdatePasswordPolicySettingsRequest request, String actor) {
+        if (request.minLength() > request.maxLength()) {
+            throw new IllegalArgumentException("密码最小长度不能大于最大长度");
+        }
         upsert("security.password.min_length", PASSWORD_CATEGORY, request.minLength(), false);
         upsert("security.password.max_length", PASSWORD_CATEGORY, request.maxLength(), false);
         upsert("security.password.complexity", PASSWORD_CATEGORY, request.complexity(), false);
@@ -96,11 +118,16 @@ public class SecuritySettingService {
         return passwordPolicy();
     }
 
+    // CSP 会原样写入响应头，去掉换行等控制字符防止响应头注入。
+    private String normalizeContentSecurityPolicy(String value) {
+        return value == null ? "" : value.replaceAll("[\\r\\n\\t]+", " ").trim();
+    }
+
     private void upsert(String key, String category, Object value, boolean sensitive) {
         String settingValue = value == null ? "" : String.valueOf(value);
         settings.findBySettingKey(key)
             .ifPresentOrElse(
-                setting -> setting.update(SettingValueType.STRING, settingValue, key, sensitive),
+                setting -> setting.update(category, SettingValueType.STRING, settingValue, key, sensitive),
                 () -> settings.save(new SystemSetting(key, category, SettingValueType.STRING, settingValue, key, sensitive)));
     }
 

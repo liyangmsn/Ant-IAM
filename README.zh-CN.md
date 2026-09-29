@@ -1,6 +1,6 @@
-# Ant IAM
+# 身份管理系统
 
-Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS 后端项目，覆盖组织目录、用户生命周期、用户组、RBAC、应用访问、身份源同步和审计等能力。
+系统是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS 后端项目，覆盖组织目录、用户生命周期、用户组、RBAC、应用访问、身份源同步和审计等能力。
 
 第三方应用接入指南见 [docs/integration-guide.md](docs/integration-guide.md)，其中包含接入方式选择、单点登录与通讯录同步流程、接口能力清单和常见问题。
 
@@ -56,7 +56,7 @@ Ant IAM 是一套基于 Spring Boot 4 全新开发的独立企业级 IAM / IDaaS
 - MFA 挑战支持检索/详情，恢复码支持生成：`/api/v1/users/{userId}/mfa-challenges`、`/api/v1/users/mfa-challenges`、`/api/v1/users/{userId}/mfa-recovery-codes`、`/api/v1/users/mfa-challenge-verifications`
 - SCIM 2.0 用户、用户组和组织，支持列表、创建、详情、过滤和分页：`/scim/v2/Users`、`/scim/v2/Groups`、`/scim/v2/Organizations`
 - SCIM 2.0 发现接口：`/scim/v2/ServiceProviderConfig`、`/scim/v2/ResourceTypes`、`/scim/v2/Schemas`
-- OAuth2 授权端点：`/oauth2/authorize`
+- OIDC 浏览器授权入口：`/oidc/authorize`；Bearer 保护的授权 API：`/oauth2/authorize`
 - OAuth2 token 端点：`/oauth2/token`
 - OIDC discovery 和 userinfo：`/.well-known/openid-configuration`、`/oauth2/userinfo`
 - OIDC JWKS 和 RS256 ID token 签名：`/oauth2/jwks`
@@ -114,19 +114,19 @@ docker compose --profile api up --build
 
 当 API 容器进入 healthy 状态时，`http://localhost:8080/actuator/health` 会返回 `UP`。
 
-默认 PostgreSQL 配置和 `docker-compose.yml` 保持一致：
+本地连接 `docker-compose.yml` 启动的 PostgreSQL 时设置以下变量（未设置时应用默认连接 `localhost:5432/ant_iam`，账号密码为 `ant_iam / ant_iam`）：
 
 ```text
-ANT_IAM_DATASOURCE_URL=jdbc:postgresql://localhost:5432/ant_iam
-ANT_IAM_DATASOURCE_USERNAME=ant_iam
-ANT_IAM_DATASOURCE_PASSWORD=ant_iam
+IAM_DATASOURCE_URL=jdbc:postgresql://localhost:5432/ant_iam
+IAM_DATASOURCE_USERNAME=ant_iam
+IAM_DATASOURCE_PASSWORD=ant_iam
 ```
 
 容器内 API 会使用 `jdbc:postgresql://postgres:5432/ant_iam` 连接 compose 网络中的 PostgreSQL。
 
 账号密码登录会从数据库中的 `user_accounts` 和 `user_credentials` 读取用户与密码凭据。首次安装的空库会初始化默认管理员账号 `admin / admin123456`，应用不再通过配置文件读取默认登录账号。
 
-短信验证码通过 sms4j 通道发送。默认启用 `fixed-code` 通道用于本地安装和联调，验证码为 `666666`，可通过 `ANT_IAM_SMS_FIXED_CODE` 覆盖；生产环境可以配置其它 sms4j 通道，并通过 `ANT_IAM_SMS_BLEND_ID` 切换。
+短信验证码通过 sms4j 通道发送。默认启用 `fixed-code` 通道用于本地安装和联调，验证码为 `666666`，可通过 `IAM_SMS_FIXED_CODE` 覆盖；生产环境可以配置其它 sms4j 通道，并通过 `IAM_SMS_BLEND_ID` 切换。
 
 OpenAPI JSON、Swagger UI、健康检查、OIDC discovery、JWKS、SAML metadata、CAS validation、JWT 验签以及 OAuth2 token/introspection/revocation 端点不需要登录，方便协议客户端直接访问；管理类 API 统一使用登录接口签发的 Bearer session token。
 
@@ -225,7 +225,7 @@ curl -H "Authorization: Bearer ${TOKEN}" \
 }
 ```
 
-企业微信应用需要开通通讯录部门和成员读取权限。连接器调用企业微信官方通讯录 API；如需切换私有化或代理网关，可配置 `endpoint`。身份源同步任务填写 `cronExpression` 后会由后台调度器定时执行，默认每 60 秒扫描一次到期任务，可通过 `ANT_IAM_IDENTITY_SYNC_SCHEDULER_DELAY_MS` 对应配置调整扫描间隔。
+企业微信应用需要开通通讯录部门和成员读取权限。连接器调用企业微信官方通讯录 API；如需切换私有化或代理网关，可配置 `endpoint`。身份源同步任务填写 `cronExpression` 后会由后台调度器定时执行，默认每 60 秒扫描一次到期任务，可通过 `IAM_IDENTITY_SYNC_SCHEDULER_DELAY_MS` 对应配置调整扫描间隔。
 
 第三方登录通过公开接口完成授权跳转和授权码回调；回调时应传回 `authorize` 返回的签名 `state`：
 
@@ -239,7 +239,7 @@ curl -H 'Content-Type: application/json' \
   http://localhost:8080/api/v1/authentication/third-party/wechat/callback
 ```
 
-微信、QQ、飞书、钉钉认证源配置统一使用 `appId`、`appSecret`、`redirectUri`。飞书登录优先使用飞书官方 Java SDK 的 `authen/v1` 能力，钉钉登录优先使用钉钉官方 Java SDK 的 `sns/getuserinfo_bycode` 能力；微信和 QQ 当前使用官方 OAuth 接口直连。可选字段包括 `scope`、`usernameClaim`、`usernamePrefix`、`autoCreateUser`、`sessionTtlMinutes`、`stateTtlSeconds` 和各平台 endpoint 覆盖项。
+微信、QQ、飞书、钉钉认证源配置统一使用 `appId`、`appSecret`、`redirectUri`。飞书登录优先使用飞书官方 Java SDK 的 `authen/v1` 能力，钉钉登录使用当前 OAuth 2.0 授权、用户访问令牌和 `/v1.0/contact/users/me` 接口；微信和 QQ 当前使用官方 OAuth 接口直连。可选字段包括 `scope`、`usernameClaim`、`usernamePrefix`、`autoCreateUser`、`sessionTtlMinutes`、`stateTtlSeconds` 和各平台 endpoint 覆盖项。
 
 ## 路线图
 

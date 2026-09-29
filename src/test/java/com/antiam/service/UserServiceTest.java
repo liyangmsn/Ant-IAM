@@ -1,11 +1,14 @@
 package com.antiam.service;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.antiam.common.TokenSupport;
+import com.antiam.config.SecurityAuthorities;
+import com.antiam.domain.Role;
 import com.antiam.domain.UserAccount;
 import com.antiam.dto.UserDtos.CreateUserRequest;
 import com.antiam.repository.ApplicationAssignmentRepository;
@@ -22,18 +25,22 @@ import com.antiam.repository.UserCredentialHistoryRepository;
 import com.antiam.repository.UserCredentialRepository;
 import com.antiam.repository.UserGroupRepository;
 import java.util.Set;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 class UserServiceTest {
 
     private final UserAccountRepository users = mock(UserAccountRepository.class);
+    private final RoleRepository roles = mock(RoleRepository.class);
     private final AuthenticationPolicyService authenticationPolicies = mock(AuthenticationPolicyService.class);
     private final UserService service = new UserService(
         users,
         mock(ApplicationAssignmentRepository.class),
         mock(UserGroupRepository.class),
-        mock(RoleRepository.class),
+        roles,
         mock(UserCredentialRepository.class),
         mock(UserCredentialHistoryRepository.class),
         mock(PasswordResetTicketRepository.class),
@@ -50,7 +57,10 @@ class UserServiceTest {
         mock(PasswordEncoder.class),
         mock(TokenSupport.class),
         mock(SmsVerificationService.class),
-        mock(MailDeliveryService.class));
+        mock(MailDeliveryService.class),
+        mock(MfaVerificationService.class),
+        mock(LoginSessionService.class),
+        mock(SecuritySettingService.class));
 
     @Test
     void rejectsPasswordThatDoesNotMeetComplexityPolicy() {
@@ -89,6 +99,19 @@ class UserServiceTest {
             .hasMessageContaining("serial numbers");
     }
 
+    @Test
+    void grantsIamAdminRoleWhenCreatingAdmin() {
+        Role adminRole = new Role(SecurityAuthorities.IAM_ADMIN_ROLE, "IAM 管理员", "");
+        when(roles.findByCode(SecurityAuthorities.IAM_ADMIN_ROLE)).thenReturn(Optional.of(adminRole));
+        UserAccount saved = new UserAccount("qa-admin", "QA 管理员", null, null, null, null);
+        ReflectionTestUtils.setField(saved, "id", UUID.randomUUID());
+        when(users.save(any(UserAccount.class))).thenReturn(saved);
+
+        var result = service.create(request("admin", null), "admin");
+
+        assertThat(result.roles()).contains(SecurityAuthorities.IAM_ADMIN_ROLE);
+    }
+
     private void configurePolicy(String complexity, boolean checkUserInfo, boolean weakPasswordCheckEnabled, Set<String> extensionRules) {
         when(users.save(any(UserAccount.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(authenticationPolicies.currentPasswordMinLength()).thenReturn(6);
@@ -102,9 +125,14 @@ class UserServiceTest {
     }
 
     private CreateUserRequest request(String initialPassword) {
+        return request("user", initialPassword);
+    }
+
+    private CreateUserRequest request(String userType, String initialPassword) {
         return new CreateUserRequest(
             "alice",
             "Alice",
+            userType,
             "alice@example.com",
             "13800000000",
             null,

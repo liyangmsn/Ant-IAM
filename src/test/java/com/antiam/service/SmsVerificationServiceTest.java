@@ -31,9 +31,18 @@ class SmsVerificationServiceTest {
 
         assertThatThrownBy(() -> service.verify("13800000000", "LOGIN", "123456"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("invalid");
+            .hasMessageContaining("短信验证码错误");
 
         service.verify("13800000000", "LOGIN", "666666");
+    }
+
+    @Test
+    void verifiesLongCodeReturnedByFixedCodeSms4jChannel() {
+        SmsVerificationService service = serviceWithFixedCode("123456789012");
+
+        service.sendVerificationCode("13800000000", "LOGIN");
+
+        service.verify("13800000000", "LOGIN", "123456789012");
     }
 
     @Test
@@ -45,14 +54,14 @@ class SmsVerificationServiceTest {
 
         assertThatThrownBy(() -> service.verify("13800000000", "LOGIN", "666666"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("invalid");
+            .hasMessageContaining("短信验证码错误");
     }
 
     @Test
     void failsWhenConfiguredSms4jChannelDoesNotExist() {
-        SmsVerificationService service = new SmsVerificationService();
+        SmsVerificationService service = new SmsVerificationService(org.mockito.Mockito.mock(com.antiam.repository.SystemSettingRepository.class), new com.fasterxml.jackson.databind.ObjectMapper());
         ReflectionTestUtils.setField(service, "smsBlendId", "missing-" + UUID.randomUUID());
-        ReflectionTestUtils.setField(service, "codeTtlSeconds", 300L);
+        ReflectionTestUtils.setField(service, "defaultCodeTtlSeconds", 300L);
 
         assertThatThrownBy(() -> service.sendVerificationCode("13800000000", "LOGIN"))
             .isInstanceOf(IllegalStateException.class)
@@ -66,9 +75,9 @@ class SmsVerificationServiceTest {
         config.setCode(code);
         SmsFactory.register(new TestFixedCodeSms(config));
 
-        SmsVerificationService service = new SmsVerificationService();
+        SmsVerificationService service = new SmsVerificationService(org.mockito.Mockito.mock(com.antiam.repository.SystemSettingRepository.class), new com.fasterxml.jackson.databind.ObjectMapper());
         ReflectionTestUtils.setField(service, "smsBlendId", configId);
-        ReflectionTestUtils.setField(service, "codeTtlSeconds", 300L);
+        ReflectionTestUtils.setField(service, "defaultCodeTtlSeconds", 300L);
         return service;
     }
 

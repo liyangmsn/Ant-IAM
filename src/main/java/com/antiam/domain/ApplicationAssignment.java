@@ -28,6 +28,10 @@ public class ApplicationAssignment extends BaseEntity {
     @JoinColumn(name = "group_id")
     private UserGroup group;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "organization_id")
+    private Organization organization;
+
     private boolean enabled;
     private Instant expiresAt;
 
@@ -39,6 +43,13 @@ public class ApplicationAssignment extends BaseEntity {
         this.application = application;
         this.user = user;
         this.group = group;
+        this.expiresAt = expiresAt;
+        this.enabled = true;
+    }
+
+    public ApplicationAssignment(Application application, Organization organization, Instant expiresAt) {
+        this.application = application;
+        this.organization = organization;
         this.expiresAt = expiresAt;
         this.enabled = true;
     }

@@ -1,5 +1,6 @@
 package com.antiam.service;
 
+import com.antiam.common.ServiceUnavailableException;
 import com.antiam.domain.SystemSetting;
 import com.antiam.repository.SystemSettingRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -8,12 +9,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.HtmlUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -42,7 +48,7 @@ public class MailDeliveryService {
         "reset_password_success", new DefaultTemplate("重置密码成功", "<p>您的账户密码已重置成功。</p>"),
         "login_verify", new DefaultTemplate("登录验证码", "<p>您的登录验证码为 ${code}，请尽快完成验证。</p>"),
         "password_expiring", new DefaultTemplate("密码即将到期提醒", "<p>您的账户密码即将到期，请及时修改。</p>"),
-        "welcome", new DefaultTemplate("欢迎使用 Ant IAM", "<p>欢迎加入 ${client_name}。</p>"));
+        "welcome", new DefaultTemplate("欢迎使用系统", "<p>欢迎加入 ${client_name}。</p>"));
 
     private record Template(String sender, String subject, String content) {
     }
@@ -50,6 +56,9 @@ public class MailDeliveryService {
     private final SystemSettingRepository settings;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
+
+    @Value("${iam.mfa.issuer:Js IAM}")
+    private String clientName;
 
     /**
      * 按模板键渲染并投递邮件，模板变量以 ${name} 占位符形式替换。
@@ -61,27 +70,48 @@ public class MailDeliveryService {
         }
         JsonNode config = serviceConfig();
         Template template = resolveTemplate(templateKey, fallback);
+        Map<String, String> values = withDefaultVariables(recipient, variables);
         JavaMailSenderImpl sender = buildSender(config);
         MimeMessage message = sender.createMimeMessage();
         try {
             MimeMessageHelper helper = new MimeMessageHelper(message, false, StandardCharsets.UTF_8.name());
-            helper.setFrom(fromAddress(config, template.sender()));
+            helper.setFrom(fromAddress(config, template.sender() == null ? null : render(template.sender(), values, false)));
             helper.setTo(recipient);
-            helper.setSubject(render(template.subject(), variables));
-            helper.setText(render(template.content(), variables), true);
+            helper.setSubject(render(template.subject(), values, false));
+            helper.setText(render(template.content(), values, true), true);
         } catch (MessagingException ex) {
             throw new IllegalStateException("Failed to build mail message for template: " + templateKey, ex);
         }
-        sender.send(message);
+        try {
+            sender.send(message);
+        } catch (org.springframework.mail.MailException ex) {
+            throw new ServiceUnavailableException("邮件发送失败：" + ex.getMessage(), ex);
+        }
         auditService.record("mail-delivery", "mail.send", "mail_template", templateKey, recipient);
+    }
+
+    /**
+     * 使用当前邮件服务配置发送一封测试邮件，模板变量填充示例值。
+     */
+    public String sendTest(String recipient, String templateKey) {
+        if (recipient == null || recipient.isBlank()) {
+            throw new IllegalArgumentException("请输入测试收件人邮箱");
+        }
+        String key = templateKey == null || templateKey.isBlank() ? "login_verify" : templateKey;
+        try {
+            send(key, recipient.trim(), Map.of("code", "123456", "password", "Example@123"));
+        } catch (IllegalStateException | ServiceUnavailableException ex) {
+            throw new IllegalArgumentException("测试邮件发送失败：" + ex.getMessage(), ex);
+        }
+        return "测试邮件已发送至 " + recipient.trim();
     }
 
     private JsonNode serviceConfig() {
         SystemSetting setting = settings.findBySettingKey(SERVICE_SETTING_KEY)
-            .orElseThrow(() -> new IllegalStateException("Mail service is not configured: " + SERVICE_SETTING_KEY));
+            .orElseThrow(() -> new ServiceUnavailableException("邮件服务未配置，请先在系统设置中配置邮件服务"));
         JsonNode config = readJson(setting.getSettingValue());
         if (!config.path("enabled").asBoolean(false)) {
-            throw new IllegalStateException("Mail service is disabled: " + SERVICE_SETTING_KEY);
+            throw new ServiceUnavailableException("邮件服务未启用，请先在系统设置中启用邮件服务");
         }
         return config;
     }
@@ -122,6 +152,10 @@ public class MailDeliveryService {
         properties.put("mail.smtp.auth", "true");
         properties.put("mail.smtp.ssl.enable", String.valueOf(ssl));
         properties.put("mail.smtp.starttls.enable", String.valueOf(!ssl));
+        // 避免 SMTP 服务无响应时长时间占用请求线程。
+        properties.put("mail.smtp.connectiontimeout", "10000");
+        properties.put("mail.smtp.timeout", "15000");
+        properties.put("mail.smtp.writetimeout", "15000");
         return sender;
     }
 
@@ -148,10 +182,35 @@ public class MailDeliveryService {
         }
     }
 
-    private String render(String content, Map<String, String> variables) {
+    /**
+     * 补齐模板提示中列出的通用变量：client_name、time、user_email、client_description，调用方传入的同名变量优先。
+     */
+    private Map<String, String> withDefaultVariables(String recipient, Map<String, String> variables) {
+        Map<String, String> values = new HashMap<>();
+        String name = clientName == null || clientName.isBlank() ? "Js IAM" : clientName;
+        values.put("client_name", name);
+        values.put("client_description", name);
+        values.put("time", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        values.put("user_email", recipient);
+        variables.forEach((key, value) -> {
+            if (value != null) {
+                values.put(key, value);
+            }
+        });
+        return values;
+    }
+
+    /**
+     * 替换 ${name} 占位符；HTML 正文中的变量值做转义，避免用户可控内容注入邮件 HTML。
+     */
+    private String render(String content, Map<String, String> variables, boolean html) {
+        if (content == null) {
+            return "";
+        }
         String rendered = content;
         for (Map.Entry<String, String> entry : variables.entrySet()) {
-            rendered = rendered.replace("${" + entry.getKey() + "}", entry.getValue());
+            String value = html ? HtmlUtils.htmlEscape(entry.getValue()) : entry.getValue();
+            rendered = rendered.replace("${" + entry.getKey() + "}", value);
         }
         return rendered;
     }

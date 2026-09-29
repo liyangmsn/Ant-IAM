@@ -7,6 +7,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -20,7 +21,8 @@ public class OAuthAccessToken extends BaseEntity {
     @Column(nullable = false, unique = true)
     private String tokenHash;
 
-    @Column(nullable = false, unique = true)
+    // 仅 OIDC 且包含 openid scope 时签发 ID Token，其余情况为空。
+    @Column(unique = true)
     private String idTokenHash;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -40,6 +42,9 @@ public class OAuthAccessToken extends BaseEntity {
     private Instant expiresAt;
     private Instant revokedAt;
 
+    // 签发该 access token 时配套的 refresh token，刷新或撤销 refresh token 时据此级联失效。
+    private UUID refreshTokenId;
+
     public OAuthAccessToken(
         String tokenHash,
         String idTokenHash,
@@ -47,7 +52,8 @@ public class OAuthAccessToken extends BaseEntity {
         UserAccount user,
         String clientId,
         String scopes,
-        Instant expiresAt
+        Instant expiresAt,
+        UUID refreshTokenId
     ) {
         this.tokenHash = tokenHash;
         this.idTokenHash = idTokenHash;
@@ -56,6 +62,7 @@ public class OAuthAccessToken extends BaseEntity {
         this.clientId = clientId;
         this.scopes = scopes;
         this.expiresAt = expiresAt;
+        this.refreshTokenId = refreshTokenId;
     }
 
     public boolean isActive(Instant now) {
@@ -63,6 +70,9 @@ public class OAuthAccessToken extends BaseEntity {
     }
 
     public void revoke() {
+        if (this.revokedAt != null) {
+            return;
+        }
         this.revokedAt = Instant.now();
     }
 }

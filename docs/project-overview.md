@@ -1,4 +1,4 @@
-# Ant IAM 项目说明
+# 系统项目说明
 
 本文面向产品、研发、运维与集成方，讲解系统的定位、作用范围与功能构成。接口清单见 `README.zh-CN.md`，第三方接入步骤见 `docs/integration-guide.md`，未完成事项见 `docs/todo.md`。
 
@@ -83,7 +83,7 @@
 
 ### 3.7 标准协议与集成能力
 
-- OIDC / OAuth2：`/oauth2/authorize`、`/oauth2/token`、`/oauth2/userinfo`、`/.well-known/openid-configuration`、`/oauth2/jwks`；支持授权码、PKCE、刷新令牌轮换、令牌自省与撤销、同意（consent）管理。
+- OIDC / OAuth2：浏览器授权入口 `/oidc/authorize`，Bearer 授权 API `/oauth2/authorize`，以及 `/oauth2/token`、`/oauth2/userinfo`、`/.well-known/openid-configuration`、`/oauth2/jwks`；支持授权码、PKCE、刷新令牌轮换、令牌自省与撤销、同意（consent）管理。
 - OIDC 签名：RS256 ID token，签名密钥支持查询、轮换与带保护的退役 `/api/v1/jwt-signing-keys`。
 - SAML 2.0：`/saml2/metadata`、`/saml2/metadata.xml`、`/saml2/sso`、`/saml2/sso/xml`。
 - CAS：`/cas/login`、`/cas/serviceValidate`、`/cas/p3/serviceValidate`，支持 XML 响应。
@@ -169,7 +169,7 @@ docker compose up -d postgres
 mvn spring-boot:run          # 或 mvnd spring-boot:run
 ```
 
-常用环境变量：`ANT_IAM_DATASOURCE_URL`、`ANT_IAM_DATASOURCE_USERNAME`、`ANT_IAM_DATASOURCE_PASSWORD`、`ANT_IAM_PORT`。
+常用环境变量：`IAM_DATASOURCE_URL`、`IAM_DATASOURCE_USERNAME`、`IAM_DATASOURCE_PASSWORD`、`IAM_PORT`。
 
 容器化运行：`docker compose --profile api up -d`；或先 `mvn package`，再用根目录 `Dockerfile` 构建镜像（分层解包，以非 root 用户运行，输出 `target/ant-iam-0.1.0-SNAPSHOT.jar`）。
 

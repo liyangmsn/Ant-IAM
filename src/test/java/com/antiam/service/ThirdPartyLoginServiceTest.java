@@ -11,11 +11,13 @@ import com.antiam.domain.AuthenticationProvider;
 import com.antiam.domain.AuthenticationProviderKind;
 import com.antiam.domain.AuthenticationProviderType;
 import com.antiam.domain.AuthenticationSession;
+import com.antiam.domain.RiskLevel;
 import com.antiam.domain.UserAccount;
 import com.antiam.common.TokenSupport;
 import com.antiam.dto.AuthenticationDtos.ThirdPartyAuthorizeResponse;
 import com.antiam.dto.AuthenticationDtos.ThirdPartyLoginCallbackRequest;
 import com.antiam.dto.AuthenticationDtos.ThirdPartyLoginResponse;
+import com.antiam.dto.SecuritySettingDtos.GeneralSecuritySettingsResponse;
 import com.antiam.repository.AuthenticationEventRepository;
 import com.antiam.repository.AuthenticationProviderRepository;
 import com.antiam.repository.AuthenticationSessionRepository;
@@ -40,17 +42,32 @@ class ThirdPartyLoginServiceTest {
     private final AuthenticationEventRepository events = mock(AuthenticationEventRepository.class);
     private final AuditService auditService = mock(AuditService.class);
     private final FakeAdapter adapter = new FakeAdapter();
+    private final SecuritySettingService securitySettings = mock(SecuritySettingService.class);
+    private final AuthenticationPolicyService authenticationPolicies = mock(AuthenticationPolicyService.class);
+    private final LoginSessionService loginSessions = new LoginSessionService(
+        sessions,
+        events,
+        securitySettings,
+        new ClientMetadataService(mock(GeoIpService.class)),
+        new TokenSupport());
     private final ThirdPartyLoginService service = new ThirdPartyLoginService(
         providers,
         users,
         bindings,
-        sessions,
         events,
         auditService,
-        new ClientMetadataService(mock(GeoIpService.class)),
+        loginSessions,
+        authenticationPolicies,
+        mock(AuthenticationService.class),
         new ObjectMapper().findAndRegisterModules(),
         new TokenSupport(),
         List.of(adapter));
+
+    ThirdPartyLoginServiceTest() {
+        when(securitySettings.general()).thenReturn(new GeneralSecuritySettingsResponse(-1, 3600, 604800, 5, 30, 5, 30, ""));
+        when(authenticationPolicies.evaluateLogin(any(), any(), any(), any()))
+            .thenReturn(new AuthenticationPolicyService.LoginDecision(AuthenticationPolicyService.LoginDecision.ALLOW, RiskLevel.LOW));
+    }
 
     @Test
     void buildsAuthorizationUrlFromEnabledProvider() {
@@ -79,7 +96,8 @@ class ThirdPartyLoginServiceTest {
 
         assertThat(response.userCreated()).isTrue();
         assertThat(response.identity().subject()).isEqualTo("open-1");
-        assertThat(response.session().sessionIndex()).startsWith("wechat:");
+        assertThat(response.mfaRequired()).isFalse();
+        assertThat(response.session().sessionIndex()).isNotBlank();
         verify(users).save(any(UserAccount.class));
         verify(sessions).save(any(AuthenticationSession.class));
     }

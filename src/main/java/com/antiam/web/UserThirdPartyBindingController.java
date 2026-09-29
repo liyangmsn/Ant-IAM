@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,12 +35,14 @@ public class UserThirdPartyBindingController {
 
     @Operation(summary = "查询用户第三方绑定", description = "返回指定用户已绑定的微信、QQ、飞书、钉钉等第三方身份。")
     @GetMapping
+    @PreAuthorize("@iamAuthorization.canReadUser(#userId, authentication)")
     List<ThirdPartyBindingResponse> bindings(@Parameter(description = "用户 UUID") @PathVariable UUID userId) {
         return logins.bindings(userId);
     }
 
     @Operation(summary = "生成第三方绑定授权地址", description = "当前用户从账号中心发起第三方身份绑定。")
     @PostMapping("/{providerKey}/authorize")
+    @PreAuthorize("@iamAuthorization.canManageUser(#userId, authentication)")
     ThirdPartyAuthorizeResponse authorizeBinding(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,
         @Parameter(description = "认证源编码") @PathVariable String providerKey,
@@ -51,6 +54,7 @@ public class UserThirdPartyBindingController {
 
     @Operation(summary = "处理第三方绑定回调", description = "使用授权码换取第三方用户信息，并绑定到当前本地用户。")
     @PostMapping("/{providerKey}/callback")
+    @PreAuthorize("@iamAuthorization.canManageUser(#userId, authentication)")
     @ResponseStatus(HttpStatus.CREATED)
     ThirdPartyBindingResponse bind(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,
@@ -63,6 +67,7 @@ public class UserThirdPartyBindingController {
 
     @Operation(summary = "解除第三方绑定", description = "删除指定用户与第三方身份的绑定关系。")
     @DeleteMapping("/{bindingId}")
+    @PreAuthorize("@iamAuthorization.canManageUser(#userId, authentication)")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void unbind(
         @Parameter(description = "用户 UUID") @PathVariable UUID userId,

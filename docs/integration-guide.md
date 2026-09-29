@@ -1,6 +1,6 @@
-# Ant IAM 第三方应用接入指南
+# 系统第三方应用接入指南
 
-本文档面向需要接入 Ant IAM 的第三方应用开发者，说明系统提供哪些接入能力、如何取得凭据、以及如何完成单点登录与通讯录同步。具体接入地址、应用凭据和回调地址由管理员在你的环境中分配。
+本文档面向需要接入系统的第三方应用开发者，说明系统提供哪些接入能力、如何取得凭据、以及如何完成单点登录与通讯录同步。具体接入地址、应用凭据和回调地址由管理员在你的环境中分配。
 
 ## 目录
 
@@ -212,7 +212,7 @@ GET {Base URL}/.well-known/openid-configuration
 
 | 关键字段 | 说明 |
 | --- | --- |
-| `authorization_endpoint` | 授权地址，供已登录的调用方使用，见 5.9 节 |
+| `authorization_endpoint` | 浏览器授权入口；按需引导 IAM 登录和用户同意，见 5.3 节 |
 | `token_endpoint` | 令牌地址，用于换取令牌 |
 | `userinfo_endpoint` | 用户信息地址 |
 | `jwks_uri` | 公钥地址，用于校验身份令牌签名 |
@@ -231,7 +231,7 @@ GET {Base URL}/.well-known/openid-configuration
 需要用户登录你的应用时，把浏览器重定向到 IAM 授权页：
 
 ```http
-GET {Base URL}/oauth2/consent
+GET {Base URL}/oidc/authorize
   ?client_id=<应用标识>
   &redirect_uri=<回调地址>
   &scope=openid%20profile%20email
@@ -253,7 +253,7 @@ GET {Base URL}/oauth2/consent
 
 - 用户尚未登录 IAM 时，页面会引导用户登录，登录后自动回到授权页。
 - 用户首次使用该应用时，页面会展示申请的授权范围，由用户确认。
-- 用户此前已授权过时，页面仍会展示授权范围，用户确认后直接跳回你的回调地址。
+- 用户此前已授权当前请求的全部范围时，会跳过同意页并直接跳回你的回调地址。
 
 用户在授权页点击「同意授权」后，浏览器会带着授权码跳转到你在 `redirect_uri` 中指定的地址。
 
@@ -287,20 +287,20 @@ grant_type=authorization_code
 
 ```json
 {
-  "accessToken": "...",
-  "tokenType": "Bearer",
-  "expiresIn": 3600,
-  "refreshToken": "...",
-  "idToken": "...",
+  "access_token": "...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "...",
+  "id_token": "...",
   "scope": "openid profile email"
 }
 ```
 
 | 令牌 | 用途 | 有效期 |
 | --- | --- | --- |
-| `accessToken` | 调用用户信息接口、资源接口 | 1 小时 |
-| `refreshToken` | 换取新的访问令牌 | 30 天 |
-| `idToken` | 身份令牌，包含用户标识，使用 RS256 签名 | 1 小时 |
+| `access_token` | 调用用户信息接口、资源接口 | 1 小时 |
+| `refresh_token` | 换取新的访问令牌 | 30 天 |
+| `id_token` | 身份令牌，包含用户标识，使用 RS256 签名 | 1 小时 |
 
 这里的令牌由 IAM 签发给你的应用使用，与第 4 章用于调用管理接口的访问令牌是两个不同的凭据，请勿混用。
 
@@ -543,6 +543,31 @@ displayName sw "研发"
 ## 9. 管理 API 能力清单
 
 以下接口均需要携带访问令牌。完整路径前缀为 `{Base URL}`。
+
+### 9.0 控制台权限模型
+
+管理接口按模块授权，权限点编码为 `iam:<模块>:<read|write>`，服务启动时自动写入权限表。拥有 `write` 即隐含 `read`。
+
+| 模块 | 权限点 | 覆盖接口 |
+| --- | --- | --- |
+| 概览 | `iam:dashboard:read` | `/api/v1/dashboard/**` |
+| 用户与组织 | `iam:user:read` / `iam:user:write` | 用户、组织、用户组、SCIM |
+| 角色与权限 | `iam:role:read` / `iam:role:write` | 角色、权限、角色授权、`/api/v1/users/role-assignments` |
+| 应用 | `iam:application:read` / `iam:application:write` | 应用、应用分组、访问申请、令牌、签名密钥 |
+| 身份源 | `iam:identity-source:read` / `iam:identity-source:write` | `/api/v1/identity-sources/**` |
+| 认证 | `iam:authentication:read` / `iam:authentication:write` | 认证源、认证策略、会话、认证事件 |
+| 安全 | `iam:security:read` / `iam:security:write` | 安全设置、风险规则 |
+| 系统 | `iam:system:read` / `iam:system:write` | 系统参数、租户、文件上传 |
+| 审计 | `iam:audit:read` | `/api/v1/audit-events/**` |
+
+规则：
+
+- `GET` 请求需要模块的 `read` 权限点，其余方法需要 `write` 权限点；未归入任何模块的管理接口仅 IAM 管理员可访问。
+- 持有 `iam_admin` 角色（直接授予或通过用户组继承）的用户是 IAM 管理员，拥有全部权限点。
+- 防提权：凡是会改变控制台权限归属的操作只允许 IAM 管理员执行，包括创建管理员账号、修改或重置控制台用户、变更携带控制台权限的角色或用户组、创建或授予 `iam:*` 权限点。
+- 用户本人可访问自己的资料、MFA、第三方绑定、会话和授权记录，不需要控制台权限。
+- `GET /api/v1/users/me/console-access` 返回当前用户的 `superAdmin` 标记和权限点列表，前端据此决定是否展示后台入口和菜单。
+
 
 ### 9.1 组织目录
 

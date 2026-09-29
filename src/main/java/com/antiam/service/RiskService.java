@@ -6,6 +6,7 @@ import static com.antiam.dto.RiskDtos.RiskAssessmentResponse;
 import static com.antiam.dto.RiskDtos.RiskRuleResponse;
 import static com.antiam.dto.RiskDtos.UpdateRiskRuleRequest;
 
+import com.antiam.common.ConflictException;
 import com.antiam.common.NotFoundException;
 import com.antiam.domain.AuthenticationEventType;
 import com.antiam.domain.AuthenticationEvent;
@@ -43,9 +44,14 @@ public class RiskService {
     @Transactional
     // 创建风险规则，规则会在风险评估时按启用状态参与匹配。
     public RiskRuleResponse createRule(CreateRiskRuleRequest request, String actor) {
+        String code = request.code().trim();
+        if (rules.findByCode(code).isPresent()) {
+            throw new ConflictException("风险规则编码已存在: " + code);
+        }
+        validateRule(request.type(), request.conditionValue(), request.threshold());
         RiskRule saved = rules.save(new RiskRule(
-            request.code(),
-            request.name(),
+            code,
+            request.name().trim(),
             request.type(),
             request.conditionValue(),
             request.threshold(),
@@ -76,6 +82,7 @@ public class RiskService {
     // 更新风险规则的匹配条件、阈值和风险等级。
     public RiskRuleResponse updateRule(UUID ruleId, UpdateRiskRuleRequest request, String actor) {
         RiskRule rule = getRuleEntity(ruleId);
+        validateRule(request.type(), request.conditionValue(), request.threshold());
         rule.update(request.name(), request.type(), request.conditionValue(), request.threshold(), request.riskLevel());
         auditService.record(actor, "risk_rule.update", "risk_rule", ruleId.toString(), rule.getCode());
         return riskMapper.toResponse(rule);
@@ -100,10 +107,31 @@ public class RiskService {
     }
 
     @Transactional
+    // 删除风险规则，历史评估结果中保留命中的规则编码。
+    public void deleteRule(UUID ruleId, String actor) {
+        RiskRule rule = getRuleEntity(ruleId);
+        rules.delete(rule);
+        auditService.record(actor, "risk_rule.delete", "risk_rule", ruleId.toString(), rule.getCode());
+    }
+
+    @Transactional
+    // 登录时的风险评估；没有启用的规则时直接返回低风险，不写评估记录。
+    public RiskLevel evaluateLogin(UserAccount user, String ipAddress, String userAgent, String geoLocation) {
+        if (rules.findByEnabledTrueOrderByCreatedAtAsc().isEmpty()) {
+            return RiskLevel.LOW;
+        }
+        return evaluate(user, new EvaluateRiskRequest(user.getId(), ipAddress, userAgent, null, geoLocation)).getRiskLevel();
+    }
+
+    @Transactional
     // 根据 IP、设备、地理位置和失败登录次数等上下文执行风险评估。
     public RiskAssessmentResponse evaluate(EvaluateRiskRequest request) {
         UserAccount user = users.findById(request.userId())
             .orElseThrow(() -> new NotFoundException("User not found: " + request.userId()));
+        return riskMapper.toResponse(evaluate(user, request));
+    }
+
+    private RiskAssessment evaluate(UserAccount user, EvaluateRiskRequest request) {
         List<RiskRule> matched = rules.findByEnabledTrueOrderByCreatedAtAsc().stream()
             .filter(rule -> matches(rule, request))
             .toList();
@@ -134,7 +162,24 @@ public class RiskService {
                 + ";matchedRules=" + saved.getMatchedRules()
                 + ";deviceFingerprint=" + nullToEmpty(request.deviceFingerprint())
                 + ";geoLocation=" + nullToEmpty(request.geoLocation())));
-        return riskMapper.toResponse(saved);
+        return saved;
+    }
+
+    private void validateRule(RiskRuleType type, String conditionValue, int threshold) {
+        switch (type) {
+            case FAILED_LOGIN_COUNT -> {
+                if (threshold < 1) {
+                    throw new IllegalArgumentException("失败登录次数阈值必须大于等于 1");
+                }
+            }
+            case DEVICE_FINGERPRINT_CHANGED -> {
+            }
+            default -> {
+                if (conditionValue == null || conditionValue.isBlank()) {
+                    throw new IllegalArgumentException("该规则类型必须填写匹配值");
+                }
+            }
+        }
     }
 
     @Transactional(readOnly = true)

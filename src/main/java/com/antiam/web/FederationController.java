@@ -8,20 +8,26 @@ import static com.antiam.dto.FederationDtos.SamlAssertionResponse;
 import static com.antiam.dto.FederationDtos.SamlMetadataResponse;
 import static com.antiam.dto.FederationDtos.VerifyJwtTokenRequest;
 
+import com.antiam.config.IssuerResolver;
 import com.antiam.service.FederationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.security.Principal;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @RestController
 @RequiredArgsConstructor
@@ -29,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class FederationController {
 
     private final FederationService federation;
+    private final IssuerResolver issuerResolver;
 
     /**
      * 输出 SAML 元数据的 JSON 视图。
@@ -36,7 +43,7 @@ public class FederationController {
     @Operation(summary = "获取 SAML 元数据", description = "返回身份提供方 SAML 元数据信息，便于管理界面查看和调试。")
     @GetMapping("/saml2/metadata")
     SamlMetadataResponse samlMetadata(HttpServletRequest request) {
-        return federation.samlMetadata(request.getRequestURL().toString().replace("/saml2/metadata", ""));
+        return federation.samlMetadata(issuerResolver.resolve(request));
     }
 
     /**
@@ -45,7 +52,7 @@ public class FederationController {
     @Operation(summary = "获取 SAML XML 元数据", description = "返回可被服务提供方导入的 SAML 2.0 元数据 XML。")
     @GetMapping(value = "/saml2/metadata.xml", produces = MediaType.APPLICATION_XML_VALUE)
     String samlMetadataXml(HttpServletRequest request) {
-        return federation.samlMetadataXml(request.getRequestURL().toString().replace("/saml2/metadata.xml", ""));
+        return federation.samlMetadataXml(issuerResolver.resolve(request));
     }
 
     /**
@@ -58,7 +65,7 @@ public class FederationController {
         HttpServletRequest request,
         Principal principal
     ) {
-        String issuer = request.getRequestURL().toString().replace("/saml2/sso", "");
+        String issuer = issuerResolver.resolve(request);
         return federation.issueSamlAssertion(entityId, principal.getName(), issuer);
     }
 
@@ -72,7 +79,7 @@ public class FederationController {
         HttpServletRequest request,
         Principal principal
     ) {
-        String issuer = request.getRequestURL().toString().replace("/saml2/sso/xml", "");
+        String issuer = issuerResolver.resolve(request);
         return federation.issueSamlResponseXml(entityId, principal.getName(), issuer);
     }
 
@@ -86,7 +93,7 @@ public class FederationController {
         HttpServletRequest request,
         Principal principal
     ) {
-        String issuer = request.getRequestURL().toString().replace("/jwt/sso", "");
+        String issuer = issuerResolver.resolve(request);
         return federation.issueJwtSsoToken(audience, principal.getName(), issuer);
     }
 
@@ -96,19 +103,71 @@ public class FederationController {
     @Operation(summary = "校验 JWT 令牌", description = "使用服务端签名密钥按 kid 校验 RS256 签名与有效期，返回令牌声明；校验失败时以 failureCode 说明原因。")
     @PostMapping("/jwt/verify")
     JwtSsoVerificationResponse verifyJwtToken(@Parameter(description = "JWT 校验请求") @Valid @RequestBody VerifyJwtTokenRequest request) {
-        return federation.verifyJwtSsoToken(request.token());
+        String expectedIssuer = request.issuer() != null && !request.issuer().isBlank()
+            ? request.issuer()
+            : issuerResolver.configuredIssuer();
+        return federation.verifyJwtSsoToken(request.token(), expectedIssuer, request.audience());
     }
 
     /**
-     * CAS 登录端点，为当前用户签发服务票据。
+     * CAS 登录端点：携带会话令牌时签发服务票据；浏览器直接访问时跳转到登录页完成认证。
      */
-    @Operation(summary = "CAS 登录", description = "为当前用户和目标 service 签发 CAS Service Ticket。")
+    @Operation(summary = "CAS 登录", description = "携带 Bearer 会话令牌时为当前用户和目标 service 签发 CAS Service Ticket；未登录的浏览器请求会 302 跳转到前端 CAS 登录页。")
     @GetMapping("/cas/login")
-    CasLoginResponse casLogin(
+    ResponseEntity<CasLoginResponse> casLogin(
         @Parameter(description = "CAS 客户端 service 地址") @RequestParam String service,
         Principal principal
     ) {
-        return federation.issueCasTicket(service, principal.getName());
+        if (principal == null) {
+            return redirect("/sso/cas/login", service);
+        }
+        return ResponseEntity.ok(federation.issueCasTicket(service, principal.getName()));
+    }
+
+    /**
+     * CAS 登出端点：跳转到前端登出页结束当前会话，再返回已注册的 service 地址。
+     */
+    @Operation(summary = "CAS 登出", description = "302 跳转到前端登出页，结束当前浏览器会话；service 为已注册 CAS 应用时登出后跳回该地址。")
+    @GetMapping("/cas/logout")
+    ResponseEntity<Void> casLogout(@Parameter(description = "登出后返回的 service 地址") @RequestParam(required = false) String service) {
+        return redirect("/sso/logout", service);
+    }
+
+    /**
+     * CAS 1.0 票据校验，返回 yes/no 纯文本。
+     */
+    @Operation(summary = "CAS 1.0 票据校验", description = "以 CAS 1.0 纯文本格式返回校验结果：成功为 yes 和用户名两行，失败为 no。")
+    @GetMapping(value = "/cas/validate", produces = MediaType.TEXT_PLAIN_VALUE)
+    String casValidate(
+        @Parameter(description = "CAS 客户端 service 地址") @RequestParam(required = false) String service,
+        @Parameter(description = "CAS Service Ticket") @RequestParam(required = false) String ticket
+    ) {
+        CasServiceValidationResponse response = federation.validateCasTicket(service, ticket);
+        return response.success() ? "yes\n" + response.user() + "\n" : "no\n\n";
+    }
+
+    /**
+     * 校验 CAS 票据（proxyValidate）；本服务不签发代理票据，按服务票据校验。
+     */
+    @Operation(summary = "CAS 代理票据校验", description = "兼容 CAS proxyValidate；当前不签发代理票据（PT），按 Service Ticket 校验并返回 JSON 结果。")
+    @GetMapping("/cas/proxyValidate")
+    CasServiceValidationResponse casProxyValidate(
+        @Parameter(description = "CAS 客户端 service 地址") @RequestParam(required = false) String service,
+        @Parameter(description = "CAS Service Ticket") @RequestParam(required = false) String ticket
+    ) {
+        return federation.validateCasTicket(service, ticket);
+    }
+
+    /**
+     * 以 CAS 3.0 XML 格式校验 CAS 票据（proxyValidate）。
+     */
+    @Operation(summary = "CAS XML 代理票据校验", description = "兼容 CAS p3/proxyValidate；按 Service Ticket 校验并返回 CAS 3.0 XML。")
+    @GetMapping(value = "/cas/p3/proxyValidate", produces = MediaType.APPLICATION_XML_VALUE)
+    String casProxyValidateXml(
+        @Parameter(description = "CAS 客户端 service 地址") @RequestParam(required = false) String service,
+        @Parameter(description = "CAS Service Ticket") @RequestParam(required = false) String ticket
+    ) {
+        return federation.validateCasTicketXml(service, ticket);
     }
 
     /**
@@ -117,8 +176,8 @@ public class FederationController {
     @Operation(summary = "CAS 票据校验", description = "校验 service 与 ticket 是否匹配，并返回用户信息。")
     @GetMapping("/cas/serviceValidate")
     CasServiceValidationResponse casServiceValidate(
-        @Parameter(description = "CAS 客户端 service 地址") @RequestParam String service,
-        @Parameter(description = "CAS Service Ticket") @RequestParam String ticket
+        @Parameter(description = "CAS 客户端 service 地址") @RequestParam(required = false) String service,
+        @Parameter(description = "CAS Service Ticket") @RequestParam(required = false) String ticket
     ) {
         return federation.validateCasTicket(service, ticket);
     }
@@ -129,9 +188,18 @@ public class FederationController {
     @Operation(summary = "CAS XML 票据校验", description = "以 CAS p3/serviceValidate XML 格式返回票据校验结果。")
     @GetMapping(value = "/cas/p3/serviceValidate", produces = MediaType.APPLICATION_XML_VALUE)
     String casServiceValidateXml(
-        @Parameter(description = "CAS 客户端 service 地址") @RequestParam String service,
-        @Parameter(description = "CAS Service Ticket") @RequestParam String ticket
+        @Parameter(description = "CAS 客户端 service 地址") @RequestParam(required = false) String service,
+        @Parameter(description = "CAS Service Ticket") @RequestParam(required = false) String ticket
     ) {
         return federation.validateCasTicketXml(service, ticket);
+    }
+
+    private static <T> ResponseEntity<T> redirect(String path, String service) {
+        UriComponentsBuilder target = UriComponentsBuilder.fromPath(path);
+        if (service != null && !service.isBlank()) {
+            target.queryParam("service", service);
+        }
+        URI location = URI.create(target.encode(StandardCharsets.UTF_8).build().toUriString());
+        return ResponseEntity.status(HttpStatus.FOUND).location(location).build();
     }
 }

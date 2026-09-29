@@ -36,6 +36,9 @@ public class AuthenticationSession extends BaseEntity {
     private Instant expiresAt;
     private Instant endedAt;
 
+    @Enumerated(EnumType.STRING)
+    private SessionRestriction restriction;
+
     @Column(nullable = false)
     private boolean active;
 
@@ -56,6 +59,14 @@ public class AuthenticationSession extends BaseEntity {
         this.userAgent = userAgent;
         this.expiresAt = expiresAt;
         this.active = true;
+    }
+
+    public void restrict(SessionRestriction restriction) {
+        this.restriction = restriction;
+    }
+
+    public void clearRestriction() {
+        this.restriction = null;
     }
 
     public void end() {

@@ -11,6 +11,14 @@ import com.lark.oapi.service.contact.v3.model.Department;
 import com.lark.oapi.service.contact.v3.model.FindByDepartmentUserReq;
 import com.lark.oapi.service.contact.v3.model.FindByDepartmentUserResp;
 import com.lark.oapi.service.contact.v3.model.FindByDepartmentUserRespBody;
+import com.lark.oapi.service.contact.v3.model.Group;
+import com.lark.oapi.service.contact.v3.model.Memberlist;
+import com.lark.oapi.service.contact.v3.model.SimplelistGroupMemberReq;
+import com.lark.oapi.service.contact.v3.model.SimplelistGroupMemberResp;
+import com.lark.oapi.service.contact.v3.model.SimplelistGroupMemberRespBody;
+import com.lark.oapi.service.contact.v3.model.SimplelistGroupReq;
+import com.lark.oapi.service.contact.v3.model.SimplelistGroupResp;
+import com.lark.oapi.service.contact.v3.model.SimplelistGroupRespBody;
 import com.lark.oapi.service.contact.v3.model.User;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -42,7 +50,7 @@ public class FeishuIdentitySourceConnectorAdapter implements IdentitySourceConne
         if (config.has("payload")) {
             return jsonAdapter.readPayload(connector.getConfiguration());
         }
-        return fetchDirectory(config, client(config));
+        return fetchDirectory(source, config, client(config));
     }
 
     private Client client(JsonNode config) {
@@ -54,14 +62,16 @@ public class FeishuIdentitySourceConnectorAdapter implements IdentitySourceConne
         return builder.build();
     }
 
-    private DirectorySyncPayload fetchDirectory(JsonNode config, Client client) {
+    private DirectorySyncPayload fetchDirectory(IdentitySource source, JsonNode config, Client client) {
         List<DirectoryOrganization> organizations = new ArrayList<>();
         List<DirectoryUser> users = new ArrayList<>();
+        List<DirectoryGroup> groups = new ArrayList<>();
         Queue<DepartmentRef> queue = new ArrayDeque<>();
         Set<String> visited = new LinkedHashSet<>();
         String rootDepartmentId = textOrDefault(config, "rootDepartmentId", "0");
+        organizations.add(rootOrganization(source, config, rootDepartmentId));
         String idType = textOrDefault(config, "departmentIdType", "open_department_id");
-        queue.add(new DepartmentRef(rootDepartmentId, null));
+        queue.add(new DepartmentRef(rootDepartmentId, rootDepartmentCode(rootDepartmentId)));
         while (!queue.isEmpty()) {
             DepartmentRef current = queue.remove();
             if (!visited.add(current.id())) {
@@ -71,7 +81,19 @@ public class FeishuIdentitySourceConnectorAdapter implements IdentitySourceConne
             queue.addAll(children);
             users.addAll(fetchUsers(client, current.id(), idType));
         }
-        return new DirectorySyncPayload(organizations, users, List.of());
+        groups.addAll(fetchGroups(client));
+        return new DirectorySyncPayload(organizations, users, groups);
+    }
+
+    DirectoryOrganization rootOrganization(IdentitySource source, JsonNode config, String rootDepartmentId) {
+        return new DirectoryOrganization(
+            rootDepartmentCode(rootDepartmentId),
+            textOrDefault(config, "rootDepartmentName", defaultString(source.getName(), "Feishu")),
+            null);
+    }
+
+    String rootDepartmentCode(String rootDepartmentId) {
+        return "feishu:" + rootDepartmentId;
     }
 
     private List<DepartmentRef> fetchDepartments(
@@ -150,6 +172,79 @@ public class FeishuIdentitySourceConnectorAdapter implements IdentitySourceConne
         }
     }
 
+    private List<DirectoryGroup> fetchGroups(Client client) {
+        List<DirectoryGroup> values = new ArrayList<>();
+        String pageToken = null;
+        boolean hasMore;
+        do {
+            SimplelistGroupRespBody data = fetchGroupPage(client, pageToken);
+            Group[] items = data.getGrouplist() == null ? new Group[0] : data.getGrouplist();
+            for (Group group : items) {
+                String id = required(defaultString(group.getId(), group.getGroupId()), "group.id");
+                values.add(toDirectoryGroup(group, fetchGroupMembers(client, id)));
+            }
+            pageToken = data.getPageToken();
+            hasMore = Boolean.TRUE.equals(data.getHasMore()) && pageToken != null && !pageToken.isBlank();
+        } while (hasMore);
+        return values;
+    }
+
+    private SimplelistGroupRespBody fetchGroupPage(Client client, String pageToken) {
+        try {
+            SimplelistGroupReq request = new SimplelistGroupReq();
+            request.setPageSize(50);
+            request.setPageToken(pageToken);
+            SimplelistGroupResp response = client.contact().v3().group().simplelist(request);
+            assertSuccess(response);
+            return response.getData() == null ? new SimplelistGroupRespBody() : response.getData();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Feishu connector group request failed: " + ex.getMessage(), ex);
+        }
+    }
+
+    private List<String> fetchGroupMembers(Client client, String groupId) {
+        List<String> values = new ArrayList<>();
+        String pageToken = null;
+        boolean hasMore;
+        do {
+            SimplelistGroupMemberRespBody data = fetchGroupMemberPage(client, groupId, pageToken);
+            Memberlist[] items = data.getMemberlist() == null ? new Memberlist[0] : data.getMemberlist();
+            for (Memberlist member : items) {
+                if (member.getMemberId() != null && !member.getMemberId().isBlank()) {
+                    values.add(member.getMemberId());
+                }
+            }
+            pageToken = data.getPageToken();
+            hasMore = Boolean.TRUE.equals(data.getHasMore()) && pageToken != null && !pageToken.isBlank();
+        } while (hasMore);
+        return values;
+    }
+
+    private SimplelistGroupMemberRespBody fetchGroupMemberPage(Client client, String groupId, String pageToken) {
+        try {
+            SimplelistGroupMemberReq request = new SimplelistGroupMemberReq();
+            request.setGroupId(groupId);
+            request.setMemberType("user");
+            request.setMemberIdType("user_id");
+            request.setPageSize(50);
+            request.setPageToken(pageToken);
+            SimplelistGroupMemberResp response = client.contact().v3().groupMember().simplelist(request);
+            assertSuccess(response);
+            return response.getData() == null ? new SimplelistGroupMemberRespBody() : response.getData();
+        } catch (Exception ex) {
+            throw new IllegalStateException("Feishu connector group member request failed: " + ex.getMessage(), ex);
+        }
+    }
+
+    DirectoryGroup toDirectoryGroup(Group group, List<String> members) {
+        String id = required(defaultString(group.getId(), group.getGroupId()), "group.id");
+        return new DirectoryGroup(groupCode(id), defaultString(group.getName(), groupCode(id)), members);
+    }
+
+    String groupCode(String groupId) {
+        return "feishu:group:" + groupId;
+    }
+
     private String departmentId(Department department, String idType) {
         if ("department_id".equals(idType)) {
             return required(department.getDepartmentId(), "department.department_id");
@@ -189,6 +284,20 @@ public class FeishuIdentitySourceConnectorAdapter implements IdentitySourceConne
     }
 
     private void assertSuccess(FindByDepartmentUserResp response) {
+        if (response == null || !response.success()) {
+            String message = response == null ? "empty response" : response.getMsg();
+            throw new IllegalStateException("Feishu connector request failed: " + message);
+        }
+    }
+
+    private void assertSuccess(SimplelistGroupResp response) {
+        if (response == null || !response.success()) {
+            String message = response == null ? "empty response" : response.getMsg();
+            throw new IllegalStateException("Feishu connector request failed: " + message);
+        }
+    }
+
+    private void assertSuccess(SimplelistGroupMemberResp response) {
         if (response == null || !response.success()) {
             String message = response == null ? "empty response" : response.getMsg();
             throw new IllegalStateException("Feishu connector request failed: " + message);

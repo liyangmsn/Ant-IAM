@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -100,6 +101,16 @@ public class RiskController {
     @PostMapping("/rules/{ruleId}/disable")
     RiskRuleResponse disableRule(@Parameter(description = "风险规则 UUID") @PathVariable UUID ruleId, Principal principal) {
         return risk.disableRule(ruleId, principal.getName());
+    }
+
+    /**
+     * 删除风险规则。
+     */
+    @Operation(summary = "删除风险规则", description = "删除指定风险规则，历史评估记录保留命中的规则编码。")
+    @DeleteMapping("/rules/{ruleId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deleteRule(@Parameter(description = "风险规则 UUID") @PathVariable UUID ruleId, Principal principal) {
+        risk.deleteRule(ruleId, principal.getName());
     }
 
     /**

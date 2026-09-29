@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Set;
@@ -22,6 +23,8 @@ public final class UserDtos {
         @NotBlank String username,
         @Schema(description = "用户显示名称", example = "张三")
         @NotBlank String displayName,
+        @Schema(description = "用户类型：user 或 admin", example = "user")
+        @NotBlank @Pattern(regexp = "user|admin") String userType,
         @Schema(description = "邮箱地址", example = "zhangsan@example.com")
         @Email String email,
         @Schema(description = "手机号", example = "13800000000")
@@ -39,7 +42,7 @@ public final class UserDtos {
         @Schema(description = "新密码，至少 8 位", example = "ChangeMe123")
         @NotBlank @Size(min = 8) String password,
         @Schema(description = "是否为临时密码；临时密码要求用户下次登录后修改")
-        boolean temporary
+        Boolean temporary
     ) {
     }
 
@@ -101,7 +104,7 @@ public final class UserDtos {
         @Schema(description = "新密码，至少 8 位", example = "NewPass123")
         @NotBlank @Size(min = 8) String newPassword,
         @Schema(description = "是否设置为临时密码")
-        boolean temporary
+        Boolean temporary
     ) {
     }
 
@@ -196,6 +199,12 @@ public final class UserDtos {
     ) {
     }
 
+    public record MfaCodeRequest(
+        @Schema(description = "用户输入的验证码或恢复码", example = "123456")
+        @NotBlank String code
+    ) {
+    }
+
     public record VerifyMfaChallengeRequest(
         @Schema(description = "MFA 挑战 ID")
         @NotBlank String challengeId,
@@ -216,8 +225,22 @@ public final class UserDtos {
         AccountStatus status,
         UUID tenantId,
         UUID organizationId,
+        String identitySourceType,
+        String identitySourceName,
         Set<String> groups,
-        Set<String> roles
+        Set<String> roles,
+        @Schema(description = "头像地址")
+        String avatarUrl,
+        @Schema(description = "直接授予的角色名称，用于展示", example = "[\"IAM 管理员\"]")
+        Set<String> roleNames
+    ) {
+    }
+
+    public record ConsoleAccessResponse(
+        @Schema(description = "是否为 IAM 管理员（拥有全部控制台权限并可管理控制台授权）")
+        boolean superAdmin,
+        @Schema(description = "当前用户生效的控制台权限点，write 权限会同时带出对应 read 权限", example = "[\"iam:user:read\"]")
+        Set<String> permissions
     ) {
     }
 

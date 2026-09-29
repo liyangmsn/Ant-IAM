@@ -49,7 +49,9 @@ public final class FederationDtos {
     }
 
     public record VerifyJwtTokenRequest(
-        @Schema(description = "待校验的 JWT 令牌") @NotBlank String token
+        @Schema(description = "待校验的 JWT 令牌") @NotBlank String token,
+        @Schema(description = "期望的签发方；为空时使用服务端配置的 iam.issuer（未配置则不校验）") String issuer,
+        @Schema(description = "期望的 audience；为空时不校验") String audience
     ) {
     }
 
@@ -62,7 +64,7 @@ public final class FederationDtos {
         Instant issuedAt,
         Instant expiresAt,
         @Schema(description = "令牌声明集合，校验失败时为空") Map<String, Object> claims,
-        @Schema(description = "校验失败码：MALFORMED_TOKEN / UNSUPPORTED_ALGORITHM / UNKNOWN_KEY / INVALID_SIGNATURE / TOKEN_EXPIRED / TOKEN_NOT_YET_VALID")
+        @Schema(description = "校验失败码：MALFORMED_TOKEN / UNSUPPORTED_ALGORITHM / UNSUPPORTED_TYPE / UNKNOWN_KEY / KEY_RETIRED / INVALID_SIGNATURE / MISSING_EXPIRATION / TOKEN_EXPIRED / TOKEN_NOT_YET_VALID / INVALID_ISSUER / INVALID_AUDIENCE")
         String failureCode,
         @Schema(description = "校验失败说明") String failureMessage
     ) {

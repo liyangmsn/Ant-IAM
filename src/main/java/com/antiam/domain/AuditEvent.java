@@ -21,11 +21,20 @@ public class AuditEvent extends BaseEntity {
     @Column(columnDefinition = "text")
     private String detail;
 
+    private String ipAddress;
+    private String userAgent;
+
     public AuditEvent(String actor, String action, String targetType, String targetId, String detail) {
         this.actor = actor;
         this.action = action;
         this.targetType = targetType;
         this.targetId = targetId;
         this.detail = detail;
+    }
+
+    public AuditEvent(String actor, String action, String targetType, String targetId, String detail, String ipAddress, String userAgent) {
+        this(actor, action, targetType, targetId, detail);
+        this.ipAddress = ipAddress;
+        this.userAgent = userAgent;
     }
 }

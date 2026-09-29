@@ -43,7 +43,8 @@ class FederationServiceTest {
         users,
         authenticationEvents,
         new TokenSupport(),
-        jwtService);
+        jwtService,
+        mock(AccessService.class));
 
     @Test
     void issuesJwtSsoTokenWithConfiguredAudienceAndTtl() {
@@ -128,7 +129,7 @@ class FederationServiceTest {
     @Test
     void mapsVerificationResult() {
         Instant issuedAt = Instant.now();
-        when(jwtService.verify("token")).thenReturn(new JwtService.TokenVerification(
+        when(jwtService.verify("token", null, "checkout-app")).thenReturn(new JwtService.TokenVerification(
             true,
             "kid-1",
             "https://iam.example.com",
@@ -140,7 +141,7 @@ class FederationServiceTest {
             null,
             null));
 
-        JwtSsoVerificationResponse response = service.verifyJwtSsoToken("token");
+        JwtSsoVerificationResponse response = service.verifyJwtSsoToken("token", " ", "checkout-app");
 
         assertThat(response.valid()).isTrue();
         assertThat(response.keyId()).isEqualTo("kid-1");

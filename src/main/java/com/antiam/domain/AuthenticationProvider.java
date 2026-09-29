@@ -79,4 +79,8 @@ public class AuthenticationProvider extends BaseEntity {
     public void disable() {
         this.enabled = false;
     }
+
+    public void setVisible(boolean visible) {
+        this.visible = visible;
+    }
 }
