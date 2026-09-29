@@ -11,11 +11,14 @@ import static com.antiam.dto.IdentitySourceDtos.SyncRunResponse;
 import static com.antiam.dto.IdentitySourceDtos.UpdateIdentitySourceRequest;
 import static com.antiam.dto.IdentitySourceDtos.UpdateSyncJobRequest;
 
+import com.antiam.common.MaskedSecrets;
 import com.antiam.common.NotFoundException;
+import com.antiam.domain.AccountStatus;
 import com.antiam.domain.IdentitySource;
 import com.antiam.domain.IdentitySourceConnector;
 import com.antiam.domain.IdentitySourceType;
 import com.antiam.domain.IdentitySyncJob;
+import com.antiam.domain.IdentitySyncMode;
 import com.antiam.domain.IdentitySyncRun;
 import com.antiam.domain.Organization;
 import com.antiam.domain.Tenant;
@@ -36,11 +39,21 @@ import com.antiam.service.identitysource.DirectorySyncPayloadReader;
 import com.antiam.service.identitysource.DirectoryUser;
 import com.antiam.service.identitysource.IdentitySourceConnectorAdapter;
 import com.antiam.service.identitysource.RealtimeSyncSignature;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import lombok.RequiredArgsConstructor;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 @RequiredArgsConstructor
@@ -59,6 +72,7 @@ public class IdentitySourceService {
     private final DirectorySyncPayloadReader payloadReader;
     private final RealtimeSyncSignature syncSignature;
     private final List<IdentitySourceConnectorAdapter> connectorAdapters;
+    private final PlatformTransactionManager transactionManager;
 
     @Transactional
     // 创建身份源，后续可配置连接器并通过同步任务导入组织、用户和用户组。
@@ -116,10 +130,11 @@ public class IdentitySourceService {
     }
 
     @Transactional
-    // 删除身份源，数据库外键会级联清理连接器、同步任务和运行历史。
+    // 删除身份源，数据库外键会级联清理连接器、同步任务和运行历史；已同步的用户保留并转为本地账号。
     public void delete(UUID identitySourceId, String actor) {
         IdentitySource source = getSource(identitySourceId);
         String code = source.getCode();
+        users.findByIdentitySourceId(identitySourceId).forEach(user -> user.assignIdentitySource(null));
         identitySources.delete(source);
         auditService.record(actor, "identity_source.delete", "identity_source", identitySourceId.toString(), code);
     }
@@ -130,18 +145,19 @@ public class IdentitySourceService {
         IdentitySource source = getSource(identitySourceId);
         IdentitySourceConnector saved = connectors.findByIdentitySourceId(identitySourceId)
             .map(existing -> {
-                existing.replace(request.configuration(), request.secretRef());
+                String secretRef = MaskedSecrets.MASK.equals(request.secretRef()) ? existing.getSecretRef() : request.secretRef();
+                existing.replace(MaskedSecrets.restore(request.configuration(), existing.getConfiguration()), secretRef);
                 return existing;
             })
             .orElseGet(() -> connectors.save(new IdentitySourceConnector(source, request.configuration(), request.secretRef())));
         auditService.record(actor, "identity_source.connector.configure", "identity_source", identitySourceId.toString(), source.getCode());
-        return identitySourceMapper.toResponse(saved);
+        return toResponse(saved);
     }
 
     @Transactional(readOnly = true)
     // 查询身份源连接器配置。
     public ConnectorResponse getConnector(UUID identitySourceId) {
-        return identitySourceMapper.toResponse(getConnectorEntity(identitySourceId));
+        return toResponse(getConnectorEntity(identitySourceId));
     }
 
     @Transactional
@@ -150,7 +166,7 @@ public class IdentitySourceService {
         IdentitySourceConnector connector = getConnectorEntity(identitySourceId);
         connector.enable();
         auditService.record(actor, "identity_source.connector.enable", "identity_source", identitySourceId.toString(), connector.getIdentitySource().getCode());
-        return identitySourceMapper.toResponse(connector);
+        return toResponse(connector);
     }
 
     @Transactional
@@ -159,14 +175,14 @@ public class IdentitySourceService {
         IdentitySourceConnector connector = getConnectorEntity(identitySourceId);
         connector.disable();
         auditService.record(actor, "identity_source.connector.disable", "identity_source", identitySourceId.toString(), connector.getIdentitySource().getCode());
-        return identitySourceMapper.toResponse(connector);
+        return toResponse(connector);
     }
 
     @Transactional
     // 创建身份同步任务，保存同步模式和调度表达式。
     public SyncJobResponse createSyncJob(UUID identitySourceId, CreateSyncJobRequest request, String actor) {
         IdentitySource source = getSource(identitySourceId);
-        IdentitySyncJob saved = syncJobs.save(new IdentitySyncJob(source, request.name(), request.mode(), request.cronExpression()));
+        IdentitySyncJob saved = syncJobs.save(new IdentitySyncJob(source, request.name(), request.mode(), normalizeCron(request.cronExpression())));
         auditService.record(actor, "identity_sync_job.create", "identity_source", identitySourceId.toString(), saved.getName());
         return identitySourceMapper.toResponse(saved);
     }
@@ -188,7 +204,7 @@ public class IdentitySourceService {
     // 更新同步任务名称、模式和调度表达式。
     public SyncJobResponse updateSyncJob(UUID syncJobId, UpdateSyncJobRequest request, String actor) {
         IdentitySyncJob job = getSyncJobEntity(syncJobId);
-        job.update(request.name(), request.mode(), request.cronExpression());
+        job.update(request.name(), request.mode(), normalizeCron(request.cronExpression()));
         auditService.record(actor, "identity_sync_job.update", "identity_sync_job", syncJobId.toString(), job.getName());
         return identitySourceMapper.toResponse(job);
     }
@@ -211,32 +227,41 @@ public class IdentitySourceService {
         return identitySourceMapper.toResponse(job);
     }
 
-    @Transactional
-    // 立即运行同步任务，将连接器 JSON 数据应用到组织、用户和用户组目录。
+    // 立即运行同步任务，将连接器数据应用到组织、用户和用户组目录。
+    // 目录写入在独立事务中执行：任一条目失败则整体回滚，运行记录单独提交为失败状态。
     public SyncRunResponse runSyncJob(UUID syncJobId, String actor) {
-        IdentitySyncJob job = getSyncJobEntity(syncJobId);
-        if (!job.isEnabled()) {
-            throw new IllegalArgumentException("Identity sync job is disabled: " + job.getName());
-        }
-        IdentitySyncRun run = syncRuns.save(new IdentitySyncRun(job));
+        UUID runId = inTransaction(() -> {
+            IdentitySyncJob job = getSyncJobEntity(syncJobId);
+            if (!job.isEnabled()) {
+                throw new IllegalArgumentException("同步任务已停用: " + job.getName());
+            }
+            return syncRuns.save(new IdentitySyncRun(job)).getId();
+        });
+        SyncCounters counters;
         try {
-            IdentitySourceConnector connector = connectors.findByIdentitySourceId(job.getIdentitySource().getId())
-                .orElseThrow(() -> new NotFoundException("Connector not configured for identity source: " + job.getIdentitySource().getCode()));
-            SyncCounters counters = applyConnectorSync(job.getIdentitySource(), connector);
-            String message = "Applied " + job.getMode() + " sync for " + job.getIdentitySource().getType()
-                + ": organizationsCreated=" + counters.organizationsCreated()
-                + ", organizationsUpdated=" + counters.organizationsUpdated()
-                + ", usersCreated=" + counters.usersCreated()
-                + ", usersUpdated=" + counters.usersUpdated()
-                + ", groupsCreated=" + counters.groupsCreated()
-                + ", groupsUpdated=" + counters.groupsUpdated();
+            counters = inTransaction(() -> {
+                IdentitySyncJob job = getSyncJobEntity(syncJobId);
+                IdentitySourceConnector connector = connectors.findByIdentitySourceId(job.getIdentitySource().getId())
+                    .orElseThrow(() -> new NotFoundException("身份源未配置连接器: " + job.getIdentitySource().getCode()));
+                return applyConnectorSync(job.getIdentitySource(), connector, job.getMode());
+            });
+        } catch (RuntimeException ex) {
+            String reason = ex.getMessage() == null ? ex.getClass().getSimpleName() : ex.getMessage();
+            return inTransaction(() -> {
+                IdentitySyncRun run = getSyncRunEntity(runId);
+                run.fail(reason);
+                auditService.record(actor, "identity_sync_job.run", "identity_sync_job", syncJobId.toString(), "failed");
+                return identitySourceMapper.toResponse(run);
+            });
+        }
+        return inTransaction(() -> {
+            IdentitySyncRun run = getSyncRunEntity(runId);
+            String message = "Applied " + run.getSyncJob().getMode() + " sync for " + run.getSyncJob().getIdentitySource().getType()
+                + ": " + counters.summary();
             run.success(counters.usersCreated(), counters.usersUpdated(), counters.groupsCreated(), counters.groupsUpdated(), message);
             auditService.record(actor, "identity_sync_job.run", "identity_sync_job", syncJobId.toString(), "success");
-        } catch (RuntimeException ex) {
-            run.fail(ex.getMessage());
-            auditService.record(actor, "identity_sync_job.run", "identity_sync_job", syncJobId.toString(), "failed");
-        }
-        return identitySourceMapper.toResponse(run);
+            return identitySourceMapper.toResponse(run);
+        });
     }
 
     @Transactional
@@ -259,18 +284,8 @@ public class IdentitySourceService {
         if (!syncSignature.matches(secret, rawBody, signature)) {
             throw new IllegalArgumentException("Realtime sync signature is invalid");
         }
-        SyncCounters counters = applyDirectoryPayload(source, payloadReader.read(rawBody));
-        auditService.record(
-            actor,
-            "identity_source.realtime_receive",
-            "identity_source",
-            source.getId().toString(),
-            "organizationsCreated=" + counters.organizationsCreated()
-                + ", organizationsUpdated=" + counters.organizationsUpdated()
-                + ", usersCreated=" + counters.usersCreated()
-                + ", usersUpdated=" + counters.usersUpdated()
-                + ", groupsCreated=" + counters.groupsCreated()
-                + ", groupsUpdated=" + counters.groupsUpdated());
+        SyncCounters counters = applyDirectoryPayload(source, payloadReader.read(rawBody), IdentitySyncMode.INCREMENTAL);
+        auditService.record(actor, "identity_source.realtime_receive", "identity_source", source.getId().toString(), counters.summary());
         return new RealtimeSyncResult(
             source.getCode(),
             counters.organizationsCreated(),
@@ -291,9 +306,43 @@ public class IdentitySourceService {
     @Transactional(readOnly = true)
     // 查询单次同步运行详情。
     public SyncRunResponse getSyncRun(UUID syncRunId) {
+        return identitySourceMapper.toResponse(getSyncRunEntity(syncRunId));
+    }
+
+    private IdentitySyncRun getSyncRunEntity(UUID syncRunId) {
         return syncRuns.findById(syncRunId)
-            .map(identitySourceMapper::toResponse)
             .orElseThrow(() -> new NotFoundException("Identity sync run not found: " + syncRunId));
+    }
+
+    private <T> T inTransaction(Supplier<T> action) {
+        return new TransactionTemplate(transactionManager).execute(status -> action.get());
+    }
+
+    // 连接器配置与密钥引用仅以占位符回显，保存时由 MaskedSecrets 还原。
+    private ConnectorResponse toResponse(IdentitySourceConnector connector) {
+        ConnectorResponse response = identitySourceMapper.toResponse(connector);
+        if (response == null) {
+            return null;
+        }
+        return new ConnectorResponse(
+            response.id(),
+            response.identitySourceId(),
+            MaskedSecrets.maskJsonFields(response.configuration()),
+            MaskedSecrets.mask(response.secretRef()),
+            response.enabled());
+    }
+
+    private String normalizeCron(String cronExpression) {
+        if (cronExpression == null || cronExpression.isBlank()) {
+            return null;
+        }
+        String value = cronExpression.trim();
+        try {
+            CronExpression.parse(value);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalArgumentException("Cron 表达式不合法（需 6 段：秒 分 时 日 月 周）: " + value);
+        }
+        return value;
     }
 
     private IdentitySource getSource(UUID identitySourceId) {
@@ -329,35 +378,87 @@ public class IdentitySourceService {
         return value != null && value.toLowerCase().contains(keyword);
     }
 
-    private SyncCounters applyConnectorSync(IdentitySource source, IdentitySourceConnector connector) {
+    private SyncCounters applyConnectorSync(IdentitySource source, IdentitySourceConnector connector, IdentitySyncMode mode) {
         if (!source.isEnabled()) {
-            throw new IllegalArgumentException("Identity source is disabled: " + source.getCode());
+            throw new IllegalArgumentException("身份源已停用: " + source.getCode());
         }
         if (!connector.isEnabled()) {
-            throw new IllegalArgumentException("Identity source connector is disabled: " + source.getCode());
+            throw new IllegalArgumentException("身份源连接器已停用: " + source.getCode());
         }
         DirectorySyncPayload payload = connectorAdapters.stream()
             .filter(adapter -> adapter.supports(source.getType()))
             .findFirst()
             .orElseThrow(() -> new IllegalArgumentException("Unsupported identity source connector type: " + source.getType()))
             .load(source, connector);
-        return applyDirectoryPayload(source, payload);
+        return applyDirectoryPayload(source, payload, mode);
     }
 
-    private SyncCounters applyDirectoryPayload(IdentitySource source, DirectorySyncPayload payload) {
+    // FULL 模式在导入后停用本身份源下已不在上游目录中的用户；INCREMENTAL 模式只新增和更新。
+    private SyncCounters applyDirectoryPayload(IdentitySource source, DirectorySyncPayload payload, IdentitySyncMode mode) {
         SyncCounters counters = new SyncCounters();
-        payload.organizations().forEach(item -> syncOrganization(item, counters));
+        orderByParent(payload.organizations()).forEach(item -> syncOrganization(item, counters));
         payload.users().forEach(item -> syncUser(source, item, counters));
-        payload.groups().forEach(item -> syncGroup(item, counters));
+        payload.groups().forEach(item -> syncGroup(source, item, counters));
+        if (mode == IdentitySyncMode.FULL && !payload.users().isEmpty()) {
+            Set<String> present = new HashSet<>();
+            payload.users().forEach(item -> present.add(item.username()));
+            users.findByIdentitySourceId(source.getId()).stream()
+                .filter(user -> !present.contains(user.getUsername()))
+                .filter(user -> user.getStatus() == AccountStatus.ACTIVE)
+                .forEach(user -> {
+                    user.suspend();
+                    counters.usersSuspended++;
+                });
+        }
         return counters;
     }
 
+    // 按父子关系排序，保证父组织先于子组织写入；载荷内存在循环引用时拒绝同步。
+    private List<DirectoryOrganization> orderByParent(List<DirectoryOrganization> items) {
+        Map<String, DirectoryOrganization> byCode = new LinkedHashMap<>();
+        items.forEach(item -> byCode.put(required(item.code(), "organization.code"), item));
+        List<DirectoryOrganization> ordered = new ArrayList<>();
+        Set<String> done = new HashSet<>();
+        Set<String> visiting = new HashSet<>();
+        byCode.keySet().forEach(code -> visitOrganization(code, byCode, done, visiting, ordered));
+        return ordered;
+    }
+
+    private void visitOrganization(
+        String code,
+        Map<String, DirectoryOrganization> byCode,
+        Set<String> done,
+        Set<String> visiting,
+        List<DirectoryOrganization> ordered
+    ) {
+        if (done.contains(code)) {
+            return;
+        }
+        if (!visiting.add(code)) {
+            throw new IllegalArgumentException("组织存在循环上级关系: " + code);
+        }
+        DirectoryOrganization item = byCode.get(code);
+        String parentCode = item.parentCode();
+        if (parentCode != null && !parentCode.isBlank() && byCode.containsKey(parentCode)) {
+            visitOrganization(parentCode, byCode, done, visiting, ordered);
+        }
+        visiting.remove(code);
+        done.add(code);
+        ordered.add(item);
+    }
+
     private void syncOrganization(DirectoryOrganization item, SyncCounters counters) {
+        String code = required(item.code(), "organization.code");
         Organization parent = item.parentCode() == null || item.parentCode().isBlank()
             ? null
             : organizations.findByCode(item.parentCode())
                 .orElseThrow(() -> new NotFoundException("Parent organization not found: " + item.parentCode()));
-        organizations.findByCode(required(item.code(), "organization.code"))
+        for (Organization ancestor = parent; ancestor != null; ancestor = ancestor.getParent()) {
+            if (code.equals(ancestor.getCode())) {
+                throw new IllegalArgumentException("组织存在循环上级关系: " + code);
+            }
+        }
+        organizations.findByCode(code)
             .map(existing -> {
                 existing.update(required(item.name(), "organization.name"), parent);
                 counters.organizationsUpdated++;
@@ -365,25 +466,27 @@ public class IdentitySourceService {
             })
             .orElseGet(() -> {
                 counters.organizationsCreated++;
-                return organizations.save(new Organization(item.code(), required(item.name(), "organization.name"), parent));
+                return organizations.save(new Organization(code, required(item.name(), "organization.name"), parent));
             });
     }
 
+    // 同名本地账号或其他身份源的账号不会被覆盖，计入 usersSkipped。
     private void syncUser(IdentitySource source, DirectoryUser item, SyncCounters counters) {
         Organization organization = item.organizationCode() == null || item.organizationCode().isBlank()
             ? null
             : organizations.findByCode(item.organizationCode())
                 .orElseThrow(() -> new NotFoundException("Organization not found: " + item.organizationCode()));
         users.findByUsername(required(item.username(), "user.username"))
-            .map(existing -> {
+            .ifPresentOrElse(existing -> {
+                if (!belongsTo(existing, source)) {
+                    counters.usersSkipped++;
+                    return;
+                }
                 existing.updateProfile(displayName(item), item.email(), item.mobile(), organization);
-                existing.assignIdentitySource(source);
                 counters.usersUpdated++;
-                return existing;
-            })
-            .orElseGet(() -> {
+            }, () -> {
                 counters.usersCreated++;
-                return users.save(new UserAccount(
+                users.save(new UserAccount(
                     item.username(),
                     displayName(item),
                     item.email(),
@@ -394,7 +497,7 @@ public class IdentitySourceService {
             });
     }
 
-    private void syncGroup(DirectoryGroup item, SyncCounters counters) {
+    private void syncGroup(IdentitySource source, DirectoryGroup item, SyncCounters counters) {
         UserGroup group = groups.findByCode(required(item.code(), "group.code"))
             .map(existing -> {
                 existing.rename(required(item.name(), "group.name"));
@@ -406,10 +509,18 @@ public class IdentitySourceService {
                 return groups.save(new UserGroup(item.code(), required(item.name(), "group.name")));
             });
         if (item.members() != null) {
-            item.members().forEach(username -> users.findByUsername(username)
-                .orElseThrow(() -> new NotFoundException("Group member user not found: " + username))
-                .join(group));
+            item.members().forEach(username -> {
+                UserAccount member = users.findByUsername(username)
+                    .orElseThrow(() -> new NotFoundException("Group member user not found: " + username));
+                if (belongsTo(member, source)) {
+                    member.join(group);
+                }
+            });
         }
+    }
+
+    private boolean belongsTo(UserAccount user, IdentitySource source) {
+        return user.getIdentitySource() != null && Objects.equals(user.getIdentitySource().getId(), source.getId());
     }
 
     private String displayName(DirectoryUser item) {
@@ -433,6 +544,19 @@ public class IdentitySourceService {
         private int usersUpdated;
         private int groupsCreated;
         private int groupsUpdated;
+        private int usersSkipped;
+        private int usersSuspended;
+
+        String summary() {
+            return "organizationsCreated=" + organizationsCreated
+                + ", organizationsUpdated=" + organizationsUpdated
+                + ", usersCreated=" + usersCreated
+                + ", usersUpdated=" + usersUpdated
+                + ", usersSkipped=" + usersSkipped
+                + ", usersSuspended=" + usersSuspended
+                + ", groupsCreated=" + groupsCreated
+                + ", groupsUpdated=" + groupsUpdated;
+        }
 
         int organizationsCreated() {
             return organizationsCreated;

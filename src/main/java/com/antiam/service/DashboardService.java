@@ -72,34 +72,35 @@ public class DashboardService {
     private static final DateTimeFormatter MONTH_KEY = DateTimeFormatter.ofPattern("yyyy-MM");
     private static final DateTimeFormatter DAY_LABEL = DateTimeFormatter.ofPattern("MM-dd");
     private static final int RANKING_SIZE = 10;
+    // 首页概览和分布图统计最近 30 天的数据，而不是只看最近 100 条记录。
+    private static final java.time.Duration METRICS_WINDOW = java.time.Duration.ofDays(30);
 
     @Transactional(readOnly = true)
     // 汇总控制台首页核心指标，包括用户、应用、身份源、活跃会话和风险概览。
     public DashboardSummaryResponse summary() {
-        List<AuthenticationSession> allSessions = sessions.findAll();
-        List<AuthenticationEvent> recentEvents = authenticationEvents.findTop100ByOrderByCreatedAtDesc();
-        List<RiskAssessment> recentRisk = riskAssessments.findTop100ByOrderByCreatedAtDesc();
-        List<IdentitySyncRun> recentSyncRuns = syncRuns.findTop100ByOrderByCreatedAtDesc();
+        Instant now = Instant.now();
+        Instant from = now.minus(METRICS_WINDOW);
         return new DashboardSummaryResponse(
             users.count(),
             users.countByStatus(AccountStatus.ACTIVE),
             organizations.count(),
             applications.count(),
             identitySources.count(),
-            allSessions.stream().filter(AuthenticationSession::isActive).count(),
-            recentEvents.size(),
-            recentRisk.stream().filter(item -> item.getRiskLevel() == RiskLevel.HIGH).count(),
-            recentSyncRuns.stream().filter(item -> item.getStatus() == IdentitySyncRunStatus.FAILED).count(),
+            sessions.countByActiveTrueAndExpiresAtAfter(now),
+            authenticationEvents.countByCreatedAtGreaterThanEqual(from),
+            countRisk(riskAssessments.countByRiskLevelSince(from)).get(RiskLevel.HIGH),
+            countSyncRuns(syncRuns.countByStatusSince(from)).get(IdentitySyncRunStatus.FAILED),
             accessRequests.countByStatus(ApplicationAccessRequestStatus.PENDING));
     }
 
     @Transactional(readOnly = true)
     // 生成控制台图表所需的认证事件、风险等级和同步结果分布。
     public DashboardMetricsResponse metrics() {
+        Instant from = Instant.now().minus(METRICS_WINDOW);
         return new DashboardMetricsResponse(
-            countEvents(authenticationEvents.findTop100ByOrderByCreatedAtDesc()),
-            countRisk(riskAssessments.findTop100ByOrderByCreatedAtDesc()),
-            countSyncRuns(syncRuns.findTop100ByOrderByCreatedAtDesc()));
+            countEvents(authenticationEvents.countByTypeSince(from)),
+            countRisk(riskAssessments.countByRiskLevelSince(from)),
+            countSyncRuns(syncRuns.countByStatusSince(from)));
     }
 
     @Transactional(readOnly = true)
@@ -264,24 +265,27 @@ public class DashboardService {
     private record Window(Instant from, List<Bucket> buckets) {
     }
 
-    private Map<AuthenticationEventType, Long> countEvents(List<AuthenticationEvent> values) {
-        Map<AuthenticationEventType, Long> counts = new EnumMap<>(AuthenticationEventType.class);
-        Arrays.stream(AuthenticationEventType.values()).forEach(type -> counts.put(type, 0L));
-        values.forEach(event -> counts.compute(event.getType(), (key, count) -> count == null ? 1L : count + 1));
-        return counts;
+    private Map<AuthenticationEventType, Long> countEvents(List<Object[]> rows) {
+        return groupedCounts(AuthenticationEventType.class, rows);
     }
 
-    private Map<RiskLevel, Long> countRisk(List<RiskAssessment> values) {
-        Map<RiskLevel, Long> counts = new EnumMap<>(RiskLevel.class);
-        Arrays.stream(RiskLevel.values()).forEach(level -> counts.put(level, 0L));
-        values.forEach(assessment -> counts.compute(assessment.getRiskLevel(), (key, count) -> count == null ? 1L : count + 1));
-        return counts;
+    private Map<RiskLevel, Long> countRisk(List<Object[]> rows) {
+        return groupedCounts(RiskLevel.class, rows);
     }
 
-    private Map<IdentitySyncRunStatus, Long> countSyncRuns(List<IdentitySyncRun> values) {
-        Map<IdentitySyncRunStatus, Long> counts = new EnumMap<>(IdentitySyncRunStatus.class);
-        Arrays.stream(IdentitySyncRunStatus.values()).forEach(status -> counts.put(status, 0L));
-        values.forEach(run -> counts.compute(run.getStatus(), (key, count) -> count == null ? 1L : count + 1));
+    private Map<IdentitySyncRunStatus, Long> countSyncRuns(List<Object[]> rows) {
+        return groupedCounts(IdentitySyncRunStatus.class, rows);
+    }
+
+    // 把 group by 查询的 [枚举, 数量] 结果转换为包含全部枚举值的计数表。
+    private <E extends Enum<E>> Map<E, Long> groupedCounts(Class<E> type, List<Object[]> rows) {
+        Map<E, Long> counts = new EnumMap<>(type);
+        Arrays.stream(type.getEnumConstants()).forEach(value -> counts.put(value, 0L));
+        rows.forEach(row -> {
+            if (row[0] != null) {
+                counts.put(type.cast(row[0]), ((Number) row[1]).longValue());
+            }
+        });
         return counts;
     }
 

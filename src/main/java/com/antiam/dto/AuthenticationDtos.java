@@ -2,10 +2,13 @@ package com.antiam.dto;
 
 import com.antiam.domain.ApplicationProtocol;
 import com.antiam.domain.AuthenticationEventType;
+import com.antiam.domain.MfaFactorType;
+import com.antiam.domain.SessionRestriction;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -45,7 +48,9 @@ public final class AuthenticationDtos {
         Instant lastAccessedAt,
         Instant expiresAt,
         Instant endedAt,
-        boolean active
+        boolean active,
+        @Schema(description = "会话受限原因：PASSWORD_CHANGE 需先修改密码，MFA_ENROLLMENT 需先绑定 MFA；为空表示无限制")
+        SessionRestriction restriction
     ) {
     }
 
@@ -63,6 +68,12 @@ public final class AuthenticationDtos {
 
     public record EndAuthenticationSessionsResponse(
         long endedCount
+    ) {
+    }
+
+    public record LogoutResponse(
+        @Schema(description = "登出后应跳转的地址；仅当 service 为已注册的 CAS 应用地址时返回")
+        String redirectTo
     ) {
     }
 
@@ -85,7 +96,9 @@ public final class AuthenticationDtos {
         @Schema(description = "手机号", example = "13800000000")
         @NotBlank String mobile,
         @Schema(description = "短信验证码", example = "666666")
-        @NotBlank String code
+        @NotBlank String code,
+        @Schema(description = "记住我，使用记住我有效期")
+        Boolean rememberMe
     ) {
     }
 
@@ -93,22 +106,74 @@ public final class AuthenticationDtos {
         @Schema(description = "登录账号", example = "zhangsan")
         @NotBlank String username,
         @Schema(description = "登录密码", example = "ChangeMe123")
-        @NotBlank String password
+        @NotBlank String password,
+        @Schema(description = "记住我，使用记住我有效期")
+        Boolean rememberMe
     ) {
     }
 
     public record MobileLoginResponse(
         UUID userId,
-        AuthenticationSessionResponse session
+        AuthenticationSessionResponse session,
+        @Schema(description = "是否需要继续完成 MFA 二次验证；为 true 时 session 为空")
+        boolean mfaRequired,
+        LoginMfaChallengeResponse mfa
     ) {
     }
 
     public record PasswordLoginResponse(
         UUID userId,
+        @Schema(description = "认证会话；需要 MFA 二次验证时为空")
         AuthenticationSessionResponse session,
         boolean temporaryPassword,
         boolean passwordExpired,
-        boolean passwordChangeRequired
+        boolean passwordChangeRequired,
+        @Schema(description = "是否需要 MFA 二次验证")
+        boolean mfaRequired,
+        @Schema(description = "MFA 二次验证挑战")
+        LoginMfaChallengeResponse mfa,
+        @Schema(description = "密码即将过期时的剩余天数；不在提醒期内或已过期时为空")
+        Integer passwordExpiresInDays
+    ) {
+    }
+
+    public record LoginMfaFactorOption(UUID id, MfaFactorType type, String name) {
+    }
+
+    public record LoginMfaChallengeResponse(
+        @Schema(description = "登录 MFA 挑战标识")
+        String challengeId,
+        UUID factorId,
+        MfaFactorType factorType,
+        @Schema(description = "验证码投递目标（已脱敏）")
+        String deliveryHint,
+        Instant expiresAt,
+        @Schema(description = "原型环境下 WebAuthn 因子返回的挑战码")
+        String code,
+        @Schema(description = "可切换的 MFA 因子")
+        List<LoginMfaFactorOption> factors,
+        @Schema(description = "是否允许使用恢复码")
+        boolean recoveryCodeAllowed
+    ) {
+    }
+
+    public record MfaLoginRequest(
+        @Schema(description = "登录 MFA 挑战标识")
+        @NotBlank String challengeId,
+        @Schema(description = "验证码、TOTP 动态码或恢复码")
+        @NotBlank String code,
+        @Schema(description = "使用恢复码校验")
+        Boolean recoveryCode,
+        @Schema(description = "记住我，使用记住我有效期")
+        Boolean rememberMe
+    ) {
+    }
+
+    public record SwitchMfaFactorRequest(
+        @Schema(description = "登录 MFA 挑战标识")
+        @NotBlank String challengeId,
+        @Schema(description = "切换到的 MFA 因子 UUID")
+        @NotNull UUID factorId
     ) {
     }
 
@@ -177,7 +242,10 @@ public final class AuthenticationDtos {
         ThirdPartyIdentityResponse identity,
         AuthenticationSessionResponse session,
         UUID userId,
-        boolean userCreated
+        boolean userCreated,
+        @Schema(description = "是否需要继续完成 MFA 二次验证；为 true 时 session 为空")
+        boolean mfaRequired,
+        LoginMfaChallengeResponse mfa
     ) {
     }
 

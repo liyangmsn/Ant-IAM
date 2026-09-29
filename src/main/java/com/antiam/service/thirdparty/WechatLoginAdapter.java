@@ -2,6 +2,7 @@ package com.antiam.service.thirdparty;
 
 import static com.antiam.service.thirdparty.ThirdPartyAuthSupport.redirectUri;
 import static com.antiam.service.thirdparty.ThirdPartyAuthSupport.raw;
+import static com.antiam.service.thirdparty.ThirdPartyAuthSupport.readJson;
 import static com.antiam.service.thirdparty.ThirdPartyAuthSupport.required;
 import static com.antiam.service.thirdparty.ThirdPartyAuthSupport.text;
 import static com.antiam.service.thirdparty.ThirdPartyAuthSupport.textOrDefault;
@@ -39,7 +40,7 @@ public class WechatLoginAdapter implements ThirdPartyAuthAdapter {
 
     @Override
     public ThirdPartyProfile exchange(JsonNode configuration, String code, String redirectUri) {
-        JsonNode token = RestClient.create()
+        JsonNode token = readJson(RestClient.create()
             .get()
             .uri(uri(textOrDefault(configuration, "tokenEndpoint", DEFAULT_TOKEN_ENDPOINT))
                 .queryParam("appid", required(configuration, "appId"))
@@ -49,10 +50,10 @@ public class WechatLoginAdapter implements ThirdPartyAuthAdapter {
                 .build()
                 .toUriString())
             .retrieve()
-            .body(JsonNode.class);
+            .body(String.class), "WeChat token");
         assertNoError(token, "WeChat token");
         String openId = required(token, "openid");
-        JsonNode user = RestClient.create()
+        JsonNode user = readJson(RestClient.create()
             .get()
             .uri(uri(textOrDefault(configuration, "userInfoEndpoint", DEFAULT_USERINFO_ENDPOINT))
                 .queryParam("access_token", required(token, "access_token"))
@@ -61,7 +62,7 @@ public class WechatLoginAdapter implements ThirdPartyAuthAdapter {
                 .build()
                 .toUriString())
             .retrieve()
-            .body(JsonNode.class);
+            .body(String.class), "WeChat userinfo");
         assertNoError(user, "WeChat userinfo");
         return new ThirdPartyProfile(
             openId,

@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 class AuthenticationControllerTest {
 
     private final AuthenticationService authentication = mock(AuthenticationService.class);
-    private final AuthenticationController controller = new AuthenticationController(authentication);
+    private final AuthenticationController controller = new AuthenticationController(authentication, mock(com.antiam.service.FederationService.class));
 
     @Test
     void exposesSessionFieldsUsedByPortalSessionPage() {
@@ -36,7 +36,8 @@ class AuthenticationControllerTest {
             Instant.parse("2026-01-01T00:05:00Z"),
             Instant.parse("2026-01-01T01:00:00Z"),
             null,
-            true);
+            true,
+            null);
         when(authentication.listSessions(userId, null, true)).thenReturn(List.of(session));
 
         List<AuthenticationSessionResponse> response = controller.sessions(userId, null, true);

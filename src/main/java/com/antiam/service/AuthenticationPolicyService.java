@@ -7,9 +7,11 @@ import static com.antiam.dto.PolicyDtos.EvaluateAuthenticationPolicyRequest;
 import static com.antiam.dto.PolicyDtos.UpdateAuthenticationPolicyRequest;
 import static com.antiam.dto.RiskDtos.EvaluateRiskRequest;
 
-import com.antiam.domain.AuthenticationPolicy;
+import com.antiam.common.ConflictException;
 import com.antiam.common.NotFoundException;
-import com.antiam.dto.RiskDtos.RiskAssessmentResponse;
+import com.antiam.domain.AuthenticationPolicy;
+import com.antiam.domain.RiskLevel;
+import com.antiam.domain.UserAccount;
 import com.antiam.mapper.AuthenticationPolicyMapper;
 import com.antiam.repository.AuthenticationPolicyRepository;
 import com.antiam.repository.MfaFactorRepository;
@@ -41,9 +43,14 @@ public class AuthenticationPolicyService {
     @Transactional
     // 创建认证策略，定义 MFA、密码和风险分级处理要求。
     public AuthenticationPolicyResponse create(CreateAuthenticationPolicyRequest request, String actor) {
+        String code = request.code().trim();
+        if (policies.findByCode(code).isPresent()) {
+            throw new ConflictException("认证策略编码已存在: " + code);
+        }
+        validateRiskLevels(request.stepUpRiskLevel(), request.denyRiskLevel());
         AuthenticationPolicy saved = policies.save(new AuthenticationPolicy(
-            request.code(),
-            request.name(),
+            code,
+            request.name().trim(),
             request.priority(),
             request.mfaRequired(),
             request.mfaEnrollmentRequired(),
@@ -61,8 +68,9 @@ public class AuthenticationPolicyService {
     // 更新认证策略配置，包含 MFA、密码策略和风险阈值。
     public AuthenticationPolicyResponse update(UUID policyId, UpdateAuthenticationPolicyRequest request, String actor) {
         AuthenticationPolicy policy = getPolicy(policyId);
+        validateRiskLevels(request.stepUpRiskLevel(), request.denyRiskLevel());
         policy.update(
-            request.name(),
+            request.name().trim(),
             request.priority(),
             request.mfaRequired(),
             request.mfaEnrollmentRequired(),
@@ -94,6 +102,14 @@ public class AuthenticationPolicyService {
         return authenticationPolicyMapper.toResponse(policy);
     }
 
+    @Transactional
+    // 删除认证策略。
+    public void delete(UUID policyId, String actor) {
+        AuthenticationPolicy policy = getPolicy(policyId);
+        policies.delete(policy);
+        auditService.record(actor, "auth_policy.delete", "auth_policy", policyId.toString(), policy.getCode());
+    }
+
     @Transactional(readOnly = true)
     // 查询全部认证策略。
     public List<AuthenticationPolicyResponse> list() {
@@ -101,41 +117,87 @@ public class AuthenticationPolicyService {
     }
 
     @Transactional(readOnly = true)
-    // 评估当前应执行的认证动作，结合 MFA 注册状态和风险评估结果。
-    public AuthenticationPolicyDecisionResponse evaluate(EvaluateAuthenticationPolicyRequest request) {
-        users.findById(request.userId()).orElseThrow(() -> new NotFoundException("User not found: " + request.userId()));
-        AuthenticationPolicy policy = policies.findByEnabledTrueOrderByPriorityAsc().stream()
-            .findFirst()
-            .orElseThrow(() -> new NotFoundException("No enabled authentication policy found"));
-        boolean userHasMfa = mfaFactors.existsByUserIdAndEnabledTrue(request.userId());
-        RiskAssessmentResponse risk = riskService.evaluate(new EvaluateRiskRequest(
+    // 查询认证策略详情。
+    public AuthenticationPolicyResponse get(UUID policyId) {
+        return authenticationPolicyMapper.toResponse(getPolicy(policyId));
+    }
+
+    @Transactional
+    // 评估当前应执行的认证动作，结合 MFA 注册状态和风险评估结果；没有启用策略时按内置默认规则判断。
+    // 风险评估记录由 RiskService 落库，评估结论写入审计日志便于追溯。
+    public AuthenticationPolicyDecisionResponse evaluate(EvaluateAuthenticationPolicyRequest request, String actor) {
+        UserAccount user = users.findById(request.userId())
+            .orElseThrow(() -> new NotFoundException("User not found: " + request.userId()));
+        AuthenticationPolicy policy = activePolicy().orElse(null);
+        boolean userHasMfa = hasLoginMfa(user);
+        RiskLevel riskLevel = riskService.evaluate(new EvaluateRiskRequest(
             request.userId(),
             request.ipAddress(),
             request.userAgent(),
             request.deviceFingerprint(),
-            request.geoLocation()));
-        boolean deny = atLeast(risk.riskLevel(), policy.getDenyRiskLevel());
-        boolean stepUp = atLeast(risk.riskLevel(), policy.getStepUpRiskLevel());
-        boolean mfaRequired = policy.isMfaRequired() || stepUp;
-        boolean enrollmentRequired = policy.isMfaEnrollmentRequired() || (mfaRequired && !userHasMfa);
-        String decision = deny ? "DENY"
-            : enrollmentRequired && !userHasMfa ? "MFA_ENROLLMENT_REQUIRED"
-            : mfaRequired ? "MFA_REQUIRED"
-            : "ALLOW";
+            request.geoLocation())).riskLevel();
+        LoginDecision decision = decide(policy, riskLevel, userHasMfa);
+        auditService.record(
+            actor,
+            "auth_policy.evaluate",
+            "user",
+            user.getId().toString(),
+            "policy=" + (policy == null ? "default" : policy.getCode()) + ", riskLevel=" + riskLevel + ", decision=" + decision.decision());
         return new AuthenticationPolicyDecisionResponse(
-            policy.getId(),
-            policy.getCode(),
-            mfaRequired,
-            policy.isMfaEnrollmentRequired(),
+            policy == null ? null : policy.getId(),
+            policy == null ? null : policy.getCode(),
+            decision.mfaRequired(),
+            policy != null && policy.isMfaEnrollmentRequired(),
             userHasMfa,
-            policy.getPasswordMinLength(),
-            policy.getPasswordMaxFailureAttempts(),
-            policy.getPasswordExpiresInDays(),
-            policy.getPasswordHistoryCount(),
-            policy.getStepUpRiskLevel(),
-            policy.getDenyRiskLevel(),
-            risk.riskLevel(),
-            decision);
+            currentPasswordMinLength(),
+            currentPasswordMaxFailureAttempts(),
+            currentPasswordExpiresInDays(),
+            currentPasswordHistoryCount(),
+            policy == null ? RiskLevel.MEDIUM : policy.getStepUpRiskLevel(),
+            policy == null ? null : policy.getDenyRiskLevel(),
+            riskLevel,
+            decision.decision());
+    }
+
+    @Transactional
+    // 登录流程使用的策略判定：只在存在启用的风险规则时写入风险评估记录。
+    public LoginDecision evaluateLogin(UserAccount user, String ipAddress, String userAgent, String geoLocation) {
+        RiskLevel riskLevel = riskService.evaluateLogin(user, ipAddress, userAgent, geoLocation);
+        return decide(activePolicy().orElse(null), riskLevel, hasLoginMfa(user));
+    }
+
+    /**
+     * 用户是否拥有可用于登录二次验证的 MFA 因子。
+     */
+    @Transactional(readOnly = true)
+    public boolean hasLoginMfa(UserAccount user) {
+        return mfaFactors.findByUserId(user.getId()).stream().anyMatch(MfaVerificationService::isLoginCapable);
+    }
+
+    /**
+     * 按策略和风险等级得出认证动作。没有启用策略时：高风险要求 MFA（无 MFA 则拒绝），中风险在有 MFA 时要求验证。
+     */
+    static LoginDecision decide(AuthenticationPolicy policy, RiskLevel riskLevel, boolean userHasMfa) {
+        RiskLevel level = riskLevel == null ? RiskLevel.LOW : riskLevel;
+        if (policy == null) {
+            return switch (level) {
+                case HIGH -> userHasMfa ? LoginDecision.of(LoginDecision.MFA_REQUIRED, level) : LoginDecision.of(LoginDecision.DENY, level);
+                case MEDIUM -> userHasMfa ? LoginDecision.of(LoginDecision.MFA_REQUIRED, level) : LoginDecision.of(LoginDecision.ALLOW, level);
+                case LOW -> LoginDecision.of(LoginDecision.ALLOW, level);
+            };
+        }
+        if (policy.getDenyRiskLevel() != null && atLeast(level, policy.getDenyRiskLevel())) {
+            return LoginDecision.of(LoginDecision.DENY, level);
+        }
+        boolean stepUp = policy.getStepUpRiskLevel() != null && atLeast(level, policy.getStepUpRiskLevel());
+        boolean mfaRequired = policy.isMfaRequired() || stepUp;
+        if (mfaRequired && userHasMfa) {
+            return LoginDecision.of(LoginDecision.MFA_REQUIRED, level);
+        }
+        if ((mfaRequired || policy.isMfaEnrollmentRequired()) && !userHasMfa) {
+            return LoginDecision.of(LoginDecision.MFA_ENROLLMENT_REQUIRED, level);
+        }
+        return LoginDecision.of(LoginDecision.ALLOW, level);
     }
 
     @Transactional(readOnly = true)
@@ -218,6 +280,12 @@ public class AuthenticationPolicyService {
     }
 
     @Transactional(readOnly = true)
+    // 是否启用非法字符序列检查（键盘相邻、连续字母或数字）。
+    public boolean currentPasswordIllegalSequenceCheckEnabled() {
+        return booleanSetting("security.password.illegal_sequence_check_enabled").orElse(false);
+    }
+
+    @Transactional(readOnly = true)
     // 是否启用弱密码检查。
     public boolean currentPasswordWeakPasswordCheckEnabled() {
         return booleanSetting("security.password.weak_password_check_enabled").orElse(true);
@@ -268,6 +336,16 @@ public class AuthenticationPolicyService {
             .filter(value -> !value.isBlank());
     }
 
+    private Optional<AuthenticationPolicy> activePolicy() {
+        return policies.findByEnabledTrueOrderByPriorityAsc().stream().findFirst();
+    }
+
+    private void validateRiskLevels(RiskLevel stepUpRiskLevel, RiskLevel denyRiskLevel) {
+        if (stepUpRiskLevel != null && denyRiskLevel != null && score(stepUpRiskLevel) > score(denyRiskLevel)) {
+            throw new IllegalArgumentException("增强认证风险等级不能高于拒绝风险等级");
+        }
+    }
+
     private AuthenticationPolicy getPolicy(UUID policyId) {
         return policies.findById(policyId)
             .orElseThrow(() -> new NotFoundException("Authentication policy not found: " + policyId));
@@ -301,15 +379,36 @@ public class AuthenticationPolicyService {
         return value == null ? 0 : normalizePasswordHistoryCount(value.intValue());
     }
 
-    private boolean atLeast(com.antiam.domain.RiskLevel actual, com.antiam.domain.RiskLevel threshold) {
+    private static boolean atLeast(RiskLevel actual, RiskLevel threshold) {
         return score(actual) >= score(threshold);
     }
 
-    private int score(com.antiam.domain.RiskLevel level) {
+    private static int score(RiskLevel level) {
+        if (level == null) {
+            return 0;
+        }
         return switch (level) {
             case LOW -> 1;
             case MEDIUM -> 2;
             case HIGH -> 3;
         };
+    }
+
+    /**
+     * 登录策略判定结果。
+     */
+    public record LoginDecision(String decision, RiskLevel riskLevel) {
+        public static final String ALLOW = "ALLOW";
+        public static final String DENY = "DENY";
+        public static final String MFA_REQUIRED = "MFA_REQUIRED";
+        public static final String MFA_ENROLLMENT_REQUIRED = "MFA_ENROLLMENT_REQUIRED";
+
+        static LoginDecision of(String decision, RiskLevel riskLevel) {
+            return new LoginDecision(decision, riskLevel);
+        }
+
+        public boolean mfaRequired() {
+            return MFA_REQUIRED.equals(decision) || MFA_ENROLLMENT_REQUIRED.equals(decision);
+        }
     }
 }

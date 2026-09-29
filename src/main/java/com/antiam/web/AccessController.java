@@ -119,6 +119,17 @@ public class AccessController {
     }
 
     /**
+     * 删除权限点。
+     */
+    @Operation(summary = "删除权限", description = "删除权限点并解除其与角色的绑定；控制台内置权限点不可删除。")
+    @DeleteMapping("/permissions/{permissionId}")
+    @PreAuthorize("@iamAuthorization.canManagePermission(#permissionId, authentication)")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deletePermission(@Parameter(description = "权限 UUID") @PathVariable UUID permissionId, Principal principal) {
+        access.deletePermission(permissionId, principal.getName());
+    }
+
+    /**
      * 分析权限影响范围。
      */
     @Operation(summary = "分析权限影响", description = "返回持有该权限的角色、用户组和受影响用户。")
@@ -172,6 +183,17 @@ public class AccessController {
         Principal principal
     ) {
         return access.updateRole(roleId, request, principal.getName());
+    }
+
+    /**
+     * 删除角色。
+     */
+    @Operation(summary = "删除角色", description = "删除角色并解除其与用户、用户组和应用的绑定；IAM 管理员角色不可删除。")
+    @DeleteMapping("/roles/{roleId}")
+    @PreAuthorize("@iamAuthorization.canManageRole(#roleId, authentication)")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void deleteRole(@Parameter(description = "角色 UUID") @PathVariable UUID roleId, Principal principal) {
+        access.deleteRole(roleId, principal.getName());
     }
 
     /**
@@ -721,7 +743,7 @@ public class AccessController {
     @PostMapping("/me/application-access-requests/{requestId}/cancel")
     ApplicationAccessRequestResponse cancelCurrentUserApplicationAccessRequest(
         @Parameter(description = "应用访问申请 UUID") @PathVariable UUID requestId,
-        @Parameter(description = "取消原因请求，可为空") @RequestBody DecideApplicationAccessRequest request,
+        @Parameter(description = "取消原因请求，可为空") @RequestBody(required = false) DecideApplicationAccessRequest request,
         Principal principal
     ) {
         return access.cancelCurrentUserApplicationAccessRequest(requestId, request, principal.getName());
@@ -759,7 +781,7 @@ public class AccessController {
     @PostMapping("/application-access-requests/{requestId}/approve")
     ApplicationAccessRequestResponse approveApplicationAccessRequest(
         @Parameter(description = "应用访问申请 UUID") @PathVariable UUID requestId,
-        @Parameter(description = "审批请求，可填写原因和授权过期时间") @RequestBody DecideApplicationAccessRequest request,
+        @Parameter(description = "审批请求，可填写原因和授权过期时间") @RequestBody(required = false) DecideApplicationAccessRequest request,
         Principal principal
     ) {
         return access.approveApplicationAccessRequest(requestId, request, principal.getName());
@@ -772,7 +794,7 @@ public class AccessController {
     @PostMapping("/application-access-requests/{requestId}/reject")
     ApplicationAccessRequestResponse rejectApplicationAccessRequest(
         @Parameter(description = "应用访问申请 UUID") @PathVariable UUID requestId,
-        @Parameter(description = "审批请求，可填写拒绝原因") @RequestBody DecideApplicationAccessRequest request,
+        @Parameter(description = "审批请求，可填写拒绝原因") @RequestBody(required = false) DecideApplicationAccessRequest request,
         Principal principal
     ) {
         return access.rejectApplicationAccessRequest(requestId, request, principal.getName());
@@ -785,7 +807,7 @@ public class AccessController {
     @PostMapping("/application-access-requests/{requestId}/cancel")
     ApplicationAccessRequestResponse cancelApplicationAccessRequest(
         @Parameter(description = "应用访问申请 UUID") @PathVariable UUID requestId,
-        @Parameter(description = "取消原因请求，可为空") @RequestBody DecideApplicationAccessRequest request,
+        @Parameter(description = "取消原因请求，可为空") @RequestBody(required = false) DecideApplicationAccessRequest request,
         Principal principal
     ) {
         return access.cancelApplicationAccessRequest(requestId, request, principal.getName());

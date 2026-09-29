@@ -114,19 +114,19 @@ docker compose --profile api up --build
 
 When the API container is healthy, `http://localhost:8080/actuator/health` returns `UP`.
 
-The default PostgreSQL settings match `docker-compose.yml`:
+To run locally against the PostgreSQL started by `docker-compose.yml`, set (without these, the app defaults to `localhost:5432/ant_iam` with `ant_iam / ant_iam`):
 
 ```text
-ANT_IAM_DATASOURCE_URL=jdbc:postgresql://localhost:5432/ant_iam
-ANT_IAM_DATASOURCE_USERNAME=ant_iam
-ANT_IAM_DATASOURCE_PASSWORD=ant_iam
+IAM_DATASOURCE_URL=jdbc:postgresql://localhost:5432/ant_iam
+IAM_DATASOURCE_USERNAME=ant_iam
+IAM_DATASOURCE_PASSWORD=ant_iam
 ```
 
 Inside Docker Compose, the API uses `jdbc:postgresql://postgres:5432/ant_iam` to reach PostgreSQL on the compose network.
 
 Password sign-in reads users and password credentials from the `user_accounts` and `user_credentials` database tables. On first install with an empty database, the application initializes the default administrator account `admin / admin123456`; it no longer reads default sign-in credentials from configuration.
 
-SMS verification codes are delivered through sms4j channels. The default local setup enables the `fixed-code` channel with code `666666`, overrideable through `ANT_IAM_SMS_FIXED_CODE`; production deployments can configure another sms4j channel and select it with `ANT_IAM_SMS_BLEND_ID`.
+SMS verification codes are delivered through sms4j channels. The default local setup enables the `fixed-code` channel with code `666666`, overrideable through `IAM_SMS_FIXED_CODE`; production deployments can configure another sms4j channel and select it with `IAM_SMS_BLEND_ID`.
 
 OpenAPI JSON, Swagger UI, health checks, OIDC discovery, JWKS, SAML metadata, CAS validation, JWT verification and OAuth2 token/introspection/revocation endpoints are exposed without sign-in so protocol clients can call them directly; management APIs use the Bearer session token issued by the login endpoints.
 
@@ -226,7 +226,7 @@ WeCom identity sources can use the corporate ID and a self-built app secret to i
 }
 ```
 
-The WeCom app's visibility scope decides which departments and members can be read, and the server egress IP must be in the app's trusted IP list. The connector caches `access_token`, imports departments parent-first, deduplicates members across departments using `main_department`, and falls back to `department/simplelist` + `user/list_id` when `department/list` / `user/list` are restricted for newer apps. Set `endpoint` only for private deployments or API gateways. Sync jobs with `cronExpression` are executed by the background scheduler. By default it scans due jobs every 60 seconds; tune it with the `ant-iam.identity-sync.scheduler-delay-ms` property.
+The WeCom app's visibility scope decides which departments and members can be read, and the server egress IP must be in the app's trusted IP list. The connector caches `access_token`, imports departments parent-first, deduplicates members across departments using `main_department`, and falls back to `department/simplelist` + `user/list_id` when `department/list` / `user/list` are restricted for newer apps. Set `endpoint` only for private deployments or API gateways. Sync jobs with `cronExpression` are executed by the background scheduler. By default it scans due jobs every 60 seconds; tune it with the `iam.identity-sync.scheduler-delay-ms` property.
 
 Third-party login uses public authorization and callback endpoints. The callback should send back the signed `state` returned by `authorize`:
 

@@ -6,15 +6,20 @@ import static com.antiam.dto.AuthenticationDtos.CreateAuthenticationEventRequest
 import static com.antiam.dto.AuthenticationDtos.CreateAuthenticationSessionRequest;
 import static com.antiam.dto.AuthenticationDtos.EndAuthenticationSessionsRequest;
 import static com.antiam.dto.AuthenticationDtos.EndAuthenticationSessionsResponse;
+import static com.antiam.dto.AuthenticationDtos.LoginMfaChallengeResponse;
+import static com.antiam.dto.AuthenticationDtos.LogoutResponse;
+import static com.antiam.dto.AuthenticationDtos.MfaLoginRequest;
 import static com.antiam.dto.AuthenticationDtos.MobileLoginRequest;
 import static com.antiam.dto.AuthenticationDtos.MobileLoginResponse;
 import static com.antiam.dto.AuthenticationDtos.PasswordLoginRequest;
 import static com.antiam.dto.AuthenticationDtos.PasswordLoginResponse;
 import static com.antiam.dto.AuthenticationDtos.SendSmsCodeRequest;
 import static com.antiam.dto.AuthenticationDtos.SendSmsCodeResponse;
+import static com.antiam.dto.AuthenticationDtos.SwitchMfaFactorRequest;
 
 import com.antiam.domain.AuthenticationEventType;
 import com.antiam.service.AuthenticationService;
+import com.antiam.service.FederationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -26,6 +31,7 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,6 +48,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthenticationController {
 
     private final AuthenticationService authentication;
+    private final FederationService federation;
 
     @Operation(summary = "发送短信验证码", description = "发送固定短信验证码；默认验证码为 666666，可通过配置覆盖。")
     @PostMapping("/sms-codes")
@@ -56,7 +63,8 @@ public class AuthenticationController {
         @Parameter(description = "手机号验证码登录请求") @Valid @RequestBody MobileLoginRequest request,
         HttpServletRequest httpRequest
     ) {
-        return authentication.mobileLogin(request.mobile(), request.code(), clientIp(httpRequest), httpRequest.getHeader("User-Agent"));
+        return authentication.mobileLogin(request.mobile(), request.code(), Boolean.TRUE.equals(request.rememberMe()),
+            clientIp(httpRequest), httpRequest.getHeader("User-Agent"));
     }
 
     @Operation(summary = "账号密码登录", description = "校验本地账号密码，创建后端认证会话并返回可用于门户 API 的会话 token。")
@@ -66,7 +74,27 @@ public class AuthenticationController {
         @Parameter(description = "账号密码登录请求") @Valid @RequestBody PasswordLoginRequest request,
         HttpServletRequest httpRequest
     ) {
-        return authentication.passwordLogin(request.username(), request.password(), clientIp(httpRequest), httpRequest.getHeader("User-Agent"));
+        return authentication.passwordLogin(request.username(), request.password(), Boolean.TRUE.equals(request.rememberMe()),
+            clientIp(httpRequest), httpRequest.getHeader("User-Agent"));
+    }
+
+    @Operation(summary = "登录 MFA 二次验证", description = "账号密码校验通过且需要 MFA 时，提交验证码、TOTP 动态码或恢复码完成登录。")
+    @PostMapping("/mfa-login")
+    @ResponseStatus(HttpStatus.CREATED)
+    PasswordLoginResponse mfaLogin(
+        @Parameter(description = "登录 MFA 验证请求") @Valid @RequestBody MfaLoginRequest request,
+        HttpServletRequest httpRequest
+    ) {
+        return authentication.mfaLogin(request.challengeId(), request.code(), Boolean.TRUE.equals(request.recoveryCode()),
+            Boolean.TRUE.equals(request.rememberMe()), clientIp(httpRequest), httpRequest.getHeader("User-Agent"));
+    }
+
+    @Operation(summary = "切换登录 MFA 因子", description = "切换到用户的其他 MFA 因子，或对同一因子重新发送验证码。")
+    @PostMapping("/mfa-login/switch")
+    LoginMfaChallengeResponse switchMfaFactor(
+        @Parameter(description = "切换 MFA 因子请求") @Valid @RequestBody SwitchMfaFactorRequest request
+    ) {
+        return authentication.switchMfaFactor(request.challengeId(), request.factorId());
     }
 
     /**
@@ -105,6 +133,21 @@ public class AuthenticationController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     void endSession(@Parameter(description = "认证会话 UUID") @PathVariable UUID sessionId, Principal principal) {
         authentication.endSession(sessionId, principal.getName());
+    }
+
+    /**
+     * 当前用户登出，结束本次请求使用的会话令牌。
+     */
+    @Operation(summary = "登出", description = "结束当前 Bearer 会话令牌（未携带令牌时不做处理）；service 为已注册 CAS 应用同源地址时返回登出后的跳转地址。")
+    @PostMapping("/logout")
+    LogoutResponse logout(
+        @Parameter(description = "登出后返回的 service 地址（CAS 单点登出）") @RequestParam(required = false) String service,
+        Authentication principal
+    ) {
+        if (principal != null && principal.getDetails() instanceof UUID sessionId) {
+            authentication.logout(sessionId, principal.getName());
+        }
+        return new LogoutResponse(federation.resolveCasLogoutRedirect(service));
     }
 
     /**

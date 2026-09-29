@@ -14,6 +14,14 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> 
 
     Optional<UserAccount> findByMobile(String mobile);
 
+    boolean existsByUsername(String username);
+
+    java.util.List<UserAccount> findAllByMobile(String mobile);
+
+    boolean existsByMobileAndIdNot(String mobile, UUID id);
+
+    boolean existsByMobile(String mobile);
+
     @Query("""
         select distinct r.code from UserAccount u join u.roles r where u.username = :username
         union
@@ -52,9 +60,13 @@ public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> 
 
     java.util.List<UserAccount> findByTenantId(UUID tenantId);
 
+    java.util.List<UserAccount> findByIdentitySourceId(UUID identitySourceId);
+
     java.util.List<UserAccount> findByOrganizationId(UUID organizationId);
 
     boolean existsByOrganizationId(UUID organizationId);
+
+    boolean existsByTenantId(UUID tenantId);
 
     java.util.List<UserAccount> findByGroupsId(UUID groupId);
 

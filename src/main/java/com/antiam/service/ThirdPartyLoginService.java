@@ -1,26 +1,29 @@
 package com.antiam.service;
 
-import static com.antiam.dto.AuthenticationDtos.AuthenticationSessionResponse;
+import static com.antiam.dto.AuthenticationDtos.LoginMfaChallengeResponse;
 import static com.antiam.dto.AuthenticationDtos.ThirdPartyAuthorizeResponse;
 import static com.antiam.dto.AuthenticationDtos.ThirdPartyBindingResponse;
 import static com.antiam.dto.AuthenticationDtos.ThirdPartyIdentityResponse;
 import static com.antiam.dto.AuthenticationDtos.ThirdPartyLoginCallbackRequest;
 import static com.antiam.dto.AuthenticationDtos.ThirdPartyLoginResponse;
 
-import com.antiam.common.TokenSupport;
+import com.antiam.common.AuthenticationFailedException;
+import com.antiam.common.ConflictException;
 import com.antiam.common.NotFoundException;
+import com.antiam.common.TokenSupport;
 import com.antiam.domain.ApplicationProtocol;
 import com.antiam.domain.AuthenticationEvent;
 import com.antiam.domain.AuthenticationEventType;
 import com.antiam.domain.AuthenticationProvider;
 import com.antiam.domain.AuthenticationSession;
+import com.antiam.domain.SessionRestriction;
 import com.antiam.domain.UserAccount;
 import com.antiam.domain.UserThirdPartyBinding;
 import com.antiam.repository.AuthenticationEventRepository;
 import com.antiam.repository.AuthenticationProviderRepository;
-import com.antiam.repository.AuthenticationSessionRepository;
 import com.antiam.repository.UserAccountRepository;
 import com.antiam.repository.UserThirdPartyBindingRepository;
+import com.antiam.service.AuthenticationPolicyService.LoginDecision;
 import com.antiam.service.thirdparty.ThirdPartyAuthAdapter;
 import com.antiam.service.thirdparty.ThirdPartyAuthSupport;
 import com.antiam.service.thirdparty.ThirdPartyProfile;
@@ -29,7 +32,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
@@ -49,10 +51,11 @@ public class ThirdPartyLoginService {
     private final AuthenticationProviderRepository providers;
     private final UserAccountRepository users;
     private final UserThirdPartyBindingRepository bindings;
-    private final AuthenticationSessionRepository sessions;
     private final AuthenticationEventRepository events;
     private final AuditService auditService;
-    private final ClientMetadataService clientMetadataService;
+    private final LoginSessionService loginSessions;
+    private final AuthenticationPolicyService authenticationPolicyService;
+    private final AuthenticationService authenticationService;
     private final ObjectMapper objectMapper;
     private final TokenSupport tokenSupport;
     private final List<ThirdPartyAuthAdapter> adapters;
@@ -70,7 +73,7 @@ public class ThirdPartyLoginService {
             resolvedState);
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = AuthenticationFailedException.class)
     public ThirdPartyLoginResponse callback(String providerKey, ThirdPartyLoginCallbackRequest request, String ipAddress, String userAgent) {
         AuthenticationProvider provider = getEnabledProvider(providerKey);
         JsonNode configuration = readConfiguration(provider);
@@ -78,38 +81,48 @@ public class ThirdPartyLoginService {
         String resolvedRedirectUri = state.redirectUri();
         ThirdPartyProfile profile = adapter(provider).exchange(configuration, request.code(), resolvedRedirectUri);
         UserResolution resolution = resolveUser(provider, configuration, profile);
-        AuthenticationSession session = sessions.save(new AuthenticationSession(
-            resolution.user(),
-            null,
-            ApplicationProtocol.OAUTH2,
-            provider.getProviderKey() + ":" + UUID.randomUUID(),
-            ipAddress,
-            userAgent,
-            Instant.now().plus(sessionTtl(configuration))));
-        events.save(new AuthenticationEvent(
-            session,
-            resolution.user(),
-            null,
-            AuthenticationEventType.LOGIN_SUCCESS,
+        loginSessions.requireSignInAllowed(resolution.user(), provider.getProviderKey(), ipAddress, userAgent);
+        LoginDecision decision = authenticationPolicyService.evaluateLogin(resolution.user(), ipAddress, userAgent, null);
+        if (LoginDecision.DENY.equals(decision.decision())) {
+            events.save(new AuthenticationEvent(null, resolution.user(), null, AuthenticationEventType.LOGIN_FAILURE,
+                provider.getProviderKey(), ipAddress, userAgent, "third_party_login_denied;risk=" + decision.riskLevel()));
+            throw new AuthenticationFailedException("当前登录环境存在风险，已拒绝登录");
+        }
+        ThirdPartyIdentityResponse identity = new ThirdPartyIdentityResponse(
             provider.getProviderKey(),
+            provider.getProvider().name(),
+            profile.subject(),
+            profile.unionId(),
+            profile.displayName(),
+            profile.email(),
+            profile.mobile(),
+            profile.avatarUrl(),
+            profile.raw() == null ? Map.of() : profile.raw());
+        if (LoginDecision.MFA_REQUIRED.equals(decision.decision())) {
+            LoginMfaChallengeResponse challenge = authenticationService.beginLoginMfa(
+                resolution.user(), provider.getProviderKey(), decision, ipAddress, userAgent);
+            return new ThirdPartyLoginResponse(identity, null, resolution.user().getId(), resolution.created(), true, challenge);
+        }
+        SessionRestriction restriction = LoginDecision.MFA_ENROLLMENT_REQUIRED.equals(decision.decision())
+            ? SessionRestriction.MFA_ENROLLMENT
+            : null;
+        AuthenticationSession session = loginSessions.open(
+            resolution.user(),
+            ApplicationProtocol.OAUTH2,
             ipAddress,
             userAgent,
-            "Third-party login via " + provider.getProviderKey() + ", subject=" + profile.subject()));
+            false,
+            restriction,
+            provider.getProviderKey(),
+            "Third-party login via " + provider.getProviderKey() + ", subject=" + profile.subject());
         auditService.record(resolution.user().getUsername(), "third_party_login.success", "authentication_provider", String.valueOf(provider.getId()), provider.getProviderKey());
         return new ThirdPartyLoginResponse(
-            new ThirdPartyIdentityResponse(
-                provider.getProviderKey(),
-                provider.getProvider().name(),
-                profile.subject(),
-                profile.unionId(),
-                profile.displayName(),
-                profile.email(),
-                profile.mobile(),
-                profile.avatarUrl(),
-                profile.raw() == null ? Map.of() : profile.raw()),
-            toResponse(session),
+            identity,
+            loginSessions.toResponse(session, true),
             resolution.user().getId(),
-            resolution.created());
+            resolution.created(),
+            false,
+            null);
     }
 
     @Transactional(readOnly = true)
@@ -142,7 +155,7 @@ public class ThirdPartyLoginService {
         UserThirdPartyBinding binding = bindings.findByProviderKeyAndSubject(provider.getProviderKey(), profile.subject())
             .map(existing -> {
                 if (!existing.getUser().getId().equals(userId)) {
-                    throw new IllegalArgumentException("Third-party identity is already bound to another user");
+                    throw new ConflictException("该第三方账号已绑定其他用户");
                 }
                 return existing;
             })
@@ -200,11 +213,27 @@ public class ThirdPartyLoginService {
         }
     }
 
+    // 优先按已绑定的第三方身份登录；未绑定时只自动关联带认证源前缀的同名账号，避免第三方身份接管本地账号。
     private UserResolution resolveUser(AuthenticationProvider provider, JsonNode configuration, ThirdPartyProfile profile) {
+        if (profile.subject() == null || profile.subject().isBlank()) {
+            throw new IllegalArgumentException("第三方身份缺少唯一标识");
+        }
+        var bound = bindings.findByProviderKeyAndSubject(provider.getProviderKey(), profile.subject());
+        if (bound.isPresent()) {
+            UserThirdPartyBinding binding = bound.get();
+            binding.updateProfile(profile.unionId(), profile.displayName(), profile.email(), profile.mobile(), profile.avatarUrl(), raw(profile));
+            return new UserResolution(binding.getUser(), false);
+        }
+        String prefix = ThirdPartyAuthSupport.textOrDefault(configuration, "usernamePrefix", provider.getProviderKey() + "_");
         String username = username(provider, configuration, profile);
-        return users.findByUsername(username)
+        UserResolution resolution = users.findByUsername(username)
             .map(user -> {
-                user.updateProfile(displayName(profile, username), profile.email(), profile.mobile(), user.getOrganization());
+                if (prefix == null || prefix.isBlank()) {
+                    throw new ConflictException("本地已存在同名账号，请先使用本地账号登录后在个人中心绑定第三方账号");
+                }
+                if (bindings.findByUserIdAndProviderKey(user.getId(), provider.getProviderKey()).isPresent()) {
+                    throw new ConflictException("该本地账号已绑定其他 " + provider.getProviderKey() + " 身份");
+                }
                 return new UserResolution(user, false);
             })
             .orElseGet(() -> {
@@ -215,11 +244,37 @@ public class ThirdPartyLoginService {
                     username,
                     displayName(profile, username),
                     profile.email(),
-                    profile.mobile(),
+                    availableMobile(profile.mobile()),
                     null,
                     null));
                 return new UserResolution(created, true);
             });
+        bindings.save(new UserThirdPartyBinding(
+            resolution.user(),
+            provider.getProviderKey(),
+            provider.getProvider(),
+            profile.subject(),
+            profile.unionId(),
+            profile.displayName(),
+            profile.email(),
+            profile.mobile(),
+            profile.avatarUrl(),
+            raw(profile)));
+        return resolution;
+    }
+
+    // 第三方返回的手机号已被其他账号使用时不写入，保持手机号唯一。
+    private String availableMobile(String mobile) {
+        if (mobile == null || mobile.isBlank()) {
+            return null;
+        }
+        String normalized;
+        try {
+            normalized = SmsVerificationService.normalizeMobile(mobile);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+        return users.existsByMobile(normalized) ? null : normalized;
     }
 
     private String username(AuthenticationProvider provider, JsonNode configuration, ThirdPartyProfile profile) {
@@ -239,11 +294,6 @@ public class ThirdPartyLoginService {
 
     private String displayName(ThirdPartyProfile profile, String username) {
         return profile.displayName() == null || profile.displayName().isBlank() ? username : profile.displayName();
-    }
-
-    private Duration sessionTtl(JsonNode configuration) {
-        long minutes = configuration.has("sessionTtlMinutes") ? configuration.path("sessionTtlMinutes").asLong(480) : 480;
-        return Duration.ofMinutes(minutes);
     }
 
     private UserAccount ensureUser(UUID userId) {
@@ -339,24 +389,6 @@ public class ThirdPartyLoginService {
         } catch (JsonProcessingException ex) {
             throw new IllegalArgumentException("Third-party profile raw payload must be serializable", ex);
         }
-    }
-
-    private AuthenticationSessionResponse toResponse(AuthenticationSession session) {
-        return new AuthenticationSessionResponse(
-            session.getId(),
-            session.getUser() == null ? null : session.getUser().getId(),
-            null,
-            session.getProtocol(),
-            session.getSessionIndex(),
-            session.getIpAddress(),
-            session.getUserAgent(),
-            clientMetadataService.location(session.getIpAddress()),
-            clientMetadataService.deviceType(session.getUserAgent()),
-            session.getCreatedAt(),
-            session.getUpdatedAt(),
-            session.getExpiresAt(),
-            session.getEndedAt(),
-            session.isActive());
     }
 
     private record UserResolution(UserAccount user, boolean created) {

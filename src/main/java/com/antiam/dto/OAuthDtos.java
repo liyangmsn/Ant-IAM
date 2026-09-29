@@ -1,11 +1,11 @@
 package com.antiam.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 public final class OAuthDtos {
@@ -36,6 +36,7 @@ public final class OAuthDtos {
     ) {
     }
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record TokenResponse(
         @JsonProperty("access_token") String accessToken,
         @JsonProperty("token_type") String tokenType,
@@ -72,6 +73,7 @@ public final class OAuthDtos {
     public record RevokeTokenResponse(boolean revoked) {
     }
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record TokenIntrospectionResponse(
         boolean active,
         @JsonProperty("client_id") String clientId,
@@ -79,10 +81,15 @@ public final class OAuthDtos {
         String sub,
         @JsonProperty("token_type") String tokenType,
         String scope,
-        long exp
+        Long exp,
+        Long iat
     ) {
+        public static TokenIntrospectionResponse inactive() {
+            return new TokenIntrospectionResponse(false, null, null, null, null, null, null, null);
+        }
     }
 
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public record UserInfoResponse(
         String sub,
         @JsonProperty("preferred_username") String preferredUsername,
@@ -107,7 +114,7 @@ public final class OAuthDtos {
         @JsonProperty("scopes_supported") List<String> scopesSupported,
         @JsonProperty("code_challenge_methods_supported") List<String> codeChallengeMethodsSupported,
         @JsonProperty("token_endpoint_auth_methods_supported") List<String> tokenEndpointAuthMethodsSupported,
-        @JsonProperty("claims_supported") Map<String, Object> claimsSupported
+        @JsonProperty("claims_supported") List<String> claimsSupported
     ) {
     }
 }

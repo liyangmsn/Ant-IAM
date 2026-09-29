@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.antiam.common.ServiceUnavailableException;
 import com.antiam.domain.SettingValueType;
 import com.antiam.domain.SystemSetting;
 import com.antiam.repository.SystemSettingRepository;
@@ -38,9 +39,10 @@ class GeoIpServiceTest {
         when(settings.findBySettingKey("geoip.provider"))
             .thenReturn(Optional.of(setting("maxmind")));
 
-        assertThatThrownBy(() -> service.location("8.8.8.8"))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("MaxMind database path is not configured");
+        assertThat(service.location("8.8.8.8")).isEqualTo("公网");
+        assertThatThrownBy(() -> service.lookup("8.8.8.8"))
+            .isInstanceOf(ServiceUnavailableException.class)
+            .hasRootCauseMessage("MaxMind database path is not configured: iam.geoip.database-path");
     }
 
     @Test
@@ -49,8 +51,10 @@ class GeoIpServiceTest {
         when(settings.findBySettingKey("geoip.provider"))
             .thenReturn(Optional.of(setting("maxmind")));
 
-        assertThatThrownBy(() -> missingDatabase.location("8.8.8.8"))
-            .isInstanceOf(IllegalStateException.class)
+        assertThat(missingDatabase.location("8.8.8.8")).isEqualTo("公网");
+        assertThatThrownBy(() -> missingDatabase.lookup("8.8.8.8"))
+            .isInstanceOf(ServiceUnavailableException.class)
+            .cause()
             .hasMessageContaining("Failed to open MaxMind database");
     }
 
@@ -62,8 +66,9 @@ class GeoIpServiceTest {
         when(settings.findBySettingKey("geoip.databasePath"))
             .thenReturn(Optional.of(new SystemSetting("geoip.databasePath", "geo-ip", SettingValueType.STRING, configuredPath, "path", false)));
 
-        assertThatThrownBy(() -> service.location("8.8.8.8"))
-            .isInstanceOf(IllegalStateException.class)
+        assertThatThrownBy(() -> service.lookup("8.8.8.8"))
+            .isInstanceOf(ServiceUnavailableException.class)
+            .cause()
             .hasMessageContaining(configuredPath);
     }
 

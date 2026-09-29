@@ -9,4 +9,6 @@ public interface IdentitySourceRepository extends JpaRepository<IdentitySource, 
     Optional<IdentitySource> findByCode(String code);
 
     java.util.List<IdentitySource> findByTenantId(UUID tenantId);
+
+    boolean existsByTenantId(UUID tenantId);
 }

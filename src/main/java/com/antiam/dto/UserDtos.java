@@ -42,7 +42,7 @@ public final class UserDtos {
         @Schema(description = "新密码，至少 8 位", example = "ChangeMe123")
         @NotBlank @Size(min = 8) String password,
         @Schema(description = "是否为临时密码；临时密码要求用户下次登录后修改")
-        boolean temporary
+        Boolean temporary
     ) {
     }
 
@@ -104,7 +104,7 @@ public final class UserDtos {
         @Schema(description = "新密码，至少 8 位", example = "NewPass123")
         @NotBlank @Size(min = 8) String newPassword,
         @Schema(description = "是否设置为临时密码")
-        boolean temporary
+        Boolean temporary
     ) {
     }
 
@@ -196,6 +196,12 @@ public final class UserDtos {
         Instant expiresAt,
         Instant verifiedAt,
         int attempts
+    ) {
+    }
+
+    public record MfaCodeRequest(
+        @Schema(description = "用户输入的验证码或恢复码", example = "123456")
+        @NotBlank String code
     ) {
     }
 

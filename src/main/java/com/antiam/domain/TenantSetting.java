@@ -55,7 +55,8 @@ public class TenantSetting extends BaseEntity {
         this.sensitive = sensitive;
     }
 
-    public void update(SettingValueType valueType, String settingValue, String description, boolean sensitive) {
+    public void update(String category, SettingValueType valueType, String settingValue, String description, boolean sensitive) {
+        this.category = category;
         this.valueType = valueType;
         this.settingValue = settingValue;
         this.description = description;

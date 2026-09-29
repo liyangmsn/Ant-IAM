@@ -26,6 +26,7 @@ public class Application extends BaseEntity {
     private String description;
     private String loginUrl;
     private boolean enabled;
+    private boolean selfServiceAccessRequestEnabled = true;
 
     @Enumerated(EnumType.STRING)
     private ApplicationProtocol protocol;
@@ -69,6 +70,10 @@ public class Application extends BaseEntity {
 
     public void changeAuthorizationType(ApplicationAuthorizationType authorizationType) {
         this.authorizationType = authorizationType == null ? ApplicationAuthorizationType.MANUAL : authorizationType;
+    }
+
+    public void changeSelfServiceAccessRequest(boolean enabled) {
+        this.selfServiceAccessRequestEnabled = enabled;
     }
 
     public boolean isAllAccess() {

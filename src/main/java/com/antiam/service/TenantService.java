@@ -6,13 +6,21 @@ import static com.antiam.dto.TenantDtos.TenantSettingResponse;
 import static com.antiam.dto.TenantDtos.UpdateTenantRequest;
 import static com.antiam.dto.TenantDtos.UpsertTenantSettingRequest;
 
+import com.antiam.common.ConflictException;
+import com.antiam.common.MaskedSecrets;
 import com.antiam.common.NotFoundException;
+import com.antiam.common.SettingValues;
+import com.antiam.domain.AuthenticationSession;
 import com.antiam.domain.SettingValueType;
 import com.antiam.domain.Tenant;
 import com.antiam.domain.TenantSetting;
 import com.antiam.mapper.TenantMapper;
+import com.antiam.repository.ApplicationRepository;
+import com.antiam.repository.AuthenticationSessionRepository;
+import com.antiam.repository.IdentitySourceRepository;
 import com.antiam.repository.TenantRepository;
 import com.antiam.repository.TenantSettingRepository;
+import com.antiam.repository.UserAccountRepository;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +33,10 @@ public class TenantService {
 
     private final TenantRepository tenants;
     private final TenantSettingRepository settings;
+    private final AuthenticationSessionRepository sessions;
+    private final UserAccountRepository users;
+    private final ApplicationRepository applications;
+    private final IdentitySourceRepository identitySources;
     private final TenantMapper tenantMapper;
     private final AuditService auditService;
 
@@ -55,12 +67,25 @@ public class TenantService {
     }
 
     @Transactional
-    // 暂停租户，用于临时阻断租户级访问。
+    // 暂停租户，用于临时阻断租户级访问：租户内用户不能再登录，已有登录会话立即结束。
     public TenantResponse suspend(UUID tenantId, String actor) {
         Tenant tenant = getEntity(tenantId);
         tenant.suspend();
+        sessions.findByUserTenantIdAndActive(tenantId, true).forEach(AuthenticationSession::end);
         auditService.record(actor, "tenant.suspend", "tenant", tenantId.toString(), tenant.getCode());
         return tenantMapper.toResponse(tenant);
+    }
+
+    @Transactional
+    // 删除租户及其租户级配置；租户下仍有用户、应用或身份源时拒绝删除。
+    public void delete(UUID tenantId, String actor) {
+        Tenant tenant = getEntity(tenantId);
+        if (users.existsByTenantId(tenantId) || applications.existsByTenantId(tenantId) || identitySources.existsByTenantId(tenantId)) {
+            throw new ConflictException("租户下仍有用户、应用或身份源，请先迁移或删除后再删除租户");
+        }
+        String code = tenant.getCode();
+        tenants.delete(tenant);
+        auditService.record(actor, "tenant.delete", "tenant", tenantId.toString(), code);
     }
 
     @Transactional(readOnly = true)
@@ -87,17 +112,25 @@ public class TenantService {
         Tenant tenant = getEntity(tenantId);
         TenantSetting saved = settings.findByTenantIdAndSettingKey(tenantId, request.settingKey())
             .map(existing -> {
-                existing.update(request.valueType(), request.settingValue(), request.description(), request.sensitive());
+                boolean sensitive = request.sensitive() != null ? request.sensitive() : existing.isSensitive();
+                String value = existing.isSensitive()
+                    ? MaskedSecrets.restore(request.settingValue(), existing.getSettingValue())
+                    : request.settingValue();
+                SettingValues.validate(request.settingKey(), request.valueType(), value);
+                existing.update(request.category(), request.valueType(), value, request.description(), sensitive);
                 return existing;
             })
-            .orElseGet(() -> settings.save(new TenantSetting(
-                tenant,
-                request.settingKey(),
-                request.category(),
-                request.valueType(),
-                request.settingValue(),
-                request.description(),
-                request.sensitive())));
+            .orElseGet(() -> {
+                SettingValues.validate(request.settingKey(), request.valueType(), request.settingValue());
+                return settings.save(new TenantSetting(
+                    tenant,
+                    request.settingKey(),
+                    request.category(),
+                    request.valueType(),
+                    request.settingValue(),
+                    request.description(),
+                    Boolean.TRUE.equals(request.sensitive())));
+            });
         auditService.record(actor, "tenant_setting.upsert", "tenant", tenantId.toString(), saved.getSettingKey());
         return tenantMapper.toResponse(saved);
     }

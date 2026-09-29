@@ -2,6 +2,7 @@ package com.antiam.service;
 
 import static com.antiam.dto.AuthenticationDtos.SendSmsCodeResponse;
 
+import com.antiam.common.AuthenticationFailedException;
 import com.antiam.repository.SystemSettingRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -13,6 +14,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.dromara.sms4j.aliyun.config.AlibabaConfig;
@@ -31,6 +33,10 @@ public class SmsVerificationService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final Pattern VERIFICATION_CODE_PATTERN = Pattern.compile("\\d{4,32}");
+    private static final Pattern MOBILE_PATTERN = Pattern.compile("^\\+?\\d{6,20}$");
+    private static final int MAX_VERIFY_ATTEMPTS = 5;
+    private static final long RESEND_INTERVAL_SECONDS = 60;
+    private static final String CAPTCHA_TTL_SETTING_KEY = "security.general.captcha_ttl_minutes";
 
     private static final String SERVICE_SETTING_KEY = "message.sms.service";
     private static final String CONFIGURED_BLEND_ID = "iam-configured-sms";
@@ -41,7 +47,8 @@ public class SmsVerificationService {
         "BIND_MOBILE", "绑定手机号",
         "CHANGE_MOBILE", "修改手机号",
         "FORGOT_PASSWORD", "忘记密码",
-        "CHANGE_PASSWORD", "修改密码");
+        "CHANGE_PASSWORD", "修改密码",
+        "MFA", "登录验证");
 
     private final Map<VerificationKey, VerificationCode> codes = new ConcurrentHashMap<>();
     private final SystemSettingRepository settings;
@@ -52,16 +59,45 @@ public class SmsVerificationService {
     private String smsBlendId;
 
     @Value("${iam.sms.code-ttl-seconds:300}")
-    private long codeTtlSeconds;
+    private long defaultCodeTtlSeconds;
 
     public SendSmsCodeResponse sendVerificationCode(String mobile, String purpose) {
         String normalizedMobile = normalizeMobile(mobile);
         String normalizedPurpose = normalizePurpose(purpose);
+        VerificationKey key = new VerificationKey(normalizedMobile, normalizedPurpose);
+        Instant now = Instant.now();
+        VerificationCode previous = codes.get(key);
+        if (previous != null && previous.sentAt().plusSeconds(RESEND_INTERVAL_SECONDS).isAfter(now)) {
+            throw new IllegalArgumentException("验证码发送过于频繁，请稍后再试");
+        }
+        String code = deliverCode(normalizedMobile, normalizedPurpose);
+        Instant expiresAt = now.plusSeconds(codeTtlSeconds());
+        codes.put(key, new VerificationCode(code, now, expiresAt, new AtomicInteger()));
+        return new SendSmsCodeResponse(normalizedMobile, normalizedPurpose, expiresAt);
+    }
+
+    /**
+     * 向手机号发送一次性验证码并返回实际下发的验证码，不在本服务内保存，供 MFA 挑战等调用方自行校验。
+     */
+    public String deliverCode(String mobile, String purpose) {
+        String normalizedMobile = normalizeMobile(mobile);
+        String normalizedPurpose = normalizePurpose(purpose);
         String generatedCode = generateCode();
         SmsResponse response = deliver(normalizedMobile, normalizedPurpose, generatedCode);
-        Instant expiresAt = Instant.now().plusSeconds(codeTtlSeconds);
-        codes.put(new VerificationKey(normalizedMobile, normalizedPurpose), new VerificationCode(resolveCode(response, generatedCode), expiresAt));
-        return new SendSmsCodeResponse(normalizedMobile, normalizedPurpose, expiresAt);
+        return resolveCode(response, generatedCode);
+    }
+
+    /**
+     * 当前验证码有效期（秒），优先使用通用安全设置中的验证码有效期。
+     */
+    public long codeTtlSeconds() {
+        return settings.findBySettingKey(CAPTCHA_TTL_SETTING_KEY)
+            .map(setting -> setting.getSettingValue())
+            .filter(value -> value != null && value.matches("\\d{1,6}"))
+            .map(Long::parseLong)
+            .filter(minutes -> minutes > 0)
+            .map(minutes -> minutes * 60)
+            .orElse(defaultCodeTtlSeconds);
     }
 
     public void verify(String mobile, String purpose, String code) {
@@ -70,14 +106,18 @@ public class SmsVerificationService {
         VerificationKey key = new VerificationKey(normalizedMobile, normalizedPurpose);
         VerificationCode verificationCode = codes.get(key);
         if (verificationCode == null) {
-            throw new IllegalArgumentException("SMS verification code is invalid");
+            throw new AuthenticationFailedException("SMS verification code is invalid");
         }
         if (verificationCode.isExpired(Instant.now())) {
             codes.remove(key);
-            throw new IllegalArgumentException("SMS verification code is invalid");
+            throw new AuthenticationFailedException("SMS verification code is invalid");
         }
-        if (code == null || !code.equals(verificationCode.code())) {
-            throw new IllegalArgumentException("SMS verification code is invalid");
+        if (code == null || !code.trim().equals(verificationCode.code())) {
+            // 超过最大尝试次数后验证码作废，防止暴力枚举。
+            if (verificationCode.attempts().incrementAndGet() >= MAX_VERIFY_ATTEMPTS) {
+                codes.remove(key);
+            }
+            throw new AuthenticationFailedException("SMS verification code is invalid");
         }
         codes.remove(key);
     }
@@ -125,7 +165,7 @@ public class SmsVerificationService {
         }
         LinkedHashMap<String, String> variables = new LinkedHashMap<>();
         variables.put("code", code);
-        variables.put("time", String.valueOf(Math.max(1, codeTtlSeconds / 60)));
+        variables.put("time", String.valueOf(Math.max(1, codeTtlSeconds() / 60)));
         return configuredBlend(config).sendMessage(mobile, templateId, variables);
     }
 
@@ -234,21 +274,32 @@ public class SmsVerificationService {
         return String.format(Locale.ROOT, "%06d", RANDOM.nextInt(1_000_000));
     }
 
-    private String normalizeMobile(String mobile) {
+    /**
+     * 规范化并校验手机号格式。
+     */
+    public static String normalizeMobile(String mobile) {
         if (mobile == null || mobile.isBlank()) {
             throw new IllegalArgumentException("Mobile is required");
         }
-        return mobile.trim();
+        String normalized = mobile.trim().replace(" ", "").replace("-", "");
+        if (!MOBILE_PATTERN.matcher(normalized).matches()) {
+            throw new IllegalArgumentException("手机号格式不正确");
+        }
+        return normalized;
     }
 
     private String normalizePurpose(String purpose) {
-        return purpose == null || purpose.isBlank() ? "LOGIN" : purpose.trim().toUpperCase();
+        String normalized = purpose == null || purpose.isBlank() ? "LOGIN" : purpose.trim().toUpperCase(Locale.ROOT);
+        if (!PURPOSE_TEMPLATE_TYPES.containsKey(normalized)) {
+            throw new IllegalArgumentException("不支持的验证码用途：" + purpose);
+        }
+        return normalized;
     }
 
     private record VerificationKey(String mobile, String purpose) {
     }
 
-    private record VerificationCode(String code, Instant expiresAt) {
+    private record VerificationCode(String code, Instant sentAt, Instant expiresAt, AtomicInteger attempts) {
         boolean isExpired(Instant now) {
             return !expiresAt.isAfter(now);
         }

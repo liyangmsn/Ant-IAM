@@ -73,8 +73,9 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, "/oauth2/jwks").permitAll()
                     .requestMatchers(HttpMethod.GET, "/saml2/metadata").permitAll()
                     .requestMatchers(HttpMethod.GET, "/saml2/metadata.xml").permitAll()
-                    .requestMatchers(HttpMethod.GET, "/cas/serviceValidate").permitAll()
-                    .requestMatchers(HttpMethod.GET, "/cas/p3/serviceValidate").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/cas/login", "/cas/logout", "/cas/validate").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/cas/serviceValidate", "/cas/proxyValidate").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/cas/p3/serviceValidate", "/cas/p3/proxyValidate").permitAll()
                     .requestMatchers(HttpMethod.POST, "/jwt/verify").permitAll()
                     .requestMatchers(HttpMethod.POST, "/oauth2/token").permitAll()
                     .requestMatchers(HttpMethod.POST, "/oauth2/introspect").permitAll()
@@ -83,9 +84,11 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.POST, "/api/v1/authentication/sms-codes").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/v1/authentication/mobile-login").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/v1/authentication/password-login").permitAll()
+                    .requestMatchers(HttpMethod.POST, "/api/v1/authentication/mfa-login", "/api/v1/authentication/mfa-login/switch").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/v1/synchronizer/event_receive/*").permitAll()
                     .requestMatchers(HttpMethod.GET, "/oauth2/userinfo").permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/v1/catalog").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/v1/security-headers").permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/v1/authentication-providers/public").permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/v1/authentication/third-party/*/authorize").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/v1/authentication/third-party/*/callback").permitAll()
@@ -102,7 +105,8 @@ public class SecurityConfig {
                         "/api/v1/access/me/**"
                     ).authenticated()
                     .requestMatchers(HttpMethod.GET, "/api/v1/authentication/sessions", "/api/v1/authentication/events").authenticated()
-                    .requestMatchers(HttpMethod.POST, "/api/v1/authentication/sessions/*/end").authenticated();
+                    .requestMatchers(HttpMethod.POST, "/api/v1/authentication/sessions/*/end").authenticated()
+                    .requestMatchers(HttpMethod.POST, "/api/v1/authentication/logout").permitAll();
                 // 控制台接口按模块授权：GET 需要 read 权限点，其余方法需要 write 权限点；IAM 管理员拥有全部模块。
                 for (ConsoleRoute route : CONSOLE_ROUTES) {
                     auth.requestMatchers(HttpMethod.GET, route.patterns())

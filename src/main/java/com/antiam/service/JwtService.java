@@ -5,6 +5,7 @@ import static com.antiam.dto.JwkDtos.JwksResponse;
 import static com.antiam.dto.JwkDtos.SigningKeyResponse;
 
 import com.antiam.common.NotFoundException;
+import com.antiam.common.SelfSignedCertificates;
 import com.antiam.common.TokenSupport;
 import com.antiam.domain.JwtSigningKey;
 import com.antiam.domain.UserAccount;
@@ -20,12 +21,14 @@ import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PrivateKey;
 import java.security.Signature;
+import java.security.cert.X509Certificate;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +47,12 @@ public class JwtService {
     private final JwtMapper jwtMapper;
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
+    // 自签名证书按 keyId 缓存；证书由密钥确定性生成，缓存仅为避免重复计算。
+    private final Map<String, X509Certificate> certificates = new java.util.concurrent.ConcurrentHashMap<>();
+
+    // 协议保留声明，应用自定义声明不能覆盖，避免篡改签发方、受众和有效期。
+    private static final Set<String> RESERVED_CLAIMS = Set.of(
+        "iss", "sub", "aud", "exp", "iat", "nbf", "jti", "nonce", "auth_time", "azp", "at_hash", "c_hash", "typ");
 
     @Transactional
     // 使用当前活跃 RSA 密钥签发 OIDC ID Token。
@@ -57,33 +66,19 @@ public class JwtService {
         Set<String> idTokenClaims,
         Map<String, String> customClaims
     ) {
-        JwtSigningKey key = activeKey();
-        String header = jsonObject(
-            json("alg", "RS256"),
-            json("typ", "JWT"),
-            json("kid", key.getKeyId()));
-        long now = Instant.now().getEpochSecond();
-        List<String> fields = new ArrayList<>(List.of(
-            json("iss", issuer),
-            json("sub", user.getId().toString()),
-            json("aud", clientId),
-            json("jti", UUID.randomUUID().toString()),
-            json("iat", now),
-            json("exp", expiresAt.getEpochSecond())));
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("iss", issuer);
+        payload.put("sub", user.getId().toString());
+        payload.put("aud", clientId);
+        payload.put("jti", UUID.randomUUID().toString());
+        payload.put("iat", Instant.now().getEpochSecond());
+        payload.put("exp", expiresAt.getEpochSecond());
         if (nonce != null) {
-            fields.add(json("nonce", nonce));
+            payload.put("nonce", nonce);
         }
-        claimNames(idTokenClaims).forEach(claim -> addClaim(fields, claim, user, scopes));
-        if (customClaims != null) {
-            customClaims.forEach((name, value) -> {
-                if (name != null && !name.isBlank()) {
-                    fields.add(json(name, value));
-                }
-            });
-        }
-        String payload = jsonObject(fields.toArray(String[]::new));
-        String signingInput = base64Url(header.getBytes(StandardCharsets.UTF_8)) + "." + base64Url(payload.getBytes(StandardCharsets.UTF_8));
-        return signingInput + "." + base64Url(sign(signingInput, key.getPrivateKeyPem()));
+        claimNames(idTokenClaims).forEach(claim -> addClaim(payload, claim, user, scopes));
+        putCustomClaims(payload, customClaims);
+        return sign(payload);
     }
 
     @Transactional
@@ -96,32 +91,55 @@ public class JwtService {
         Instant expiresAt,
         Map<String, String> claims
     ) {
-        JwtSigningKey key = activeKey();
-        String header = jsonObject(
-            json("alg", "RS256"),
-            json("typ", "JWT"),
-            json("kid", key.getKeyId()));
-        List<String> fields = new ArrayList<>(List.of(
-            json("iss", issuer),
-            json("sub", subject),
-            json("aud", audience),
-            json("iat", issuedAt.getEpochSecond()),
-            json("exp", expiresAt.getEpochSecond())));
-        if (claims != null) {
-            claims.forEach((name, value) -> {
-                if (name != null && !name.isBlank()) {
-                    fields.add(json(name, value));
-                }
-            });
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("iss", issuer);
+        payload.put("sub", subject);
+        payload.put("aud", audience);
+        payload.put("jti", UUID.randomUUID().toString());
+        payload.put("iat", issuedAt.getEpochSecond());
+        payload.put("exp", expiresAt.getEpochSecond());
+        putCustomClaims(payload, claims);
+        return sign(payload);
+    }
+
+    private void putCustomClaims(Map<String, Object> payload, Map<String, String> claims) {
+        if (claims == null) {
+            return;
         }
-        String payload = jsonObject(fields.toArray(String[]::new));
-        String signingInput = base64Url(header.getBytes(StandardCharsets.UTF_8)) + "." + base64Url(payload.getBytes(StandardCharsets.UTF_8));
+        claims.forEach((name, value) -> {
+            if (name != null && !name.isBlank() && !RESERVED_CLAIMS.contains(name.trim())) {
+                payload.put(name.trim(), value);
+            }
+        });
+    }
+
+    private String sign(Map<String, Object> payload) {
+        JwtSigningKey key = activeKey();
+        Map<String, Object> header = new LinkedHashMap<>();
+        header.put("alg", "RS256");
+        header.put("typ", "JWT");
+        header.put("kid", key.getKeyId());
+        String signingInput = base64Url(toJson(header)) + "." + base64Url(toJson(payload));
         return signingInput + "." + base64Url(sign(signingInput, key.getPrivateKeyPem()));
     }
 
+    private byte[] toJson(Map<String, Object> value) {
+        try {
+            return objectMapper.writeValueAsBytes(value);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException ex) {
+            throw new IllegalStateException("Unable to serialize JWT", ex);
+        }
+    }
+
     @Transactional(readOnly = true)
-    // 校验 JWT：算法固定 RS256，按头部 kid 匹配签名密钥，并校验 exp 与 nbf。
+    // 仅校验签名与时间，不比对签发方和受众。
     public TokenVerification verify(String token) {
+        return verify(token, null, null);
+    }
+
+    @Transactional(readOnly = true)
+    // 校验 JWT：算法固定 RS256，按头部 kid 匹配未退役的签名密钥，要求 exp，并在给定时比对 iss 与 aud。
+    public TokenVerification verify(String token, String expectedIssuer, String expectedAudience) {
         if (token == null || token.isBlank()) {
             return TokenVerification.failure("MALFORMED_TOKEN", "Token is empty");
         }
@@ -136,6 +154,9 @@ public class JwtService {
         if (!"RS256".equals(header.path("alg").asText(""))) {
             return TokenVerification.failure("UNSUPPORTED_ALGORITHM", "Only RS256 tokens are supported");
         }
+        if (header.hasNonNull("typ") && !"JWT".equalsIgnoreCase(header.get("typ").asText())) {
+            return TokenVerification.failure("UNSUPPORTED_TYPE", "Token typ must be JWT");
+        }
         String keyId = header.path("kid").asText("");
         if (keyId.isBlank()) {
             return TokenVerification.failure("UNKNOWN_KEY", "Token header does not carry kid");
@@ -143,6 +164,9 @@ public class JwtService {
         JwtSigningKey key = signingKeys.findByKeyId(keyId).orElse(null);
         if (key == null) {
             return TokenVerification.failure("UNKNOWN_KEY", "No signing key matches kid " + keyId);
+        }
+        if (!key.isActive()) {
+            return TokenVerification.failure("KEY_RETIRED", "Signing key " + keyId + " has been retired");
         }
         if (!verifySignature(parts[0] + "." + parts[1], parts[2], key.getPublicKeyPem())) {
             return TokenVerification.failure("INVALID_SIGNATURE", "Token signature verification failed");
@@ -152,11 +176,20 @@ public class JwtService {
             return TokenVerification.failure("MALFORMED_TOKEN", "Token payload is not valid JSON");
         }
         long now = Instant.now().getEpochSecond();
-        if (payload.hasNonNull("exp") && payload.get("exp").asLong() < now) {
+        if (!payload.hasNonNull("exp") || !payload.get("exp").canConvertToLong()) {
+            return TokenVerification.failure("MISSING_EXPIRATION", "Token does not carry a numeric exp claim");
+        }
+        if (payload.get("exp").asLong() <= now) {
             return TokenVerification.failure("TOKEN_EXPIRED", "Token has expired");
         }
         if (payload.hasNonNull("nbf") && payload.get("nbf").asLong() > now) {
             return TokenVerification.failure("TOKEN_NOT_YET_VALID", "Token is not valid yet");
+        }
+        if (expectedIssuer != null && !expectedIssuer.isBlank() && !expectedIssuer.equals(payload.path("iss").asText(null))) {
+            return TokenVerification.failure("INVALID_ISSUER", "Token issuer does not match " + expectedIssuer);
+        }
+        if (expectedAudience != null && !expectedAudience.isBlank() && !audiences(payload).contains(expectedAudience)) {
+            return TokenVerification.failure("INVALID_AUDIENCE", "Token audience does not include " + expectedAudience);
         }
         return new TokenVerification(
             true,
@@ -170,6 +203,31 @@ public class JwtService {
             }),
             null,
             null);
+    }
+
+    @Transactional
+    // 返回当前活跃签名密钥及其自签名证书，供 SAML 断言签名与元数据发布使用。
+    public SigningMaterial activeSigningMaterial() {
+        JwtSigningKey key = activeKey();
+        X509Certificate certificate = certificates.computeIfAbsent(key.getKeyId(), keyId -> {
+            try {
+                Instant notBefore = key.getActivatedAt() == null ? Instant.EPOCH : key.getActivatedAt();
+                return SelfSignedCertificates.create(
+                    publicKey(key.getPublicKeyPem()),
+                    privateKey(key.getPrivateKeyPem()),
+                    "Ant IAM Signing " + keyId,
+                    keyId,
+                    notBefore,
+                    notBefore.atZone(java.time.ZoneOffset.UTC).plusYears(10).toInstant());
+            } catch (GeneralSecurityException ex) {
+                throw new IllegalStateException("Unable to read signing key", ex);
+            }
+        });
+        try {
+            return new SigningMaterial(key.getKeyId(), privateKey(key.getPrivateKeyPem()), certificate);
+        } catch (GeneralSecurityException ex) {
+            throw new IllegalStateException("Unable to read signing key", ex);
+        }
     }
 
     @Transactional
@@ -296,10 +354,6 @@ public class JwtService {
             + "\n-----END " + type + "-----";
     }
 
-    private String jsonObject(String... fields) {
-        return "{" + String.join(",", fields) + "}";
-    }
-
     private Set<String> claimNames(Set<String> configuredClaims) {
         if (configuredClaims == null || configuredClaims.isEmpty()) {
             return new LinkedHashSet<>(List.of("preferred_username", "name", "email", "scope"));
@@ -307,33 +361,18 @@ public class JwtService {
         return configuredClaims;
     }
 
-    private void addClaim(List<String> fields, String claim, UserAccount user, String scopes) {
+    private void addClaim(Map<String, Object> payload, String claim, UserAccount user, String scopes) {
         switch (claim) {
-            case "preferred_username" -> fields.add(json(claim, user.getUsername()));
-            case "name" -> fields.add(json(claim, user.getDisplayName()));
-            case "email" -> fields.add(json(claim, user.getEmail()));
-            case "phone_number" -> fields.add(json(claim, user.getMobile()));
-            case "tenant_id" -> fields.add(json(claim, user.getTenant() == null ? null : user.getTenant().getId().toString()));
-            case "organization_id" -> fields.add(json(claim, user.getOrganization() == null ? null : user.getOrganization().getId().toString()));
-            case "scope" -> fields.add(json(claim, scopes));
+            case "preferred_username" -> payload.put(claim, user.getUsername());
+            case "name" -> payload.put(claim, user.getDisplayName());
+            case "email" -> payload.put(claim, user.getEmail());
+            case "phone_number" -> payload.put(claim, user.getMobile());
+            case "tenant_id" -> payload.put(claim, user.getTenant() == null ? null : user.getTenant().getId().toString());
+            case "organization_id" -> payload.put(claim, user.getOrganization() == null ? null : user.getOrganization().getId().toString());
+            case "scope" -> payload.put(claim, scopes);
             default -> {
             }
         }
-    }
-
-    private String json(String name, String value) {
-        if (value == null) {
-            return quote(name) + ":null";
-        }
-        return quote(name) + ":" + quote(value);
-    }
-
-    private String json(String name, long value) {
-        return quote(name) + ":" + value;
-    }
-
-    private String quote(String value) {
-        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     private String base64Url(byte[] value) {
@@ -350,6 +389,20 @@ public class JwtService {
 
     private Instant instantAt(JsonNode payload, String field) {
         return payload.hasNonNull(field) ? Instant.ofEpochSecond(payload.get(field).asLong()) : null;
+    }
+
+    private List<String> audiences(JsonNode payload) {
+        JsonNode audience = payload.get("aud");
+        List<String> values = new ArrayList<>();
+        if (audience == null || audience.isNull()) {
+            return values;
+        }
+        if (audience.isArray()) {
+            audience.forEach(node -> values.add(node.asText()));
+        } else {
+            values.add(audience.asText());
+        }
+        return values;
     }
 
     private String audienceOf(JsonNode payload) {
@@ -379,6 +432,10 @@ public class JwtService {
     private String unsignedInteger(byte[] value) {
         int offset = value.length > 1 && value[0] == 0 ? 1 : 0;
         return base64Url(java.util.Arrays.copyOfRange(value, offset, value.length));
+    }
+
+    // 签名私钥与对应自签名证书。
+    public record SigningMaterial(String keyId, PrivateKey privateKey, X509Certificate certificate) {
     }
 
     // JWT 校验结果，失败时由 failureCode / failureMessage 说明原因。

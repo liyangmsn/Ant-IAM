@@ -30,6 +30,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
 
 class IdentitySourceRealtimeSyncTest {
 
@@ -55,7 +56,8 @@ class IdentitySourceRealtimeSyncTest {
         auditService,
         new DirectorySyncPayloadReader(new ObjectMapper().findAndRegisterModules()),
         signature,
-        List.of());
+        List.of(),
+        mock(PlatformTransactionManager.class));
 
     @Test
     void appliesSignedRealtimePayload() {
@@ -116,6 +118,45 @@ class IdentitySourceRealtimeSyncTest {
         assertThatThrownBy(() -> service.receiveRealtimeEvent("corp", "deadbeef", "{}", "identity-source-realtime"))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("Realtime sync secret is not configured");
+    }
+
+    @Test
+    void doesNotOverwriteLocalAccountWithSameUsername() {
+        UUID sourceId = UUID.randomUUID();
+        IdentitySource source = source(sourceId);
+        when(identitySources.findByCode("corp")).thenReturn(Optional.of(source));
+        when(connectors.findByIdentitySourceId(sourceId)).thenReturn(Optional.of(connector(source, SECRET)));
+        UserAccount admin = new UserAccount("admin", "Administrator", "admin@example.com", null, null, null, null);
+        when(users.findByUsername("admin")).thenReturn(Optional.of(admin));
+        String body = """
+            {"users": [{"username": "admin", "displayName": "Hijacked", "email": "evil@example.com"}]}
+            """;
+
+        var result = service.receiveRealtimeEvent("corp", signature.sign(SECRET, body), body, "identity-source-realtime");
+
+        assertThat(result.usersUpdated()).isZero();
+        assertThat(admin.getDisplayName()).isEqualTo("Administrator");
+        assertThat(admin.getEmail()).isEqualTo("admin@example.com");
+        assertThat(admin.getIdentitySource()).isNull();
+    }
+
+    @Test
+    void rejectsCyclicOrganizationHierarchy() {
+        UUID sourceId = UUID.randomUUID();
+        IdentitySource source = source(sourceId);
+        when(identitySources.findByCode("corp")).thenReturn(Optional.of(source));
+        when(connectors.findByIdentitySourceId(sourceId)).thenReturn(Optional.of(connector(source, SECRET)));
+        String body = """
+            {"organizations": [
+              {"code": "a", "name": "A", "parentCode": "b"},
+              {"code": "b", "name": "B", "parentCode": "a"}
+            ]}
+            """;
+
+        assertThatThrownBy(() -> service.receiveRealtimeEvent("corp", signature.sign(SECRET, body), body, "identity-source-realtime"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("循环");
+        verify(organizations, never()).save(any(Organization.class));
     }
 
     private IdentitySource source(UUID id) {

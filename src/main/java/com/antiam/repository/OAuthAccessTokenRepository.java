@@ -12,4 +12,6 @@ public interface OAuthAccessTokenRepository extends JpaRepository<OAuthAccessTok
     void deleteByApplicationId(UUID applicationId);
 
     List<OAuthAccessToken> findByUserId(UUID userId);
+
+    List<OAuthAccessToken> findByRefreshTokenIdAndRevokedAtIsNull(UUID refreshTokenId);
 }

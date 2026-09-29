@@ -34,6 +34,6 @@ public class FileController {
         @Parameter(description = "待上传文件") @RequestParam("file") MultipartFile file,
         Principal principal
     ) throws IOException {
-        return fileStorage.store(file.getOriginalFilename(), file.getContentType(), file.getBytes());
+        return fileStorage.store(file.getOriginalFilename(), file.getContentType(), file.getBytes(), principal.getName());
     }
 }

@@ -169,7 +169,7 @@ docker compose up -d postgres
 mvn spring-boot:run          # 或 mvnd spring-boot:run
 ```
 
-常用环境变量：`ANT_IAM_DATASOURCE_URL`、`ANT_IAM_DATASOURCE_USERNAME`、`ANT_IAM_DATASOURCE_PASSWORD`、`ANT_IAM_PORT`。
+常用环境变量：`IAM_DATASOURCE_URL`、`IAM_DATASOURCE_USERNAME`、`IAM_DATASOURCE_PASSWORD`、`IAM_PORT`。
 
 容器化运行：`docker compose --profile api up -d`；或先 `mvn package`，再用根目录 `Dockerfile` 构建镜像（分层解包，以非 root 用户运行，输出 `target/ant-iam-0.1.0-SNAPSHOT.jar`）。
 

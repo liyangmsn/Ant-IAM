@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.antiam.common.ServiceUnavailableException;
 import com.antiam.domain.SettingValueType;
 import com.antiam.domain.SystemSetting;
 import com.antiam.repository.SystemSettingRepository;
@@ -33,9 +34,9 @@ class FileStorageServiceTest {
     void rejectsUploadWhenStorageIsNotConfigured() {
         when(settings.findBySettingKey("storage.provider")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("Storage provider is not configured");
+        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}, "admin"))
+            .isInstanceOf(ServiceUnavailableException.class)
+            .hasMessageContaining("对象存储未配置");
     }
 
     @Test
@@ -44,9 +45,9 @@ class FileStorageServiceTest {
             {"provider": "minio", "endpoint": "https://minio.example.com", "accessKey": "key", "secretKey": "secret", "bucket": "assets", "enabled": false}
             """);
 
-        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("Storage provider is disabled");
+        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}, "admin"))
+            .isInstanceOf(ServiceUnavailableException.class)
+            .hasMessageContaining("对象存储未启用");
     }
 
     @Test
@@ -55,7 +56,7 @@ class FileStorageServiceTest {
             {"provider": "azure", "bucket": "assets", "enabled": true}
             """);
 
-        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}))
+        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}, "admin"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("Unsupported object storage provider: azure");
     }
@@ -66,7 +67,7 @@ class FileStorageServiceTest {
             {"provider": "aliyun", "accessKeyId": "key", "accessKeySecret": "secret", "bucket": "assets", "publicUrl": "https://cdn.example.com", "enabled": true}
             """);
 
-        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}))
+        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}, "admin"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("aliyun storage field is required: endpoint");
     }
@@ -77,7 +78,7 @@ class FileStorageServiceTest {
             {"provider": "tencent", "secretId": "id", "secretKey": "secret", "region": "ap-shanghai", "bucket": "assets", "publicUrl": "https://cdn.example.com", "enabled": true}
             """);
 
-        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}))
+        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}, "admin"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("tencent storage field is required: appId");
     }
@@ -88,7 +89,7 @@ class FileStorageServiceTest {
             {"provider": "qiniu", "accessKey": "key", "secretKey": "secret", "publicUrl": "https://cdn.example.com", "enabled": true}
             """);
 
-        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}))
+        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}, "admin"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("qiniu storage field is required: bucket");
     }
@@ -99,7 +100,7 @@ class FileStorageServiceTest {
             {"provider": "s3", "accessKeyId": "key", "secretAccessKey": "secret", "endpoint": "https://s3.example.com", "bucket": "assets", "publicUrl": "https://cdn.example.com", "enabled": true}
             """);
 
-        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}))
+        assertThatThrownBy(() -> service.store("avatar.png", "image/png", new byte[]{1}, "admin"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("s3 storage field is required: region");
     }

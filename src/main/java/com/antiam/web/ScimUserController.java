@@ -4,6 +4,8 @@ import static com.antiam.dto.ScimDtos.CreateScimUserRequest;
 import static com.antiam.dto.ScimDtos.ScimEmail;
 import static com.antiam.dto.ScimDtos.ScimListResponse;
 import static com.antiam.dto.ScimDtos.ScimName;
+import static com.antiam.dto.ScimDtos.ScimPatchOperation;
+import static com.antiam.dto.ScimDtos.ScimPatchRequest;
 import static com.antiam.dto.ScimDtos.ScimPhoneNumber;
 import static com.antiam.dto.ScimDtos.ScimUserResponse;
 
@@ -15,12 +17,16 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -33,7 +39,8 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "SCIM 用户", description = "SCIM 2.0 用户资源同步接口")
 public class ScimUserController {
 
-    private static final List<String> USER_SCHEMA = List.of("urn:ietf:params:scim:schemas:core:2.0:User");
+    private static final String USER_SCHEMA_URN = "urn:ietf:params:scim:schemas:core:2.0:User";
+    private static final List<String> USER_SCHEMA = List.of(USER_SCHEMA_URN);
 
     private final UserService users;
 
@@ -79,7 +86,108 @@ public class ScimUserController {
         String email = primaryEmail(request);
         String mobile = primaryPhoneNumber(request);
         UserResponse user = users.createScimUser(request.userName(), displayName, email, mobile, principal.getName());
+        if (Boolean.FALSE.equals(request.active())) {
+            user = users.suspend(user.id(), principal.getName());
+        }
         return toScimUser(user);
+    }
+
+    /**
+     * 使用完整 SCIM User 资源替换用户资料和启用状态。
+     */
+    @Operation(summary = "替换 SCIM 用户", description = "以请求体整体替换用户显示名、邮箱、手机号和启用状态；userName 不可修改。")
+    @PutMapping("/{userId}")
+    ScimUserResponse replace(
+        @Parameter(description = "用户 UUID") @PathVariable UUID userId,
+        @Parameter(description = "SCIM User 资源") @Valid @RequestBody CreateScimUserRequest request,
+        Principal principal
+    ) {
+        UserResponse current = users.get(userId);
+        if (!current.username().equals(request.userName())) {
+            throw new IllegalArgumentException("SCIM 不支持修改 userName");
+        }
+        return toScimUser(users.updateScimUser(
+            userId,
+            displayName(request),
+            primaryEmail(request),
+            primaryPhoneNumber(request),
+            request.active() == null ? Boolean.TRUE : request.active(),
+            principal.getName()));
+    }
+
+    /**
+     * 按 SCIM PATCH 操作局部更新用户。
+     */
+    @Operation(summary = "局部更新 SCIM 用户", description = "支持 add/replace/remove 操作 active、displayName、name.formatted、emails、phoneNumbers；未识别的属性会被忽略。")
+    @PatchMapping("/{userId}")
+    ScimUserResponse patch(
+        @Parameter(description = "用户 UUID") @PathVariable UUID userId,
+        @Parameter(description = "SCIM PatchOp 请求") @Valid @RequestBody ScimPatchRequest request,
+        Principal principal
+    ) {
+        UserResponse current = users.get(userId);
+        PatchState state = new PatchState(current.displayName(), current.email(), current.mobile(), null);
+        request.operations().forEach(operation -> applyPatch(state, operation, current.username()));
+        return toScimUser(users.updateScimUser(userId, state.displayName, state.email, state.mobile, state.active, principal.getName()));
+    }
+
+    /**
+     * 删除 SCIM 用户。
+     */
+    @Operation(summary = "删除 SCIM 用户", description = "删除内部用户账号及其凭据、令牌和授权。")
+    @DeleteMapping("/{userId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void delete(@Parameter(description = "用户 UUID") @PathVariable UUID userId, Principal principal) {
+        users.delete(userId, principal.getName());
+    }
+
+    private void applyPatch(PatchState state, ScimPatchOperation operation, String username) {
+        String op = ScimPatchSupport.op(operation);
+        String path = ScimPatchSupport.path(operation.path(), USER_SCHEMA_URN);
+        if (path == null) {
+            if (op.equals("remove")) {
+                throw new IllegalArgumentException("SCIM remove operation requires a path");
+            }
+            for (Map.Entry<?, ?> entry : ScimPatchSupport.attributes(operation).entrySet()) {
+                String attribute = ScimPatchSupport.path(String.valueOf(entry.getKey()), USER_SCHEMA_URN);
+                applyAttribute(state, op, attribute, entry.getValue(), username);
+            }
+            return;
+        }
+        applyAttribute(state, op, path, operation.value(), username);
+    }
+
+    private void applyAttribute(PatchState state, String op, String path, Object value, String username) {
+        boolean remove = op.equals("remove");
+        if (path.equals("active")) {
+            state.active = remove ? Boolean.FALSE : ScimPatchSupport.bool(value);
+        } else if (path.equals("displayname") || path.equals("name.formatted")) {
+            state.displayName = remove ? null : ScimPatchSupport.text(value);
+        } else if (path.equals("name")) {
+            state.displayName = remove || !(value instanceof Map<?, ?> name) ? null : ScimPatchSupport.text(name.get("formatted"));
+        } else if (path.equals("emails") || path.startsWith("emails[") || path.startsWith("emails.")) {
+            state.email = remove ? null : ScimPatchSupport.text(value);
+        } else if (path.equals("phonenumbers") || path.startsWith("phonenumbers[") || path.startsWith("phonenumbers.")) {
+            state.mobile = remove ? null : ScimPatchSupport.text(value);
+        } else if (path.equals("username")) {
+            if (remove || !username.equals(ScimPatchSupport.text(value))) {
+                throw new IllegalArgumentException("SCIM 不支持修改 userName");
+            }
+        }
+    }
+
+    private static final class PatchState {
+        private String displayName;
+        private String email;
+        private String mobile;
+        private Boolean active;
+
+        private PatchState(String displayName, String email, String mobile, Boolean active) {
+            this.displayName = displayName;
+            this.email = email;
+            this.mobile = mobile;
+            this.active = active;
+        }
     }
 
     private ScimUserResponse toScimUser(UserResponse user) {

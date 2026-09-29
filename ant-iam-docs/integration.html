@@ -26,6 +26,9 @@
         <a href="#choose">选择接入方式</a>
         <a href="#conventions">调用约定</a>
         <a href="#oidc">OIDC / OAuth2</a>
+        <a href="#saml">SAML 2.0</a>
+        <a href="#cas">CAS</a>
+        <a href="#jwt">JWT</a>
         <a href="#directory">SCIM / 管理 API</a>
         <a href="#checklist">接入自查</a>
       </aside>
@@ -72,7 +75,7 @@
             <li>普通接口使用 JSON；OAuth2 Token 端点使用表单格式。</li>
             <li>字段使用小驼峰，资源标识使用 UUID，时间使用 ISO-8601 UTC。</li>
             <li>管理 API 和 SCIM 使用 <code>Authorization: Bearer &lt;token&gt;</code>。</li>
-            <li>常见状态码：<code>200</code> 成功、<code>201</code> 创建成功、<code>400</code> 参数错误、<code>401</code> 未认证、<code>404</code> 资源不存在。</li>
+            <li>常见状态码：<code>200</code> 成功、<code>201</code> 创建成功、<code>400</code> 参数错误、<code>401</code> 未认证、<code>403</code> 无权限、<code>404</code> 资源不存在、<code>409</code> 资源冲突。</li>
           </ul>
           <pre><code>POST {Base URL}/api/v1/authentication/password-login
 Content-Type: application/json
@@ -90,11 +93,43 @@ Content-Type: application/json
           <ul>
             <li>发现文档：<a href="../.well-known/openid-configuration"><code>/.well-known/openid-configuration</code></a></li>
             <li>授权入口：<code>/oidc/authorize</code></li>
-            <li>令牌端点：<code>/oauth2/token</code></li>
-            <li>用户信息：<code>/oauth2/userinfo</code></li>
+            <li>令牌端点：<code>/oauth2/token</code>（支持 <code>client_secret_basic</code> 与 <code>client_secret_post</code>）</li>
+            <li>令牌内省 / 吊销：<code>/oauth2/introspect</code>、<code>/oauth2/revoke</code></li>
+            <li>用户信息：<code>/oauth2/userinfo</code>（返回的声明受授权 scope 约束）</li>
             <li>公钥：<code>/oauth2/jwks</code></li>
           </ul>
+          <p>刷新令牌默认每次使用后轮换，旧的 access_token 与 refresh_token 会同时失效。错误响应遵循 RFC 6749，包含 <code>error</code> 与 <code>error_description</code>。</p>
           <p>完整参数以发现文档和管理员分配的应用配置为准，不要在前端代码中保存 client_secret。</p>
+        </section>
+
+        <section id="saml" class="article-section">
+          <h2>SAML 2.0</h2>
+          <p>在控制台登记服务提供方的 Entity ID 与 ACS 地址，再将 IdP 元数据导入服务提供方。</p>
+          <ul>
+            <li>IdP 元数据：<code>/saml2/metadata.xml</code>，<code>KeyDescriptor</code> 中包含签名证书</li>
+            <li>签发断言：<code>/saml2/sso/xml?entity_id={SP Entity ID}</code></li>
+          </ul>
+          <p>断言使用 RSA-SHA256 做 enveloped 签名（exc-c14n），并包含 <code>AuthnStatement</code>。签名密钥轮换后请重新导入元数据。</p>
+        </section>
+
+        <section id="cas" class="article-section">
+          <h2>CAS</h2>
+          <p>在控制台登记 Service 地址，service 参数需与登记值完全一致。</p>
+          <ul>
+            <li>登录：<code>/cas/login?service={Service 地址}</code></li>
+            <li>票据校验：<code>/cas/serviceValidate</code>（JSON）、<code>/cas/p3/serviceValidate</code>（CAS 3.0 XML）</li>
+          </ul>
+          <p>Service Ticket 一次有效：无论校验成功与否，提交校验后即被消费。</p>
+        </section>
+
+        <section id="jwt" class="article-section">
+          <h2>JWT</h2>
+          <ul>
+            <li>签发：<code>/jwt/sso?audience={Audience}</code></li>
+            <li>校验：<code>POST /jwt/verify</code>，请求体 <code>{"token": "...", "issuer": "...", "audience": "..."}</code>，issuer 与 audience 可选</li>
+            <li>公钥：<code>/oauth2/jwks</code></li>
+          </ul>
+          <p>令牌必须包含 <code>exp</code>；自定义声明不能覆盖 <code>iss</code>、<code>sub</code>、<code>aud</code>、<code>exp</code> 等保留声明。</p>
         </section>
 
         <section id="directory" class="article-section">

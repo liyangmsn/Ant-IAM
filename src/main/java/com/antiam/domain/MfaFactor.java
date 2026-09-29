@@ -33,6 +33,7 @@ public class MfaFactor extends BaseEntity {
 
     private boolean verified;
     private boolean enabled;
+    private Long lastUsedCounter;
 
     public MfaFactor(UserAccount user, MfaFactorType type, String name, String secret) {
         this.user = user;
@@ -61,5 +62,13 @@ public class MfaFactor extends BaseEntity {
 
     public void replaceSecret(String secret) {
         this.secret = secret;
+        this.lastUsedCounter = null;
+    }
+
+    /**
+     * 记录最近一次使用的 TOTP 时间步，防止同一验证码被重放。
+     */
+    public void markTotpCounterUsed(long counter) {
+        this.lastUsedCounter = counter;
     }
 }

@@ -69,6 +69,18 @@ public class UserCredential extends BaseEntity {
         this.lastFailedAt = Instant.now();
     }
 
+    /**
+     * 在统计窗口内累计失败次数；上次失败早于窗口时重新计数。
+     */
+    public void markFailed(java.time.Duration window) {
+        Instant now = Instant.now();
+        if (lastFailedAt != null && window != null && lastFailedAt.plus(window).isBefore(now)) {
+            this.failedAttempts = 0;
+        }
+        this.failedAttempts++;
+        this.lastFailedAt = now;
+    }
+
     public void markLocked() {
         this.lockedAt = Instant.now();
     }

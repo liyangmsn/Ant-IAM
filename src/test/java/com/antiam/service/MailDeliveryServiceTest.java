@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.antiam.common.ServiceUnavailableException;
 import com.antiam.domain.SettingValueType;
 import com.antiam.domain.SystemSetting;
 import com.antiam.repository.SystemSettingRepository;
@@ -27,8 +28,8 @@ class MailDeliveryServiceTest {
         when(settings.findBySettingKey("message.mail.service")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.send("login_verify", "alice@example.com", Map.of("code", "123456")))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("Mail service is not configured");
+            .isInstanceOf(ServiceUnavailableException.class)
+            .hasMessageContaining("邮件服务未配置");
     }
 
     @Test
@@ -39,8 +40,8 @@ class MailDeliveryServiceTest {
                 """)));
 
         assertThatThrownBy(() -> service.send("login_verify", "alice@example.com", Map.of("code", "123456")))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("Mail service is disabled");
+            .isInstanceOf(ServiceUnavailableException.class)
+            .hasMessageContaining("邮件服务未启用");
     }
 
     @Test
@@ -81,6 +82,17 @@ class MailDeliveryServiceTest {
         assertThat(renderedContent("login_verify")).contains("验证码为 654321");
     }
 
+    @Test
+    void escapesVariablesInHtmlContentOnly() {
+        Map<String, String> values = Map.of("name", "<script>x</script>");
+
+        String html = ReflectionTestUtils.invokeMethod(service, "render", "<p>${name}</p>", values, true);
+        String subject = ReflectionTestUtils.invokeMethod(service, "render", "Hi ${name}", values, false);
+
+        assertThat(html).isEqualTo("<p>&lt;script&gt;x&lt;/script&gt;</p>");
+        assertThat(subject).isEqualTo("Hi <script>x</script>");
+    }
+
     private String renderedSubject(String templateKey) {
         return renderField(resolveTemplate(templateKey), "subject");
     }
@@ -96,7 +108,8 @@ class MailDeliveryServiceTest {
     private String renderField(Object template, String accessor) {
         return ReflectionTestUtils.invokeMethod(service, "render",
             ReflectionTestUtils.invokeMethod(template, accessor),
-            Map.of("code", "654321", "user_email", "alice@example.com"));
+            Map.of("code", "654321", "user_email", "alice@example.com"),
+            "content".equals(accessor));
     }
 
     private Object defaultTemplate(String templateKey) {

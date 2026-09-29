@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -40,6 +41,25 @@ public class AuthenticationPolicyController {
     @GetMapping
     List<AuthenticationPolicyResponse> list() {
         return policies.list();
+    }
+
+    /**
+     * 查询认证策略详情。
+     */
+    @Operation(summary = "获取认证策略详情", description = "根据认证策略 UUID 返回策略详情。")
+    @GetMapping("/{policyId}")
+    AuthenticationPolicyResponse get(@Parameter(description = "认证策略 UUID") @PathVariable UUID policyId) {
+        return policies.get(policyId);
+    }
+
+    /**
+     * 删除认证策略。
+     */
+    @Operation(summary = "删除认证策略", description = "删除指定认证策略。")
+    @DeleteMapping("/{policyId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void delete(@Parameter(description = "认证策略 UUID") @PathVariable UUID policyId, Principal principal) {
+        policies.delete(policyId, principal.getName());
     }
 
     /**
@@ -92,8 +112,9 @@ public class AuthenticationPolicyController {
     @Operation(summary = "评估认证策略", description = "根据用户、应用、风险等级和上下文返回应执行的认证动作。")
     @PostMapping("/evaluations")
     AuthenticationPolicyDecisionResponse evaluate(
-        @Parameter(description = "认证策略评估请求") @Valid @RequestBody EvaluateAuthenticationPolicyRequest request
+        @Parameter(description = "认证策略评估请求") @Valid @RequestBody EvaluateAuthenticationPolicyRequest request,
+        Principal principal
     ) {
-        return policies.evaluate(request);
+        return policies.evaluate(request, principal.getName());
     }
 }

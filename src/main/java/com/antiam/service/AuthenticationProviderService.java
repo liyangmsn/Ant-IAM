@@ -5,6 +5,7 @@ import static com.antiam.dto.AuthenticationProviderDtos.CreateAuthenticationProv
 import static com.antiam.dto.AuthenticationProviderDtos.PublicAuthenticationProviderResponse;
 import static com.antiam.dto.AuthenticationProviderDtos.UpdateAuthenticationProviderRequest;
 
+import com.antiam.common.MaskedSecrets;
 import com.antiam.common.NotFoundException;
 import com.antiam.domain.AuthenticationProvider;
 import com.antiam.domain.AuthenticationProviderKind;
@@ -72,7 +73,7 @@ public class AuthenticationProviderService {
             request.provider(),
             request.type(),
             request.description(),
-            request.configuration(),
+            MaskedSecrets.restore(request.configuration(), provider.getConfiguration()),
             request.visible());
         auditService.record(actor, "authentication_provider.update", "authentication_provider", providerId.toString(), provider.getProviderKey());
         return toResponse(provider);
@@ -134,8 +135,7 @@ public class AuthenticationProviderService {
         if (configuration == null || configuration.isBlank()) {
             return configuration;
         }
-        return configuration
-            .replaceAll("(?i)(\"(?:appSecret|secret|secretKey|clientSecret|password)\"\\s*:\\s*\")([^\"]+)(\")", "$1******$3");
+        return MaskedSecrets.maskJsonFields(configuration);
     }
 
     private String normalizeKeyword(String keyword) {

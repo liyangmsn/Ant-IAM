@@ -6,6 +6,8 @@ package com.antiam.domain;
 public final class AuthenticationMethods {
     public static final String PASSWORD = "password";
     public static final String MOBILE_CODE = "mobile_code";
+    public static final String MFA = "mfa";
+    public static final String THIRD_PARTY = "third_party";
 
     private AuthenticationMethods() {
     }

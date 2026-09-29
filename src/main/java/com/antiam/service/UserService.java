@@ -23,6 +23,8 @@ import static com.antiam.dto.UserDtos.VerifyMfaChallengeRequest;
 import static com.antiam.dto.UserDtos.VerifyMfaChallengeResponse;
 import static com.antiam.dto.UserDtos.VerifyPasswordResponse;
 
+import com.antiam.common.AuthenticationFailedException;
+import com.antiam.common.ConflictException;
 import com.antiam.common.NotFoundException;
 import com.antiam.common.TokenSupport;
 import com.antiam.config.SecurityAuthorities;
@@ -40,9 +42,11 @@ import com.antiam.domain.OAuthAccessToken;
 import com.antiam.domain.OAuthRefreshToken;
 import com.antiam.domain.Organization;
 import com.antiam.domain.PasswordResetTicket;
+import com.antiam.domain.SessionRestriction;
 import com.antiam.domain.Permission;
 import com.antiam.domain.Role;
 import com.antiam.domain.Tenant;
+import com.antiam.domain.TenantStatus;
 import com.antiam.domain.UserAccount;
 import com.antiam.domain.UserCredential;
 import com.antiam.domain.UserCredentialHistory;
@@ -60,21 +64,16 @@ import com.antiam.repository.UserAccountRepository;
 import com.antiam.repository.UserCredentialHistoryRepository;
 import com.antiam.repository.UserCredentialRepository;
 import com.antiam.repository.UserGroupRepository;
-import java.net.URLEncoder;
-import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -84,10 +83,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class UserService {
 
     private static final Duration MFA_CHALLENGE_TTL = Duration.ofMinutes(5);
-    private static final int TOTP_STEP_SECONDS = 30;
-    private static final int TOTP_WINDOW = 1;
     private static final int DEFAULT_PASSWORD_RESET_TICKET_MINUTES = 30;
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+    private static final int MAX_PASSWORD_RESET_TICKET_MINUTES = 7 * 24 * 60;
 
     private final UserAccountRepository users;
     private final ApplicationAssignmentRepository applicationAssignments;
@@ -110,6 +107,9 @@ public class UserService {
     private final TokenSupport tokens;
     private final SmsVerificationService smsVerificationService;
     private final MailDeliveryService mailDeliveryService;
+    private final MfaVerificationService mfaVerification;
+    private final LoginSessionService loginSessions;
+    private final SecuritySettingService securitySettings;
 
     /**
      * 创建内部用户账号，并在提供初始密码时创建临时密码凭据。
@@ -118,11 +118,15 @@ public class UserService {
     public UserResponse create(CreateUserRequest request, String actor) {
         Organization organization = request.organizationId() == null ? null : organizationService.getEntity(request.organizationId());
         Tenant tenant = request.tenantId() == null ? null : tenantService.getEntity(request.tenantId());
+        if (tenant != null && tenant.getStatus() == TenantStatus.SUSPENDED) {
+            throw new IllegalArgumentException("租户已暂停，不能创建用户");
+        }
+        String username = requireUniqueUsername(request.username());
         UserAccount saved = users.save(new UserAccount(
-            request.username(),
+            username,
             request.displayName(),
             request.email(),
-            request.mobile(),
+            uniqueMobile(request.mobile(), null),
             tenant,
             organization));
         if ("admin".equals(request.userType())) {
@@ -148,9 +152,28 @@ public class UserService {
      */
     @Transactional
     public UserResponse createScimUser(String username, String displayName, String email, String mobile, String actor) {
-        UserAccount saved = users.save(new UserAccount(username, displayName, email, mobile, null, null));
+        UserAccount saved = users.save(new UserAccount(
+            requireUniqueUsername(username), displayName, email, uniqueMobile(mobile, null), null, null));
         auditService.record(actor, "scim.user.create", "user", saved.getId().toString(), saved.getUsername());
         return toResponse(saved);
+    }
+
+    /**
+     * 通过 SCIM PUT/PATCH 更新用户资料和启用状态；active 为空时不改变账号状态，组织归属保持不变。
+     */
+    @Transactional
+    public UserResponse updateScimUser(UUID userId, String displayName, String email, String mobile, Boolean active, String actor) {
+        UserAccount user = getEntity(userId);
+        String name = displayName == null || displayName.isBlank() ? user.getUsername() : displayName;
+        user.updateProfile(name, email, uniqueMobile(mobile, userId), user.getOrganization());
+        auditService.record(actor, "scim.user.update", "user", userId.toString(), user.getUsername());
+        if (Boolean.TRUE.equals(active) && user.getStatus() != AccountStatus.ACTIVE) {
+            return activate(userId, actor);
+        }
+        if (Boolean.FALSE.equals(active) && user.getStatus() == AccountStatus.ACTIVE) {
+            return suspend(userId, actor);
+        }
+        return toResponse(user);
     }
 
     /**
@@ -160,7 +183,7 @@ public class UserService {
     public UserResponse update(UUID userId, UpdateUserRequest request, String actor) {
         UserAccount user = getEntity(userId);
         Organization organization = request.organizationId() == null ? null : organizationService.getEntity(request.organizationId());
-        user.updateProfile(request.displayName(), request.email(), request.mobile(), organization);
+        user.updateProfile(request.displayName(), request.email(), uniqueMobile(request.mobile(), userId), organization);
         auditService.record(actor, "user.update", "user", userId.toString(), user.getUsername());
         return toResponse(user);
     }
@@ -220,19 +243,36 @@ public class UserService {
     }
 
     /**
+     * 删除用户账号：先结束活跃会话；凭据、MFA、令牌、授权等关联数据由数据库级联清理，认证事件保留但解除关联。
+     */
+    @Transactional
+    public void delete(UUID userId, String actor) {
+        UserAccount user = getEntity(userId);
+        if (user.getUsername().equals(actor)) {
+            throw new IllegalArgumentException("不能删除当前登录的账号");
+        }
+        // 会话与认证事件的 user_id 由数据库外键置空，保留历史记录。
+        authenticationSessions.endActiveByUserId(userId, Instant.now());
+        users.delete(user);
+        auditService.record(actor, "user.delete", "user", userId.toString(), user.getUsername());
+    }
+
+    /**
      * 管理员设置用户密码，并应用当前密码策略。
      */
     @Transactional
     public void setPassword(UUID userId, SetPasswordRequest request, String actor) {
         UserAccount user = getEntity(userId);
-        rotatePassword(user, request.password(), request.temporary());
+        rotatePassword(user, request.password(), Boolean.TRUE.equals(request.temporary()));
+        endActiveSessions(user, actor, "user.password.set");
+        revokeOAuthTokens(user, actor, "user.password.set");
         auditService.record(actor, "user.password.set", "user", userId.toString(), user.getUsername());
     }
 
     /**
      * 当前用户自助修改密码，会校验当前密码并记录认证事件。
      */
-    @Transactional
+    @Transactional(noRollbackFor = AuthenticationFailedException.class)
     public void changeOwnPassword(String username, ChangeOwnPasswordRequest request) {
         UserAccount user = users.findByUsername(username)
             .orElseThrow(() -> new NotFoundException("User not found: " + username));
@@ -242,12 +282,9 @@ public class UserService {
             throw new IllegalArgumentException("User account is not active");
         }
         if (!passwordEncoder.matches(request.currentPassword(), credential.getSecretHash())) {
-            credential.markFailed();
-            int maxAttempts = authenticationPolicyService.currentPasswordMaxFailureAttempts();
-            boolean locked = credential.getFailedAttempts() >= maxAttempts;
+            boolean locked = recordPasswordFailure(user, credential);
             if (locked) {
-                user.lock();
-                credential.markLocked();
+                endActiveSessions(user, username, "user.password.lock");
             }
             authenticationEvents.save(new AuthenticationEvent(
                 null,
@@ -260,9 +297,11 @@ public class UserService {
             if (locked) {
                 auditService.record(username, "user.password.lock", "user", user.getId().toString(), "failed_attempts=" + credential.getFailedAttempts());
             }
-            throw new IllegalArgumentException("Current password is invalid");
+            throw new AuthenticationFailedException(locked ? "当前密码错误次数过多，账号已锁定" : "当前密码不正确");
         }
         rotatePassword(user, request.newPassword(), false);
+        int ended = loginSessions.endOtherSessions(user, currentSessionId(), "password_changed");
+        loginSessions.clearRestriction(user, SessionRestriction.PASSWORD_CHANGE);
         authenticationEvents.save(new AuthenticationEvent(
             null,
             user,
@@ -270,27 +309,30 @@ public class UserService {
             AuthenticationEventType.LOGIN_SUCCESS,
             null,
             null,
-            "password_changed"));
+            "password_changed;other_sessions_ended=" + ended));
         auditService.record(username, "user.password.change", "user", user.getId().toString(), user.getUsername());
     }
 
     @Transactional(readOnly = true)
     public void sendMobileBindingCode(UUID userId, String mobile) {
         getEntity(userId);
-        smsVerificationService.sendVerificationCode(mobile, "BIND_MOBILE");
+        String normalized = SmsVerificationService.normalizeMobile(mobile);
+        if (users.existsByMobileAndIdNot(normalized, userId)) {
+            throw new ConflictException("该手机号已绑定其他用户");
+        }
+        smsVerificationService.sendVerificationCode(normalized, "BIND_MOBILE");
     }
 
     @Transactional
     public UserResponse bindMobile(UUID userId, BindMobileRequest request, String actor) {
         UserAccount user = getEntity(userId);
-        smsVerificationService.verify(request.mobile(), "BIND_MOBILE", request.code());
-        users.findByMobile(request.mobile())
-            .filter(existing -> !existing.getId().equals(userId))
-            .ifPresent(existing -> {
-                throw new IllegalArgumentException("Mobile is already bound to another user");
-            });
-        user.updateProfile(user.getDisplayName(), user.getEmail(), request.mobile(), user.getOrganization());
-        auditService.record(actor, "user.mobile.bind", "user", userId.toString(), request.mobile());
+        String mobile = SmsVerificationService.normalizeMobile(request.mobile());
+        smsVerificationService.verify(mobile, "BIND_MOBILE", request.code());
+        if (users.existsByMobileAndIdNot(mobile, userId)) {
+            throw new ConflictException("该手机号已绑定其他用户");
+        }
+        user.updateProfile(user.getDisplayName(), user.getEmail(), mobile, user.getOrganization());
+        auditService.record(actor, "user.mobile.bind", "user", userId.toString(), mobile);
         return toResponse(user);
     }
 
@@ -312,6 +354,7 @@ public class UserService {
     @Transactional
     public PasswordResetTicketResponse createPasswordResetTicket(CreatePasswordResetTicketRequest request, String actor) {
         UserAccount user = getEntity(request.userId());
+        requireResettable(user);
         String resetToken = tokens.generateToken(32);
         PasswordResetTicket saved = passwordResetTickets.save(new PasswordResetTicket(
             user,
@@ -332,8 +375,12 @@ public class UserService {
         if (!ticket.isUsable(Instant.now())) {
             throw new IllegalArgumentException("Password reset ticket is expired or already consumed");
         }
-        rotatePassword(ticket.getUser(), request.newPassword(), request.temporary());
+        UserAccount user = ticket.getUser();
+        requireResettable(user);
+        rotatePassword(user, request.newPassword(), Boolean.TRUE.equals(request.temporary()));
         ticket.consume();
+        endActiveSessions(user, "password-reset-ticket", "user.password_reset");
+        revokeOAuthTokens(user, "password-reset-ticket", "user.password_reset");
         auditService.record("password-reset-ticket", "user.password_reset_ticket.consume", "user", ticket.getUser().getId().toString(), ticket.getUser().getUsername());
     }
 
@@ -418,12 +465,9 @@ public class UserService {
                 null,
                 expired ? "password_expired" : "password_verified"));
         } else {
-            credential.markFailed();
-            int maxAttempts = authenticationPolicyService.currentPasswordMaxFailureAttempts();
-            boolean locked = credential.getFailedAttempts() >= maxAttempts;
+            boolean locked = recordPasswordFailure(user, credential);
             if (locked) {
-                user.lock();
-                credential.markLocked();
+                endActiveSessions(user, actor, "user.password.lock");
             }
             authenticationEvents.save(new AuthenticationEvent(
                 null,
@@ -450,9 +494,16 @@ public class UserService {
         if (request.type() == MfaFactorType.RECOVERY_CODE) {
             throw new IllegalArgumentException("Use the recovery code generation endpoint for recovery codes");
         }
-        String secret = request.type() == MfaFactorType.TOTP && (request.secret() == null || request.secret().isBlank())
-            ? generateTotpSecret()
-            : request.secret();
+        if (request.type() == MfaFactorType.SMS && (user.getMobile() == null || user.getMobile().isBlank())) {
+            throw new IllegalArgumentException("短信 MFA 需要先绑定手机号");
+        }
+        if (request.type() == MfaFactorType.EMAIL && (user.getEmail() == null || user.getEmail().isBlank())) {
+            throw new IllegalArgumentException("邮件 MFA 需要先设置邮箱");
+        }
+        boolean hasSecret = request.secret() != null && !request.secret().isBlank();
+        String secret = request.type() == MfaFactorType.TOTP
+            ? (hasSecret ? mfaVerification.normalizeTotpSecret(request.secret()) : mfaVerification.generateTotpSecret())
+            : null;
         MfaFactor saved = mfaFactors.save(new MfaFactor(user, request.type(), request.name(), secret));
         auditService.record(actor, "user.mfa.register", "user", userId.toString(), request.type().name());
         return toResponse(saved);
@@ -465,7 +516,7 @@ public class UserService {
     public RecoveryCodesResponse generateRecoveryCodes(UUID userId, String actor) {
         UserAccount user = getEntity(userId);
         List<String> codes = java.util.stream.IntStream.range(0, 10)
-            .mapToObj(index -> generateRecoveryCode())
+            .mapToObj(index -> mfaVerification.generateRecoveryCode())
             .toList();
         String secret = codes.stream().map(tokens::sha256).collect(java.util.stream.Collectors.joining("\n"));
         MfaFactor factor = mfaFactors.findByUserIdAndType(userId, MfaFactorType.RECOVERY_CODE)
@@ -557,17 +608,12 @@ public class UserService {
         if (!factor.getUser().getId().equals(userId) || !factor.isEnabled()) {
             throw new IllegalArgumentException("MFA factor is not available for this user");
         }
-        String code = factor.getType() == MfaFactorType.TOTP || factor.getType() == MfaFactorType.RECOVERY_CODE ? null : generateMfaCode();
-        String codeHash = code == null ? factor.getType().name().toLowerCase() : tokens.sha256(code);
-        if (factor.getType() == MfaFactorType.EMAIL) {
-            String email = requireEmail(user);
-            mailDeliveryService.send("login_verify", email, Map.of("code", code, "user_email", email));
-        }
+        MfaVerificationService.IssuedCode issued = mfaVerification.issueCode(user, factor);
         MfaChallenge saved = mfaChallenges.save(new MfaChallenge(
             user,
             factor,
             tokens.generateToken(24),
-            codeHash,
+            issued.codeHash(),
             Instant.now().plus(MFA_CHALLENGE_TTL)));
         authenticationEvents.save(new AuthenticationEvent(
             null,
@@ -583,8 +629,8 @@ public class UserService {
             factor.getId(),
             factor.getType(),
             saved.getStatus(),
-            deliveryHint(factor),
-            factor.getType() == MfaFactorType.EMAIL ? null : code);
+            mfaVerification.deliveryHint(factor),
+            issued.echoCode());
     }
 
     /**
@@ -628,7 +674,24 @@ public class UserService {
     @Transactional
     public VerifyMfaChallengeResponse verifyMfaChallenge(VerifyMfaChallengeRequest request, String actor) {
         MfaChallenge challenge = mfaChallenges.findByChallengeId(request.challengeId())
+            .filter(found -> !MfaChallenge.PURPOSE_LOGIN.equals(found.getPurpose()))
             .orElseThrow(() -> new NotFoundException("MFA challenge not found: " + request.challengeId()));
+        return verifyChallenge(challenge, request.code(), actor);
+    }
+
+    /**
+     * 用户自助校验自己发起的 MFA 挑战，用于绑定新因子后的首次验证。
+     */
+    @Transactional
+    public VerifyMfaChallengeResponse verifyOwnMfaChallenge(UUID userId, String challengeId, String code, String actor) {
+        MfaChallenge challenge = mfaChallenges.findByChallengeId(challengeId)
+            .filter(found -> found.getUser().getId().equals(userId))
+            .filter(found -> !MfaChallenge.PURPOSE_LOGIN.equals(found.getPurpose()))
+            .orElseThrow(() -> new NotFoundException("MFA challenge not found: " + challengeId));
+        return verifyChallenge(challenge, code, actor);
+    }
+
+    private VerifyMfaChallengeResponse verifyChallenge(MfaChallenge challenge, String code, String actor) {
         if (!challenge.isUsable(Instant.now())) {
             challenge.expire();
             authenticationEvents.save(new AuthenticationEvent(
@@ -641,14 +704,13 @@ public class UserService {
                 "challenge_expired"));
             return new VerifyMfaChallengeResponse(false, challenge.getStatus());
         }
-        boolean valid = switch (challenge.getFactor().getType()) {
-            case TOTP -> verifyTotp(challenge.getFactor().getSecret(), request.code(), Instant.now());
-            case RECOVERY_CODE -> consumeRecoveryCode(challenge.getFactor(), request.code());
-            case SMS, EMAIL, WEBAUTHN -> tokens.sha256(request.code()).equals(challenge.getCodeHash());
-        };
+        boolean valid = mfaVerification.verify(challenge, code);
         if (valid) {
             challenge.verify();
             challenge.getFactor().verify();
+            if (MfaVerificationService.isLoginCapable(challenge.getFactor())) {
+                loginSessions.clearRestriction(challenge.getUser(), SessionRestriction.MFA_ENROLLMENT);
+            }
             authenticationEvents.save(new AuthenticationEvent(
                 null,
                 challenge.getUser(),
@@ -857,6 +919,7 @@ public class UserService {
         validateUserInfoPassword(user, password);
         validateWeakPassword(password);
         validatePasswordExtensionRules(password);
+        validateIllegalSequence(password);
     }
 
     private void collectRolePermissions(Role role, String source, Map<String, PermissionAccumulator> permissions) {
@@ -1022,7 +1085,71 @@ public class UserService {
     }
 
     private int normalizeResetTicketMinutes(Integer expiresInMinutes) {
-        return expiresInMinutes == null || expiresInMinutes <= 0 ? DEFAULT_PASSWORD_RESET_TICKET_MINUTES : expiresInMinutes;
+        if (expiresInMinutes == null) {
+            return DEFAULT_PASSWORD_RESET_TICKET_MINUTES;
+        }
+        if (expiresInMinutes <= 0 || expiresInMinutes > MAX_PASSWORD_RESET_TICKET_MINUTES) {
+            throw new IllegalArgumentException("重置票据有效期必须在 1 到 " + MAX_PASSWORD_RESET_TICKET_MINUTES + " 分钟之间");
+        }
+        return expiresInMinutes;
+    }
+
+    /**
+     * 暂停或离职的账号不允许通过重置票据恢复密码。
+     */
+    private void requireResettable(UserAccount user) {
+        if (user.getStatus() == AccountStatus.SUSPENDED || user.getStatus() == AccountStatus.DEPARTED) {
+            throw new IllegalArgumentException("账号状态为 " + user.getStatus() + "，不能重置密码");
+        }
+    }
+
+    /**
+     * 记录一次密码失败，按全局安全设置的失败窗口计数，达到上限时锁定账号。
+     */
+    private boolean recordPasswordFailure(UserAccount user, UserCredential credential) {
+        int window = Math.max(1, securitySettings.general().loginFailureWindowMinutes());
+        credential.markFailed(Duration.ofMinutes(window));
+        int maxAttempts = authenticationPolicyService.currentPasswordMaxFailureAttempts();
+        boolean locked = user.getStatus() == AccountStatus.ACTIVE && credential.getFailedAttempts() >= maxAttempts;
+        if (locked) {
+            user.lock();
+            credential.markLocked();
+        }
+        return locked;
+    }
+
+    private String requireUniqueUsername(String username) {
+        if (username == null || username.isBlank()) {
+            throw new IllegalArgumentException("Username is required");
+        }
+        String normalized = username.trim();
+        if (users.existsByUsername(normalized)) {
+            throw new ConflictException("用户名已存在: " + normalized);
+        }
+        return normalized;
+    }
+
+    /**
+     * 规范化手机号并校验唯一，空值表示不设置手机号。
+     */
+    private String uniqueMobile(String mobile, UUID userId) {
+        if (mobile == null || mobile.isBlank()) {
+            return null;
+        }
+        String normalized = SmsVerificationService.normalizeMobile(mobile);
+        boolean taken = userId == null ? users.existsByMobile(normalized) : users.existsByMobileAndIdNot(normalized, userId);
+        if (taken) {
+            throw new ConflictException("该手机号已被其他用户使用");
+        }
+        return normalized;
+    }
+
+    /**
+     * 当前请求所属的登录会话 ID，由会话令牌过滤器写入认证详情。
+     */
+    private UUID currentSessionId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication != null && authentication.getDetails() instanceof UUID sessionId ? sessionId : null;
     }
 
     private void validatePasswordComplexity(String password, String complexity) {
@@ -1115,6 +1242,34 @@ public class UserService {
         }
     }
 
+    private static final int ILLEGAL_SEQUENCE_LENGTH = 4;
+    private static final List<String> ILLEGAL_SEQUENCE_SOURCES = List.of(
+        "abcdefghijklmnopqrstuvwxyz",
+        "01234567890",
+        "`1234567890-=",
+        "qwertyuiop[]\\",
+        "asdfghjkl;'",
+        "zxcvbnm,./",
+        "1qaz2wsx3edc4rfv5tgb6yhn7ujm8ik,9ol.0p;/",
+        "!@#$%^&*()_+");
+
+    // 开启非法字符序列检查时，禁止出现 4 位及以上的键盘相邻、连续字母或连续数字序列（正序或倒序）。
+    private void validateIllegalSequence(String password) {
+        if (!authenticationPolicyService.currentPasswordIllegalSequenceCheckEnabled()) {
+            return;
+        }
+        String normalized = password.toLowerCase();
+        for (int index = 0; index + ILLEGAL_SEQUENCE_LENGTH <= normalized.length(); index++) {
+            String window = normalized.substring(index, index + ILLEGAL_SEQUENCE_LENGTH);
+            String reversed = new StringBuilder(window).reverse().toString();
+            for (String source : ILLEGAL_SEQUENCE_SOURCES) {
+                if (source.contains(window) || source.contains(reversed)) {
+                    throw new IllegalArgumentException("Password cannot contain keyboard or alphabetical sequences such as \"" + window + "\"");
+                }
+            }
+        }
+    }
+
     private boolean containsSensitiveUserValue(String password, String value) {
         return value != null && value.length() >= 3 && password.contains(value.toLowerCase());
     }
@@ -1181,7 +1336,7 @@ public class UserService {
             factor.isVerified(),
             factor.isEnabled(),
             factor.getType() == MfaFactorType.TOTP && !factor.isVerified() ? factor.getSecret() : null,
-            factor.getType() == MfaFactorType.TOTP && !factor.isVerified() ? provisioningUri(factor) : null);
+            factor.getType() == MfaFactorType.TOTP && !factor.isVerified() ? mfaVerification.provisioningUri(factor) : null);
     }
 
     private MfaChallengeDetailResponse toChallengeDetailResponse(MfaChallenge challenge) {
@@ -1223,139 +1378,5 @@ public class UserService {
             || contains(challenge.getFactor().getName(), keyword)
             || challenge.getFactor().getType().name().toLowerCase().contains(keyword)
             || challenge.getStatus().name().toLowerCase().contains(keyword);
-    }
-
-    private String generateMfaCode() {
-        String token = tokens.generateToken(4);
-        int numeric = Math.floorMod(token.hashCode(), 1_000_000);
-        return String.format("%06d", numeric);
-    }
-
-    private String requireEmail(UserAccount user) {
-        if (user.getEmail() == null || user.getEmail().isBlank()) {
-            throw new IllegalArgumentException("User email is required for EMAIL MFA factor: " + user.getUsername());
-        }
-        return user.getEmail();
-    }
-
-    private String deliveryHint(MfaFactor factor) {
-        return switch (factor.getType()) {
-            case SMS -> "sms";
-            case EMAIL -> "email";
-            case TOTP -> "authenticator";
-            case WEBAUTHN -> "webauthn";
-            case RECOVERY_CODE -> "recovery-code";
-        };
-    }
-
-    private String generateRecoveryCode() {
-        String raw = tokens.generateToken(9)
-            .replaceAll("[^A-Za-z0-9]", "")
-            .toUpperCase();
-        String padded = (raw + "ABCDEFGHJKLMNPQRSTUVWXYZ23456789").substring(0, 12);
-        return padded.substring(0, 4) + "-" + padded.substring(4, 8) + "-" + padded.substring(8, 12);
-    }
-
-    private boolean consumeRecoveryCode(MfaFactor factor, String code) {
-        if (code == null || code.isBlank()) {
-            return false;
-        }
-        String hash = tokens.sha256(code.toUpperCase());
-        List<String> remaining = factor.getSecret() == null || factor.getSecret().isBlank()
-            ? List.of()
-            : java.util.Arrays.stream(factor.getSecret().split("\\R"))
-                .filter(item -> !item.isBlank())
-                .toList();
-        if (!remaining.contains(hash)) {
-            return false;
-        }
-        factor.replaceSecret(remaining.stream()
-            .filter(item -> !item.equals(hash))
-            .collect(java.util.stream.Collectors.joining("\n")));
-        return true;
-    }
-
-    private String generateTotpSecret() {
-        byte[] bytes = new byte[20];
-        SECURE_RANDOM.nextBytes(bytes);
-        return base32(bytes);
-    }
-
-    private boolean verifyTotp(String secret, String code, Instant now) {
-        if (secret == null || secret.isBlank() || code == null || !code.matches("\\d{6}")) {
-            return false;
-        }
-        long counter = now.getEpochSecond() / TOTP_STEP_SECONDS;
-        for (int offset = -TOTP_WINDOW; offset <= TOTP_WINDOW; offset++) {
-            if (code.equals(totp(secret, counter + offset))) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private String totp(String secret, long counter) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA1");
-            mac.init(new SecretKeySpec(base32Decode(secret), "HmacSHA1"));
-            byte[] hash = mac.doFinal(ByteBuffer.allocate(Long.BYTES).putLong(counter).array());
-            int offset = hash[hash.length - 1] & 0x0f;
-            int binary = ((hash[offset] & 0x7f) << 24)
-                | ((hash[offset + 1] & 0xff) << 16)
-                | ((hash[offset + 2] & 0xff) << 8)
-                | (hash[offset + 3] & 0xff);
-            return String.format("%06d", binary % 1_000_000);
-        } catch (GeneralSecurityException ex) {
-            throw new IllegalStateException("Unable to verify TOTP code", ex);
-        }
-    }
-
-    private String provisioningUri(MfaFactor factor) {
-        String label = url("系统:" + factor.getUser().getUsername());
-        String issuer = url("系统");
-        return "otpauth://totp/" + label + "?secret=" + factor.getSecret() + "&issuer=" + issuer + "&algorithm=SHA1&digits=6&period=30";
-    }
-
-    private String url(String value) {
-        return URLEncoder.encode(value, StandardCharsets.UTF_8);
-    }
-
-    private String base32(byte[] bytes) {
-        String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-        StringBuilder encoded = new StringBuilder();
-        int buffer = 0;
-        int bitsLeft = 0;
-        for (byte value : bytes) {
-            buffer = (buffer << 8) | (value & 0xff);
-            bitsLeft += 8;
-            while (bitsLeft >= 5) {
-                encoded.append(alphabet.charAt((buffer >> (bitsLeft - 5)) & 31));
-                bitsLeft -= 5;
-            }
-        }
-        if (bitsLeft > 0) {
-            encoded.append(alphabet.charAt((buffer << (5 - bitsLeft)) & 31));
-        }
-        return encoded.toString();
-    }
-
-    private byte[] base32Decode(String value) {
-        String normalized = value.replace(" ", "").toUpperCase();
-        int buffer = 0;
-        int bitsLeft = 0;
-        java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
-        for (char ch : normalized.toCharArray()) {
-            int index = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".indexOf(ch);
-            if (index < 0) {
-                throw new IllegalArgumentException("Invalid TOTP secret");
-            }
-            buffer = (buffer << 5) | index;
-            bitsLeft += 5;
-            if (bitsLeft >= 8) {
-                output.write((buffer >> (bitsLeft - 8)) & 0xff);
-                bitsLeft -= 8;
-            }
-        }
-        return output.toByteArray();
     }
 }

@@ -33,7 +33,7 @@ public class ScimDiscoveryController {
         return new ScimServiceProviderConfigResponse(
             SERVICE_PROVIDER_SCHEMA,
             "/README.md",
-            new ScimFeature(false),
+            new ScimFeature(true),
             new ScimFeature(false),
             new ScimFeature(true),
             new ScimFeature(false),

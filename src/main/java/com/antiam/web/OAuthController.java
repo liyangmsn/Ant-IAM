@@ -11,13 +11,18 @@ import static com.antiam.dto.OAuthDtos.TokenIntrospectionResponse;
 import static com.antiam.dto.OAuthDtos.TokenResponse;
 import static com.antiam.dto.OAuthDtos.UserInfoResponse;
 
+import com.antiam.common.OAuthException;
+import com.antiam.config.IssuerResolver;
 import com.antiam.service.OAuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.security.Principal;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class OAuthController {
 
     private final OAuthService oauth;
+    private final IssuerResolver issuerResolver;
 
     /**
      * 输出 OIDC Discovery 文档。
@@ -45,7 +51,7 @@ public class OAuthController {
     @Operation(summary = "OIDC Discovery", description = "返回 OpenID Connect Provider 元数据。")
     @GetMapping("/.well-known/openid-configuration")
     OidcDiscoveryResponse discovery(HttpServletRequest request) {
-        return oauth.discovery(request.getRequestURL().toString().replace("/.well-known/openid-configuration", ""));
+        return oauth.discovery(issuerResolver.resolve(request));
     }
 
     /**
@@ -70,19 +76,21 @@ public class OAuthController {
     /**
      * OAuth2 token 端点，签发访问令牌和刷新令牌。
      */
-    @Operation(summary = "OAuth2 Token", description = "通过授权码或刷新令牌换取 access_token、refresh_token 和 id_token。")
+    @Operation(summary = "OAuth2 Token", description = "通过授权码或刷新令牌换取 access_token、refresh_token 和 id_token；客户端认证支持 client_secret_basic 与 client_secret_post。")
     @PostMapping(value = "/oauth2/token", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     TokenResponse token(
         @Parameter(description = "授权类型，例如 authorization_code 或 refresh_token") @RequestParam("grant_type") String grantType,
         @Parameter(description = "授权码") @RequestParam(required = false) String code,
         @Parameter(description = "授权请求中的回调地址") @RequestParam(value = "redirect_uri", required = false) String redirectUri,
-        @Parameter(description = "OAuth 客户端 ID") @RequestParam("client_id") String clientId,
-        @Parameter(description = "OAuth 客户端密钥") @RequestParam("client_secret") String clientSecret,
+        @Parameter(description = "OAuth 客户端 ID（client_secret_post）") @RequestParam(value = "client_id", required = false) String clientId,
+        @Parameter(description = "OAuth 客户端密钥（client_secret_post）") @RequestParam(value = "client_secret", required = false) String clientSecret,
         @Parameter(description = "PKCE code verifier") @RequestParam(value = "code_verifier", required = false) String codeVerifier,
         @Parameter(description = "刷新令牌") @RequestParam(value = "refresh_token", required = false) String refreshToken,
+        @Parameter(description = "HTTP Basic 客户端认证（client_secret_basic）") @RequestHeader(value = "Authorization", required = false) String authorization,
         HttpServletRequest request
     ) {
-        return oauth.token(grantType, code, redirectUri, clientId, clientSecret, codeVerifier, refreshToken, issuer(request));
+        ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
+        return oauth.token(grantType, code, redirectUri, client.id(), client.secret(), codeVerifier, refreshToken, issuerResolver.resolve(request));
     }
 
     /**
@@ -139,7 +147,7 @@ public class OAuthController {
      */
     @Operation(summary = "OIDC UserInfo", description = "根据 Bearer access_token 返回当前用户声明。")
     @GetMapping("/oauth2/userinfo")
-    UserInfoResponse userInfo(@Parameter(description = "Bearer access_token") @RequestHeader("Authorization") String authorizationHeader) {
+    UserInfoResponse userInfo(@Parameter(description = "Bearer access_token") @RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
         return oauth.userInfo(authorizationHeader);
     }
 
@@ -161,11 +169,13 @@ public class OAuthController {
     @Operation(summary = "Token Introspection", description = "校验 token 是否有效，并返回客户端和用户等元信息。")
     @PostMapping(value = "/oauth2/introspect", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     TokenIntrospectionResponse introspect(
-        @Parameter(description = "待校验 token") @RequestParam String token,
-        @Parameter(description = "OAuth 客户端 ID") @RequestParam("client_id") String clientId,
-        @Parameter(description = "OAuth 客户端密钥") @RequestParam("client_secret") String clientSecret
+        @Parameter(description = "待校验 token") @RequestParam(required = false) String token,
+        @Parameter(description = "OAuth 客户端 ID（client_secret_post）") @RequestParam(value = "client_id", required = false) String clientId,
+        @Parameter(description = "OAuth 客户端密钥（client_secret_post）") @RequestParam(value = "client_secret", required = false) String clientSecret,
+        @Parameter(description = "HTTP Basic 客户端认证（client_secret_basic）") @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
-        return oauth.introspect(token, clientId, clientSecret);
+        ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
+        return oauth.introspect(token, client.id(), client.secret());
     }
 
     /**
@@ -174,12 +184,14 @@ public class OAuthController {
     @Operation(summary = "Token Revocation", description = "按 OAuth2 Revocation 规范撤销 access_token 或 refresh_token。")
     @PostMapping(value = "/oauth2/revoke", consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE)
     RevokeTokenResponse revokeToken(
-        @Parameter(description = "待撤销 token") @RequestParam String token,
+        @Parameter(description = "待撤销 token") @RequestParam(required = false) String token,
         @Parameter(description = "token 类型提示，例如 access_token 或 refresh_token") @RequestParam(value = "token_type_hint", required = false) String tokenTypeHint,
-        @Parameter(description = "OAuth 客户端 ID") @RequestParam("client_id") String clientId,
-        @Parameter(description = "OAuth 客户端密钥") @RequestParam("client_secret") String clientSecret
+        @Parameter(description = "OAuth 客户端 ID（client_secret_post）") @RequestParam(value = "client_id", required = false) String clientId,
+        @Parameter(description = "OAuth 客户端密钥（client_secret_post）") @RequestParam(value = "client_secret", required = false) String clientSecret,
+        @Parameter(description = "HTTP Basic 客户端认证（client_secret_basic）") @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
-        return oauth.revokeToken(token, tokenTypeHint, clientId, clientSecret);
+        ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
+        return oauth.revokeToken(token, tokenTypeHint, client.id(), client.secret());
     }
 
     /**
@@ -223,9 +235,34 @@ public class OAuthController {
         return oauth.revokeStoredToken(tokenType, tokenId, principal.getName());
     }
 
-    private String issuer(HttpServletRequest request) {
-        String url = request.getRequestURL().toString();
-        String path = request.getRequestURI();
-        return url.substring(0, url.length() - path.length());
+    /**
+     * 解析客户端凭据：Basic 头（RFC 6749 §2.3.1，id/secret 先做 form 编码）与表单参数二选一，不允许同时携带密钥。
+     */
+    private ClientCredentials clientCredentials(String authorization, String clientId, String clientSecret) {
+        if (authorization == null || !authorization.regionMatches(true, 0, "Basic ", 0, "Basic ".length())) {
+            return new ClientCredentials(clientId, clientSecret);
+        }
+        if (clientSecret != null && !clientSecret.isBlank()) {
+            throw OAuthException.invalidRequest("Client authentication must use only one method");
+        }
+        String decoded;
+        try {
+            decoded = new String(Base64.getDecoder().decode(authorization.substring("Basic ".length()).trim()), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException ex) {
+            throw OAuthException.invalidClient("Malformed Basic client credentials");
+        }
+        int separator = decoded.indexOf(':');
+        if (separator < 0) {
+            throw OAuthException.invalidClient("Malformed Basic client credentials");
+        }
+        String basicId = URLDecoder.decode(decoded.substring(0, separator), StandardCharsets.UTF_8);
+        String basicSecret = URLDecoder.decode(decoded.substring(separator + 1), StandardCharsets.UTF_8);
+        if (clientId != null && !clientId.isBlank() && !clientId.equals(basicId)) {
+            throw OAuthException.invalidRequest("client_id does not match Basic client credentials");
+        }
+        return new ClientCredentials(basicId, basicSecret);
+    }
+
+    private record ClientCredentials(String id, String secret) {
     }
 }

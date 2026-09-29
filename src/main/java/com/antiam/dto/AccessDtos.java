@@ -8,6 +8,8 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -19,8 +21,11 @@ public final class AccessDtos {
     }
 
     public record CreatePermissionRequest(
-        @Schema(description = "权限编码，建议使用 resource:action 格式", example = "user:read")
-        @NotBlank String code,
+        @Schema(description = "权限编码，建议使用 resource:action 格式；仅允许字母、数字和 _ . : -", example = "user:read")
+        @NotBlank
+        @Size(max = 128)
+        @Pattern(regexp = "[A-Za-z0-9][A-Za-z0-9_.:-]*", message = "只能包含字母、数字和 _ . : -，且以字母或数字开头")
+        String code,
         @Schema(description = "权限名称", example = "查看用户")
         @NotBlank String name,
         @Schema(description = "权限描述")
@@ -102,8 +107,20 @@ public final class AccessDtos {
         @Schema(description = "应用分组 UUID；为空表示未分组")
         UUID groupId,
         @Schema(description = "授权范围；为空时保持不变")
-        ApplicationAuthorizationType authorizationType
+        ApplicationAuthorizationType authorizationType,
+        @Schema(description = "是否允许用户在门户自助申请访问；为空时保持不变")
+        Boolean selfServiceAccessRequestEnabled
     ) {
+        public UpdateApplicationRequest(
+            String name,
+            ApplicationProtocol protocol,
+            String loginUrl,
+            String description,
+            UUID groupId,
+            ApplicationAuthorizationType authorizationType
+        ) {
+            this(name, protocol, loginUrl, description, groupId, authorizationType, null);
+        }
     }
 
     public record CreateApplicationGroupRequest(
@@ -142,8 +159,8 @@ public final class AccessDtos {
         Set<String> redirectUris,
         @Schema(description = "OAuth/OIDC 授权模式")
         Set<String> grantTypes,
-        @Schema(description = "是否要求 PKCE")
-        boolean pkceRequired,
+        @Schema(description = "是否要求 PKCE；为空时沿用已有配置，新建默认不要求")
+        Boolean pkceRequired,
         @Schema(description = "允许的登出回调地址")
         Set<String> postLogoutRedirectUris,
         @Schema(description = "登录发起地址")

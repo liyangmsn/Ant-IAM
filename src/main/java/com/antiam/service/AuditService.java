@@ -69,14 +69,15 @@ public class AuditService {
         int limit
     ) {
         int size = Math.clamp(limit, 1, 500);
-        int pageIndex = Math.max(page, 1) - 1;
+        // 偏移量最终按 int 传给数据库，页码过大时截断，避免溢出成负数。
+        int pageIndex = Math.min(Math.max(page, 1) - 1, Integer.MAX_VALUE / size - 1);
         Specification<AuditEvent> spec = specification(actor, action, targetType, targetId, from, to, keyword);
         List<AuditEventResponse> resources = auditEvents
             .findAll(spec, PageRequest.of(pageIndex, size, Sort.by(Sort.Direction.DESC, "createdAt")))
             .stream()
             .map(auditMapper::toResponse)
             .toList();
-        return new AuditEventListResponse((int) auditEvents.count(spec), size, resources);
+        return new AuditEventListResponse((int) Math.min(auditEvents.count(spec), Integer.MAX_VALUE), size, resources);
     }
 
     @Transactional(readOnly = true)
@@ -132,13 +133,17 @@ public class AuditService {
                 predicates.add(builder.lessThanOrEqualTo(root.get("createdAt"), to));
             }
             if (keyword != null && !keyword.isBlank()) {
-                String pattern = "%" + keyword.trim().toLowerCase() + "%";
+                // 转义 LIKE 通配符，关键字中的 % 和 _ 按字面匹配。
+                String pattern = "%" + keyword.trim().toLowerCase()
+                    .replace("\\", "\\\\")
+                    .replace("%", "\\%")
+                    .replace("_", "\\_") + "%";
                 predicates.add(builder.or(
-                    builder.like(builder.lower(root.get("actor")), pattern),
-                    builder.like(builder.lower(root.get("action")), pattern),
-                    builder.like(builder.lower(root.get("targetType")), pattern),
-                    builder.like(builder.lower(root.get("targetId")), pattern),
-                    builder.like(builder.lower(root.get("detail")), pattern)));
+                    builder.like(builder.lower(root.get("actor")), pattern, '\\'),
+                    builder.like(builder.lower(root.get("action")), pattern, '\\'),
+                    builder.like(builder.lower(root.get("targetType")), pattern, '\\'),
+                    builder.like(builder.lower(root.get("targetId")), pattern, '\\'),
+                    builder.like(builder.lower(root.get("detail")), pattern, '\\')));
             }
             return builder.and(predicates.toArray(Predicate[]::new));
         };
@@ -148,6 +153,8 @@ public class AuditService {
         if (value == null) {
             return "";
         }
-        return "\"" + value.replace("\"", "\"\"") + "\"";
+        // 以 = + - @ 或制表符、回车开头的单元格会被表格软件当作公式执行，前置单引号按文本处理。
+        String safe = !value.isEmpty() && "=+-@\t\r".indexOf(value.charAt(0)) >= 0 ? "'" + value : value;
+        return "\"" + safe.replace("\"", "\"\"") + "\"";
     }
 }

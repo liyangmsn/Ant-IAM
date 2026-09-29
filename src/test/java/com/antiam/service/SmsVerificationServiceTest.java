@@ -61,7 +61,7 @@ class SmsVerificationServiceTest {
     void failsWhenConfiguredSms4jChannelDoesNotExist() {
         SmsVerificationService service = new SmsVerificationService(org.mockito.Mockito.mock(com.antiam.repository.SystemSettingRepository.class), new com.fasterxml.jackson.databind.ObjectMapper());
         ReflectionTestUtils.setField(service, "smsBlendId", "missing-" + UUID.randomUUID());
-        ReflectionTestUtils.setField(service, "codeTtlSeconds", 300L);
+        ReflectionTestUtils.setField(service, "defaultCodeTtlSeconds", 300L);
 
         assertThatThrownBy(() -> service.sendVerificationCode("13800000000", "LOGIN"))
             .isInstanceOf(IllegalStateException.class)
@@ -77,7 +77,7 @@ class SmsVerificationServiceTest {
 
         SmsVerificationService service = new SmsVerificationService(org.mockito.Mockito.mock(com.antiam.repository.SystemSettingRepository.class), new com.fasterxml.jackson.databind.ObjectMapper());
         ReflectionTestUtils.setField(service, "smsBlendId", configId);
-        ReflectionTestUtils.setField(service, "codeTtlSeconds", 300L);
+        ReflectionTestUtils.setField(service, "defaultCodeTtlSeconds", 300L);
         return service;
     }
 

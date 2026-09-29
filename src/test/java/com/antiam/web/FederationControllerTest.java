@@ -5,6 +5,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.antiam.config.IssuerResolver;
 import com.antiam.dto.FederationDtos.JwtSsoTokenResponse;
 import com.antiam.dto.FederationDtos.JwtSsoVerificationResponse;
 import com.antiam.dto.FederationDtos.VerifyJwtTokenRequest;
@@ -18,7 +19,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 class FederationControllerTest {
 
     private final FederationService federation = mock(FederationService.class);
-    private final FederationController controller = new FederationController(federation);
+    private final FederationController controller = new FederationController(federation, new IssuerResolver(""));
     private final Principal principal = () -> "alice";
 
     @Test
@@ -56,11 +57,12 @@ class FederationControllerTest {
             Map.of("email", "alice@example.com"),
             null,
             null);
-        when(federation.verifyJwtSsoToken("signed-token")).thenReturn(expected);
+        when(federation.verifyJwtSsoToken("signed-token", "http://localhost", "checkout-app")).thenReturn(expected);
 
-        JwtSsoVerificationResponse response = controller.verifyJwtToken(new VerifyJwtTokenRequest("signed-token"));
+        JwtSsoVerificationResponse response = controller.verifyJwtToken(
+            new VerifyJwtTokenRequest("signed-token", "http://localhost", "checkout-app"));
 
         assertThat(response).isEqualTo(expected);
-        verify(federation).verifyJwtSsoToken("signed-token");
+        verify(federation).verifyJwtSsoToken("signed-token", "http://localhost", "checkout-app");
     }
 }

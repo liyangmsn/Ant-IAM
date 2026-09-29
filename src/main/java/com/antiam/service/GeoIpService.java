@@ -1,5 +1,7 @@
 package com.antiam.service;
 
+import com.antiam.common.ServiceUnavailableException;
+import com.antiam.domain.SettingValueType;
 import com.antiam.domain.SystemSetting;
 import com.antiam.repository.SystemSettingRepository;
 import com.maxmind.geoip2.DatabaseReader;
@@ -29,6 +31,9 @@ public class GeoIpService {
 
     private static final String SETTING_KEY = "geoip.provider";
     private static final String DATABASE_PATH_SETTING_KEY = "geoip.databasePath";
+    private static final String LICENSE_KEY_SETTING_KEY = "geoip.licenseKey";
+    private static final String SETTING_CATEGORY = "geo-ip";
+    private static final String MASKED_VALUE = "******";
     private static final String MAXMIND_PROVIDER = "maxmind";
     private static final String SYSTEM_PROVIDER = "system";
     private static final String CHINESE_LOCALE = "zh-CN";
@@ -60,7 +65,15 @@ public class GeoIpService {
             return null;
         }
         String ip = ipAddress.trim();
-        return usesMaxmind() ? maxmindLocation(ip) : systemLocation(ip);
+        if (!usesMaxmind()) {
+            return systemLocation(ip);
+        }
+        try {
+            return maxmindLocation(ip);
+        } catch (RuntimeException ex) {
+            // 数据库未配置或损坏时不影响登录与会话展示，回退到地址段分类。
+            return systemLocation(ip);
+        }
     }
 
     /**
@@ -86,13 +99,19 @@ public class GeoIpService {
             return new GeoIpLocation(ip, MAXMIND_PROVIDER, null, null, null, null);
         } catch (IOException ex) {
             throw new IllegalArgumentException("无法解析 IP 地址：" + ip, ex);
+        } catch (IllegalStateException ex) {
+            throw new ServiceUnavailableException("MaxMind 数据库不可用，请先配置数据库路径或下载数据库", ex);
         }
     }
 
     /**
      * 使用 MaxMind License Key 下载 GeoLite2-City 数据库到指定路径，并重新加载。
      */
-    public String updateDatabase(String licenseKey, String requestedPath) {
+    public String updateDatabase(String requestedLicenseKey, String requestedPath) {
+        // 未填写或提交掩码时使用已保存的 License Key。
+        String licenseKey = requestedLicenseKey == null || requestedLicenseKey.isBlank() || MASKED_VALUE.equals(requestedLicenseKey.trim())
+            ? settings.findBySettingKey(LICENSE_KEY_SETTING_KEY).map(SystemSetting::getSettingValue).orElse(null)
+            : requestedLicenseKey.trim();
         if (licenseKey == null || licenseKey.isBlank()) {
             throw new IllegalArgumentException("请输入 MaxMind License Key");
         }
@@ -135,7 +154,18 @@ public class GeoIpService {
             throw new IllegalStateException("GeoIP database download interrupted", ex);
         }
         resetReader();
+        saveSetting(LICENSE_KEY_SETTING_KEY, licenseKey, "MaxMind License Key", true);
+        saveSetting(DATABASE_PATH_SETTING_KEY, target.toString(), "MaxMind GeoLite2 City 数据库路径", false);
         return "GeoLite2-City 数据库已更新：" + target;
+    }
+
+    private void saveSetting(String key, String value, String description, boolean sensitive) {
+        settings.findBySettingKey(key).ifPresentOrElse(
+            setting -> {
+                setting.update(SETTING_CATEGORY, SettingValueType.STRING, value, description, sensitive);
+                settings.save(setting);
+            },
+            () -> settings.save(new SystemSetting(key, SETTING_CATEGORY, SettingValueType.STRING, value, description, sensitive)));
     }
 
     // 从 tar 流中取出 GeoLite2-City.mmdb 条目。

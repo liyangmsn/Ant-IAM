@@ -138,7 +138,7 @@ public class SystemSettingController {
      */
     @Operation(summary = "校验对象存储", description = "使用已保存的对象存储配置写入探测文件。")
     @PostMapping("/storage/validate")
-    IntegrationTestResponse validateStorage() {
-        return new IntegrationTestResponse(true, fileStorageService.validate());
+    IntegrationTestResponse validateStorage(Principal principal) {
+        return new IntegrationTestResponse(true, fileStorageService.validate(principal.getName()));
     }
 }

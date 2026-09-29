@@ -9,6 +9,7 @@ import static com.antiam.dto.UserDtos.ConsumePasswordResetTicketRequest;
 import static com.antiam.dto.UserDtos.CreatePasswordResetTicketRequest;
 import static com.antiam.dto.UserDtos.MfaChallengeDetailResponse;
 import static com.antiam.dto.UserDtos.MfaChallengeResponse;
+import static com.antiam.dto.UserDtos.MfaCodeRequest;
 import static com.antiam.dto.UserDtos.MfaFactorResponse;
 import static com.antiam.dto.UserDtos.PasswordResetTicketResponse;
 import static com.antiam.dto.UserDtos.PasswordResetTicketDetailResponse;
@@ -148,6 +149,17 @@ public class UserController {
     }
 
     /**
+     * 删除用户账号。
+     */
+    @Operation(summary = "删除用户", description = "删除用户账号，结束活跃会话并级联清理凭据、MFA、令牌和应用授权；不能删除当前登录账号。")
+    @DeleteMapping("/{userId}")
+    @PreAuthorize("@iamAuthorization.canAdministerUser(#userId, authentication)")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void delete(@Parameter(description = "用户 UUID") @PathVariable UUID userId, Principal principal) {
+        users.delete(userId, principal.getName());
+    }
+
+    /**
      * 暂停用户账号，并回收活跃访问能力。
      */
     @Operation(summary = "暂停用户", description = "暂停账号并禁用直接应用授权、结束活跃会话、撤销 OAuth token。")
@@ -263,7 +275,7 @@ public class UserController {
         if (!AVATAR_CONTENT_TYPES.contains(file.getContentType())) {
             throw new IllegalArgumentException("头像仅支持 PNG、JPEG、GIF 或 WebP 图片");
         }
-        StoredFile stored = fileStorage.store(file.getOriginalFilename(), file.getContentType(), file.getBytes());
+        StoredFile stored = fileStorage.store(file.getOriginalFilename(), file.getContentType(), file.getBytes(), principal.getName());
         return users.changeOwnAvatar(principal.getName(), stored.url());
     }
 
@@ -499,6 +511,21 @@ public class UserController {
         Principal principal
     ) {
         return users.startMfaChallenge(userId, request, principal.getName());
+    }
+
+    /**
+     * 用户自助校验本人发起的 MFA 挑战。
+     */
+    @Operation(summary = "校验本人 MFA 挑战", description = "用于绑定新因子后的首次验证，只能校验该用户自己发起的挑战。")
+    @PostMapping("/{userId}/mfa-challenges/{challengeId}/verify")
+    @PreAuthorize("@iamAuthorization.canManageUser(#userId, authentication)")
+    VerifyMfaChallengeResponse verifyOwnMfaChallenge(
+        @Parameter(description = "用户 UUID") @PathVariable UUID userId,
+        @Parameter(description = "MFA 挑战 ID") @PathVariable String challengeId,
+        @Valid @RequestBody MfaCodeRequest request,
+        Principal principal
+    ) {
+        return users.verifyOwnMfaChallenge(userId, challengeId, request.code(), principal.getName());
     }
 
     /**

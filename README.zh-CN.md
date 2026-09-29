@@ -114,19 +114,19 @@ docker compose --profile api up --build
 
 当 API 容器进入 healthy 状态时，`http://localhost:8080/actuator/health` 会返回 `UP`。
 
-默认 PostgreSQL 配置和 `docker-compose.yml` 保持一致：
+本地连接 `docker-compose.yml` 启动的 PostgreSQL 时设置以下变量（未设置时应用默认连接 `localhost:5432/ant_iam`，账号密码为 `ant_iam / ant_iam`）：
 
 ```text
-ANT_IAM_DATASOURCE_URL=jdbc:postgresql://localhost:5432/ant_iam
-ANT_IAM_DATASOURCE_USERNAME=ant_iam
-ANT_IAM_DATASOURCE_PASSWORD=ant_iam
+IAM_DATASOURCE_URL=jdbc:postgresql://localhost:5432/ant_iam
+IAM_DATASOURCE_USERNAME=ant_iam
+IAM_DATASOURCE_PASSWORD=ant_iam
 ```
 
 容器内 API 会使用 `jdbc:postgresql://postgres:5432/ant_iam` 连接 compose 网络中的 PostgreSQL。
 
 账号密码登录会从数据库中的 `user_accounts` 和 `user_credentials` 读取用户与密码凭据。首次安装的空库会初始化默认管理员账号 `admin / admin123456`，应用不再通过配置文件读取默认登录账号。
 
-短信验证码通过 sms4j 通道发送。默认启用 `fixed-code` 通道用于本地安装和联调，验证码为 `666666`，可通过 `ANT_IAM_SMS_FIXED_CODE` 覆盖；生产环境可以配置其它 sms4j 通道，并通过 `ANT_IAM_SMS_BLEND_ID` 切换。
+短信验证码通过 sms4j 通道发送。默认启用 `fixed-code` 通道用于本地安装和联调，验证码为 `666666`，可通过 `IAM_SMS_FIXED_CODE` 覆盖；生产环境可以配置其它 sms4j 通道，并通过 `IAM_SMS_BLEND_ID` 切换。
 
 OpenAPI JSON、Swagger UI、健康检查、OIDC discovery、JWKS、SAML metadata、CAS validation、JWT 验签以及 OAuth2 token/introspection/revocation 端点不需要登录，方便协议客户端直接访问；管理类 API 统一使用登录接口签发的 Bearer session token。
 
@@ -225,7 +225,7 @@ curl -H "Authorization: Bearer ${TOKEN}" \
 }
 ```
 
-企业微信应用需要开通通讯录部门和成员读取权限。连接器调用企业微信官方通讯录 API；如需切换私有化或代理网关，可配置 `endpoint`。身份源同步任务填写 `cronExpression` 后会由后台调度器定时执行，默认每 60 秒扫描一次到期任务，可通过 `ANT_IAM_IDENTITY_SYNC_SCHEDULER_DELAY_MS` 对应配置调整扫描间隔。
+企业微信应用需要开通通讯录部门和成员读取权限。连接器调用企业微信官方通讯录 API；如需切换私有化或代理网关，可配置 `endpoint`。身份源同步任务填写 `cronExpression` 后会由后台调度器定时执行，默认每 60 秒扫描一次到期任务，可通过 `IAM_IDENTITY_SYNC_SCHEDULER_DELAY_MS` 对应配置调整扫描间隔。
 
 第三方登录通过公开接口完成授权跳转和授权码回调；回调时应传回 `authorize` 返回的签名 `state`：
 

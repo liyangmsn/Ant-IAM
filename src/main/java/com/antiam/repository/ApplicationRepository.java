@@ -13,4 +13,6 @@ public interface ApplicationRepository extends JpaRepository<Application, UUID> 
     java.util.List<Application> findByGroupId(UUID groupId);
 
     long countByGroupId(UUID groupId);
+
+    boolean existsByTenantId(UUID tenantId);
 }

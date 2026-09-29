@@ -47,6 +47,27 @@ public class ScimOrganizationService {
         return toResponse(saved);
     }
 
+    /**
+     * 使用完整 SCIM Organization 资源更新组织名称和父级。
+     */
+    @Transactional
+    public ScimOrganizationResponse replace(UUID organizationId, CreateScimOrganizationRequest request, String actor) {
+        return toResponse(organizations.updateScimOrganization(
+            organizationId,
+            request.externalId(),
+            request.displayName(),
+            request.parentId(),
+            actor));
+    }
+
+    /**
+     * 删除 SCIM Organization；存在子组织或成员时拒绝删除。
+     */
+    @Transactional
+    public void delete(UUID organizationId, String actor) {
+        organizations.delete(organizationId, actor);
+    }
+
     private ScimOrganizationResponse toResponse(OrganizationResponse organization) {
         return new ScimOrganizationResponse(
             ORGANIZATION_SCHEMA,

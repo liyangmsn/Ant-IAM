@@ -99,6 +99,16 @@ public class TenantController {
     }
 
     /**
+     * 删除租户。
+     */
+    @Operation(summary = "删除租户", description = "删除租户及其租户级配置；租户下仍有用户、应用或身份源时返回 409。")
+    @DeleteMapping("/{tenantId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void delete(@Parameter(description = "租户 UUID") @PathVariable UUID tenantId, Principal principal) {
+        tenants.delete(tenantId, principal.getName());
+    }
+
+    /**
      * 查询租户级配置。
      */
     @Operation(summary = "查询租户配置", description = "查询指定租户下的配置项，支持分类、类型、敏感标记和关键字过滤。")

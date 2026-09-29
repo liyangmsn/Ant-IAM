@@ -2,9 +2,9 @@ spring:
   application:
     name: iam
   datasource:
-    url: ${IAM_DATASOURCE_URL:jdbc:postgresql://localhost:5432/js_iam}
-    username: ${IAM_DATASOURCE_USERNAME:js_iam}
-    password: ${IAM_DATASOURCE_PASSWORD:js_iam}
+    url: ${IAM_DATASOURCE_URL:jdbc:postgresql://localhost:5432/ant_iam}
+    username: ${IAM_DATASOURCE_USERNAME:ant_iam}
+    password: ${IAM_DATASOURCE_PASSWORD:ant_iam}
   jpa:
     hibernate:
       ddl-auto: validate
@@ -24,6 +24,8 @@ spring:
       enabled: true
 server:
   port: ${IAM_PORT:8080}
+  # 部署在 nginx / Ingress 之后时，按 X-Forwarded-* 头还原对外协议、域名与端口。
+  forward-headers-strategy: framework
 
 management:
   endpoints:
@@ -32,6 +34,8 @@ management:
         include: health,info,metrics
 
 iam:
+  # 对外访问地址（OIDC issuer / SAML entityID / JWT iss），为空时按请求地址推导。
+  issuer: ${IAM_ISSUER:}
   geoip:
     database-path: ${IAM_GEOIP_DATABASE_PATH:}
 

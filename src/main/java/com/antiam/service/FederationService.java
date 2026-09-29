@@ -8,6 +8,7 @@ import static com.antiam.dto.FederationDtos.SamlAssertionResponse;
 import static com.antiam.dto.FederationDtos.SamlMetadataResponse;
 
 import com.antiam.common.NotFoundException;
+import com.antiam.common.SamlSignatures;
 import com.antiam.common.TokenSupport;
 import com.antiam.domain.ApplicationProtocol;
 import com.antiam.domain.ApplicationSsoConfig;
@@ -21,6 +22,7 @@ import com.antiam.repository.AuthenticationEventRepository;
 import com.antiam.repository.CasServiceTicketRepository;
 import com.antiam.repository.SamlAssertionRepository;
 import com.antiam.repository.UserAccountRepository;
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -57,17 +59,25 @@ public class FederationService {
         return new SamlMetadataResponse(issuer, issuer + "/saml2/sso", "signing", "SAML2.0");
     }
 
-    // 生成可供服务提供方导入的 SAML 元数据 XML。
+    // 生成可供服务提供方导入的 SAML 元数据 XML，包含用于校验断言签名的 X.509 证书。
     public String samlMetadataXml(String issuer) {
+        String certificate = encodedCertificate(jwtService.activeSigningMaterial().certificate());
         return """
             <?xml version="1.0" encoding="UTF-8"?>
             <md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="%s">
-              <md:IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+              <md:IDPSSODescriptor WantAuthnRequestsSigned="false" protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+                <md:KeyDescriptor use="signing">
+                  <ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+                    <ds:X509Data>
+                      <ds:X509Certificate>%s</ds:X509Certificate>
+                    </ds:X509Data>
+                  </ds:KeyInfo>
+                </md:KeyDescriptor>
                 <md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified</md:NameIDFormat>
                 <md:SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="%s/saml2/sso/xml"/>
               </md:IDPSSODescriptor>
             </md:EntityDescriptor>
-            """.formatted(xml(issuer), xml(issuer));
+            """.formatted(xml(issuer), certificate, xml(issuer));
     }
 
     @Transactional
@@ -114,9 +124,10 @@ public class FederationService {
     }
 
     @Transactional
-    // 将签发的 SAML 断言包装为标准 SAML Response XML。
+    // 将签发的 SAML 断言包装为标准 SAML Response XML，并使用当前签名密钥对断言做 enveloped 签名。
     public String issueSamlResponseXml(String entityId, String username, String issuer) {
         SamlAssertionResponse assertion = issueSamlAssertion(entityId, username, issuer);
+        Instant issueInstant = assertion.notBefore();
         String attributes = assertion.attributes().entrySet().stream()
             .map(entry -> """
                     <saml:Attribute Name="%s">
@@ -124,7 +135,7 @@ public class FederationService {
                     </saml:Attribute>
                 """.formatted(xml(entry.getKey()), xml(entry.getValue())))
             .collect(java.util.stream.Collectors.joining());
-        return """
+        String response = """
             <?xml version="1.0" encoding="UTF-8"?>
             <samlp:Response xmlns:samlp="urn:oasis:names:tc:SAML:2.0:protocol"
                             xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion"
@@ -149,6 +160,11 @@ public class FederationService {
                     <saml:Audience>%s</saml:Audience>
                   </saml:AudienceRestriction>
                 </saml:Conditions>
+                <saml:AuthnStatement AuthnInstant="%s" SessionIndex="%s">
+                  <saml:AuthnContext>
+                    <saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef>
+                  </saml:AuthnContext>
+                </saml:AuthnStatement>
                 <saml:AttributeStatement>
             %s
                 </saml:AttributeStatement>
@@ -156,11 +172,11 @@ public class FederationService {
             </samlp:Response>
             """.formatted(
             xml(assertion.assertionId()),
-            Instant.now(),
+            issueInstant,
             xml(assertion.acsUrl()),
             xml(assertion.issuer()),
             xml(assertion.assertionId()),
-            Instant.now(),
+            issueInstant,
             xml(assertion.issuer()),
             xml(assertion.subject()),
             assertion.notOnOrAfter(),
@@ -168,7 +184,11 @@ public class FederationService {
             assertion.notBefore(),
             assertion.notOnOrAfter(),
             xml(assertion.audience()),
+            issueInstant,
+            xml(assertion.assertionId()),
             attributes);
+        JwtService.SigningMaterial signing = jwtService.activeSigningMaterial();
+        return SamlSignatures.signAssertion(response, assertion.assertionId(), signing.privateKey(), signing.certificate());
     }
 
     @Transactional
@@ -200,22 +220,68 @@ public class FederationService {
         return new CasLoginResponse(buildRedirect(service, ticket), ticket, service);
     }
 
+    @Transactional(readOnly = true)
+    // CAS 登出后仅允许跳回已启用 CAS 应用同源的地址，避免开放重定向。
+    public String resolveCasLogoutRedirect(String service) {
+        URI target = parseHttpUri(service);
+        if (target == null) {
+            return null;
+        }
+        boolean registered = ssoConfigs.findAll().stream()
+            .filter(config -> config.isEnabled() && config.getProtocol() == ApplicationProtocol.CAS)
+            .map(config -> parseHttpUri(config.getCasServiceUrl()))
+            .anyMatch(registeredUri -> registeredUri != null && sameOrigin(registeredUri, target));
+        return registered ? service : null;
+    }
+
+    private static URI parseHttpUri(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(value.trim());
+            String scheme = uri.getScheme();
+            return uri.getHost() != null && ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) ? uri : null;
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private static boolean sameOrigin(URI left, URI right) {
+        return left.getScheme().equalsIgnoreCase(right.getScheme())
+            && left.getHost().equalsIgnoreCase(right.getHost())
+            && effectivePort(left) == effectivePort(right);
+    }
+
+    private static int effectivePort(URI uri) {
+        if (uri.getPort() >= 0) {
+            return uri.getPort();
+        }
+        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
+    }
+
     @Transactional
-    // 校验 CAS 服务票据并消费票据，成功后返回用户属性。
+    // 校验 CAS 服务票据；按 CAS 协议无论校验成功与否票据都会被消费，成功后返回用户属性。
     public CasServiceValidationResponse validateCasTicket(String service, String ticket) {
+        if (service == null || service.isBlank() || ticket == null || ticket.isBlank()) {
+            return failure(service, "INVALID_REQUEST", "Both service and ticket are required");
+        }
         CasServiceTicket stored = casTickets.findByTicketHash(tokens.sha256(ticket))
             .orElse(null);
         if (stored == null) {
             return failure(service, "INVALID_TICKET", "Ticket not found");
         }
-        if (!stored.getServiceUrl().equals(service)) {
-            return failure(service, "INVALID_SERVICE", "Ticket is not valid for this service");
-        }
         if (!stored.isUsable(Instant.now())) {
             return failure(service, "INVALID_TICKET", "Ticket is expired or already consumed");
         }
         stored.consume();
+        if (!stored.getServiceUrl().equals(service)) {
+            return failure(service, "INVALID_SERVICE", "Ticket is not valid for this service");
+        }
         UserAccount user = stored.getUser();
+        if (!access.decideApplicationAccess(stored.getApplication().getId(), user.getId()).allowed()) {
+            return failure(service, "INVALID_TICKET", "User is no longer allowed to access this service");
+        }
         return new CasServiceValidationResponse(true, user.getUsername(), service, userAttributes(user), null, null);
     }
 
@@ -233,7 +299,7 @@ public class FederationService {
         }
         String attributes = response.attributes().entrySet().stream()
             .map(entry -> "<cas:%s>%s</cas:%s>".formatted(xmlName(entry.getKey()), xml(entry.getValue()), xmlName(entry.getKey())))
-            .collect(java.util.stream.Collectors.joining("\n        "));
+            .collect(java.util.stream.Collectors.joining("\n      "));
         return """
             <?xml version="1.0" encoding="UTF-8"?>
             <cas:serviceResponse xmlns:cas="http://www.yale.edu/tp/cas">
@@ -283,9 +349,9 @@ public class FederationService {
     }
 
     @Transactional(readOnly = true)
-    // 校验 JWT 签名与有效期，校验失败时通过 failureCode 说明原因而不抛异常。
-    public JwtSsoVerificationResponse verifyJwtSsoToken(String token) {
-        JwtService.TokenVerification verification = jwtService.verify(token);
+    // 校验 JWT 签名、有效期以及可选的 issuer / audience，校验失败时通过 failureCode 说明原因而不抛异常。
+    public JwtSsoVerificationResponse verifyJwtSsoToken(String token, String expectedIssuer, String expectedAudience) {
+        JwtService.TokenVerification verification = jwtService.verify(token, blankToNull(expectedIssuer), blankToNull(expectedAudience));
         return new JwtSsoVerificationResponse(
             verification.valid(),
             verification.keyId(),
@@ -396,6 +462,18 @@ public class FederationService {
     private String buildRedirect(String service, String ticket) {
         String separator = service.contains("?") ? "&" : "?";
         return service + separator + "ticket=" + URLEncoder.encode(ticket, StandardCharsets.UTF_8);
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String encodedCertificate(java.security.cert.X509Certificate certificate) {
+        try {
+            return java.util.Base64.getEncoder().encodeToString(certificate.getEncoded());
+        } catch (java.security.cert.CertificateEncodingException ex) {
+            throw new IllegalStateException("Unable to encode signing certificate", ex);
+        }
     }
 
     private String nullToEmpty(String value) {

@@ -37,7 +37,7 @@ class OAuthDtosTest {
             java.util.List.of("openid"),
             java.util.List.of("S256"),
             java.util.List.of("client_secret_post"),
-            java.util.Map.of("standard", java.util.List.of("sub"))));
+            java.util.List.of("sub")));
 
         assertThat(json).contains("\"authorization_endpoint\":\"authorization\"");
         assertThat(json).contains("\"jwks_uri\":\"jwks\"");
@@ -53,10 +53,25 @@ class OAuthDtosTest {
 
     @Test
     void serializesIntrospectionWithStandardFieldNames() {
-        String json = mapper.writeValueAsString(new TokenIntrospectionResponse(true, "client", "alice", "sub", "Bearer", "openid", 123));
+        String json = mapper.writeValueAsString(new TokenIntrospectionResponse(true, "client", "alice", "sub", "Bearer", "openid", 123L, 100L));
 
         assertThat(json).contains("\"client_id\":\"client\"");
+        assertThat(json).contains("\"iat\":100");
         assertThat(json).contains("\"token_type\":\"Bearer\"");
         assertThat(json).doesNotContain("clientId");
+    }
+
+    @Test
+    void serializesInactiveIntrospectionAsActiveFlagOnly() {
+        String json = mapper.writeValueAsString(TokenIntrospectionResponse.inactive());
+
+        assertThat(json).isEqualTo("{\"active\":false}");
+    }
+
+    @Test
+    void omitsAbsentTokenResponseFields() {
+        String json = mapper.writeValueAsString(new TokenResponse("access", "Bearer", 3600, null, null, "profile"));
+
+        assertThat(json).doesNotContain("refresh_token").doesNotContain("id_token");
     }
 }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import java.util.List;
 import java.util.UUID;
 
@@ -113,6 +114,25 @@ public final class ScimDtos {
         String externalId,
         String displayName,
         UUID parentId
+    ) {
+    }
+
+    public record ScimPatchOperation(
+        @Schema(description = "操作类型：add、replace 或 remove", example = "replace")
+        @NotBlank String op,
+        @Schema(description = "属性路径；为空时 value 为属性对象", example = "active")
+        String path,
+        @Schema(description = "属性值，可为字符串、布尔、对象或数组")
+        Object value
+    ) {
+    }
+
+    public record ScimPatchRequest(
+        @Schema(description = "SCIM 消息 schema")
+        List<String> schemas,
+        @Schema(description = "PATCH 操作列表")
+        @JsonProperty("Operations")
+        @NotEmpty List<@Valid ScimPatchOperation> operations
     ) {
     }
 
