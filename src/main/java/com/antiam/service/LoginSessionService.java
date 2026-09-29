@@ -57,7 +57,7 @@ public class LoginSessionService {
         String reason = signInBlockReason(user);
         if (reason != null) {
             events.save(new AuthenticationEvent(null, user, null, AuthenticationEventType.LOGIN_FAILURE, method, ipAddress, userAgent, method + "_login_blocked;" + reason));
-            throw new AuthenticationFailedException("User account is not active");
+            throw new AuthenticationFailedException("账号未启用或已被停用，请联系管理员");
         }
     }
 

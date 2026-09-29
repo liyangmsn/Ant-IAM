@@ -8,6 +8,7 @@ import com.antiam.domain.AuditEvent;
 import com.antiam.mapper.AuditMapper;
 import com.antiam.repository.AuditEventRepository;
 import jakarta.persistence.criteria.Predicate;
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +19,8 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 @Service
 @RequiredArgsConstructor
@@ -29,7 +32,29 @@ public class AuditService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     // 记录审计事件，使用独立事务尽量避免被业务事务回滚影响。
     public void record(String actor, String action, String targetType, String targetId, String detail) {
-        auditEvents.save(new AuditEvent(actor, action, targetType, targetId, detail));
+        HttpServletRequest request = currentRequest();
+        String ipAddress = request == null ? null : truncate(clientIp(request), 64);
+        String userAgent = request == null ? null : truncate(request.getHeader("User-Agent"), 512);
+        auditEvents.save(new AuditEvent(actor, action, targetType, targetId, detail, ipAddress, userAgent));
+    }
+
+    // 审计可能在定时任务或异步线程中记录，此时没有 HTTP 请求上下文。
+    private HttpServletRequest currentRequest() {
+        return RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes
+            ? attributes.getRequest()
+            : null;
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            return forwarded.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
+    }
+
+    private String truncate(String value, int maxLength) {
+        return value == null || value.length() <= maxLength ? value : value.substring(0, maxLength);
     }
 
     @Transactional(readOnly = true)

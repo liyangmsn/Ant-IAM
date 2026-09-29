@@ -31,7 +31,7 @@ class SmsVerificationServiceTest {
 
         assertThatThrownBy(() -> service.verify("13800000000", "LOGIN", "123456"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("invalid");
+            .hasMessageContaining("短信验证码错误");
 
         service.verify("13800000000", "LOGIN", "666666");
     }
@@ -54,7 +54,7 @@ class SmsVerificationServiceTest {
 
         assertThatThrownBy(() -> service.verify("13800000000", "LOGIN", "666666"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("invalid");
+            .hasMessageContaining("短信验证码错误");
     }
 
     @Test

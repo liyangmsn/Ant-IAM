@@ -15,6 +15,8 @@ public final class AuditDtos {
         String targetType,
         String targetId,
         String detail,
+        String ipAddress,
+        String userAgent,
         Instant createdAt
     ) {
     }

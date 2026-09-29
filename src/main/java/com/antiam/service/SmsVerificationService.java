@@ -106,18 +106,18 @@ public class SmsVerificationService {
         VerificationKey key = new VerificationKey(normalizedMobile, normalizedPurpose);
         VerificationCode verificationCode = codes.get(key);
         if (verificationCode == null) {
-            throw new AuthenticationFailedException("SMS verification code is invalid");
+            throw new AuthenticationFailedException("短信验证码错误或已过期");
         }
         if (verificationCode.isExpired(Instant.now())) {
             codes.remove(key);
-            throw new AuthenticationFailedException("SMS verification code is invalid");
+            throw new AuthenticationFailedException("短信验证码错误或已过期");
         }
         if (code == null || !code.trim().equals(verificationCode.code())) {
             // 超过最大尝试次数后验证码作废，防止暴力枚举。
             if (verificationCode.attempts().incrementAndGet() >= MAX_VERIFY_ATTEMPTS) {
                 codes.remove(key);
             }
-            throw new AuthenticationFailedException("SMS verification code is invalid");
+            throw new AuthenticationFailedException("短信验证码错误或已过期");
         }
         codes.remove(key);
     }

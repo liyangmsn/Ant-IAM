@@ -53,7 +53,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class AuthenticationService {
 
-    private static final String INVALID_CREDENTIALS = "Username or password is invalid";
+    private static final String INVALID_CREDENTIALS = "用户名或密码错误";
     private static final Duration LOGIN_MFA_TTL = Duration.ofMinutes(5);
     private static final int MFA_RESEND_INTERVAL_SECONDS = 60;
 

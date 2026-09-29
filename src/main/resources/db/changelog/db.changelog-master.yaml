@@ -77,3 +77,5 @@ databaseChangeLog:
       file: db/changelog/038-oauth-token-binding-schema.sql
   - include:
       file: db/changelog/039-application-self-service-schema.sql
+  - include:
+      file: db/changelog/040-audit-client-schema.sql
