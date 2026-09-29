@@ -32,7 +32,7 @@ class ScimUserControllerTest {
     private final UUID userId = UUID.randomUUID();
     private final UserResponse current = new UserResponse(
         userId, "zhangsan", "张三", "old@example.com", "13800000000", AccountStatus.ACTIVE,
-        null, null, null, null, Set.of(), Set.of(), null);
+        null, null, null, null, Set.of(), Set.of(), null, Set.of());
 
     @BeforeEach
     void setUp() {

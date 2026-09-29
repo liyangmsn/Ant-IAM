@@ -57,7 +57,7 @@ public class MailDeliveryService {
     private final AuditService auditService;
     private final ObjectMapper objectMapper;
 
-    @Value("${iam.mfa.issuer:ANT IAM}")
+    @Value("${iam.mfa.issuer:Js IAM}")
     private String clientName;
 
     /**
@@ -187,7 +187,7 @@ public class MailDeliveryService {
      */
     private Map<String, String> withDefaultVariables(String recipient, Map<String, String> variables) {
         Map<String, String> values = new HashMap<>();
-        String name = clientName == null || clientName.isBlank() ? "ANT IAM" : clientName;
+        String name = clientName == null || clientName.isBlank() ? "Js IAM" : clientName;
         values.put("client_name", name);
         values.put("client_description", name);
         values.put("time", LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));

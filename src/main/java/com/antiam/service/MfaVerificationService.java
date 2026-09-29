@@ -38,7 +38,7 @@ public class MfaVerificationService {
     private final SmsVerificationService smsVerificationService;
     private final MailDeliveryService mailDeliveryService;
 
-    @Value("${iam.mfa.issuer:ANT IAM}")
+    @Value("${iam.mfa.issuer:Js IAM}")
     private String issuer;
 
     /**

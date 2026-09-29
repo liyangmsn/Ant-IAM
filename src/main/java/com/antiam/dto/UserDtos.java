@@ -230,7 +230,9 @@ public final class UserDtos {
         Set<String> groups,
         Set<String> roles,
         @Schema(description = "头像地址")
-        String avatarUrl
+        String avatarUrl,
+        @Schema(description = "直接授予的角色名称，用于展示", example = "[\"IAM 管理员\"]")
+        Set<String> roleNames
     ) {
     }
 

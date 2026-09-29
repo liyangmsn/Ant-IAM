@@ -875,6 +875,7 @@ public class UserService {
         UUID tenantId = user.getTenant() == null ? null : user.getTenant().getId();
         Set<String> groupCodes = user.getGroups().stream().map(UserGroup::getCode).collect(java.util.stream.Collectors.toSet());
         Set<String> roleCodes = user.getRoles().stream().map(Role::getCode).collect(java.util.stream.Collectors.toSet());
+        Set<String> roleNames = user.getRoles().stream().map(Role::getName).collect(java.util.stream.Collectors.toSet());
         return new UserResponse(
             user.getId(),
             user.getUsername(),
@@ -888,7 +889,8 @@ public class UserService {
             identitySourceName,
             groupCodes,
             roleCodes,
-            user.getAvatarUrl());
+            user.getAvatarUrl(),
+            roleNames);
     }
 
     private boolean matchesKeyword(UserAccount user, String keyword) {
