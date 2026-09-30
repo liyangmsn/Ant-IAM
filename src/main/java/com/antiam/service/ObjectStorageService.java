@@ -86,7 +86,8 @@ public class ObjectStorageService {
             .endpointOverride(URI.create(endpoint))
             .region(Region.of(region))
             .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(accessKey, secretKey)))
-            .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled("minio".equals(provider)).build())
+            // 与上传保持一致使用 path-style，自建 S3 兼容服务（RustFS/MinIO）的内网地址不支持 bucket 子域名
+            .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
             .build()) {
             client.headBucket(request -> request.bucket(bucket));
         } catch (Exception ex) {
