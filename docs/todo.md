@@ -1,87 +1,73 @@
 # 系统待办清单
 
-本清单由「前端入口 / 配置项」与「后端实现」逐项对照得出，每条都标注了证据位置。
+本清单由「前端入口 / 配置项」与「后端实现」逐项对照得出，每条都标注了证据位置。最近一次对照：2026-09-30。
 
 图例：`[ ]` 未开始 · `[~]` 仅原型或部分实现 · `[x]` 已完成
 
-## P0 有入口无实现（已完成）
+## P1 待生产化
 
-- [x] **身份源实时同步回调**
-  - 实现：`POST /api/v1/synchronizer/event_receive/{sourceCode}`，使用连接器 `secretRef` 做 HMAC-SHA256 验签后增量写入组织、用户和用户组。
-  - 位置：`src/main/java/com/antiam/web/SynchronizerController.java`、`src/main/java/com/antiam/service/identitysource/RealtimeSyncSignature.java`
+- [~] **控制台多租户隔离与按钮级权限**
+  - 现状：后端已按 `iam:<模块>:<read|write>` 校验接口；前端仅通用列表页（`CrudListPage`，如风险规则、认证策略）按 `write` 权限点隐藏操作按钮，其余页面没有写权限时仍显示按钮，点击后返回 403。模块管理员仍能看到全部租户的数据。
+  - 位置：`ant-iam-frontend/src/apps/console/components/CrudListPage.tsx`、`src/main/java/com/antiam/config/IamAuthorizationService.java`
+  - 验收：管理员只能访问所属租户的数据；所有控制台页面按 `write` 权限点隐藏或禁用操作按钮。
 
-- [x] **邮件能力（发信 + 模板渲染）**
-  - 实现：读取 `message.mail.service` 构建 SMTP 发送器，按 `message.template.*` 渲染 `${变量}`；已接入 `EMAIL` 类型 MFA 挑战投递，挑战响应不再返回明文验证码。
-  - 位置：`src/main/java/com/antiam/service/MailDeliveryService.java`
-
-- [x] **对象存储与文件上传**
-  - 实现：`POST /api/v1/files` 上传文件到已配置的对象存储，返回对象键与可访问地址；按 provider 路由到各厂商原生适配器。
-
-- [x] **IP 地理库解析**
-  - 实现：`geoip.provider=maxmind` 时用 MaxMind 数据库解析国家与城市，`system` 模式保留本机/内网/公网分类；登录位置统计与审计自动受益。
-  - 位置：`src/main/java/com/antiam/service/GeoIpService.java`
-
-- [x] **控制台细粒度授权**
-  - 实现：内置 `iam:<模块>:<read|write>` 权限点，URL 按模块校验，写操作做防提权检查；`GET /api/v1/users/me/console-access` 供前端裁剪入口与菜单。
-  - 位置：`src/main/java/com/antiam/config/SecurityConfig.java`、`src/main/java/com/antiam/config/IamAuthorizationService.java`、`src/main/java/com/antiam/config/ConsoleAuthorityResolver.java`
-
-## P1 原型待生产化
-
-- [ ] **控制台多租户隔离与按钮级权限**
-  - 现状：模块管理员可以看到全部租户的数据；前端只按读权限隐藏菜单，没有写权限的用户仍能看到操作按钮，点击后才返回 403。
-  - 验收：管理员只能访问所属租户的数据；前端按 `write` 权限点隐藏或禁用操作按钮。
-
-
-- [~] **MFA 短信 / WebAuthn 校验器**
-  - 现状：邮箱因子已走真实投递；短信仍由本地生成随机码后返回响应，WebAuthn 无任何库或浏览器 API 支持。
-  - 位置：`src/main/java/com/antiam/service/UserService.java:534`、`src/main/java/com/antiam/service/UserService.java:624`
-  - 验收：短信走真实通道下发且不回传明文；WebAuthn 走标准注册与断言流程。
-
-- [ ] **MaxMind 数据库获取与更新**
-  - 现状：仅支持从 `iam.geoip.database-path` 指向的本地 `.mmdb` 文件读取；控制台填写的 MaxMind 注册码 `licenseKey` 未被前端保存，也没有下载逻辑。
-  - 位置：`ant-iam-frontend/src/apps/console/pages/system/components/SystemPages.tsx`
-  - 验收：注册码可保存，并能按 MaxMind 下载接口获取与更新数据库。
+- [~] **WebAuthn 校验器**
+  - 现状：TOTP、短信（经 `SmsVerificationService` 真实下发）、邮件、恢复码均已生产化，挑战响应不回传明文；WebAuthn 仍生成数字挑战码并直接返回给客户端。
+  - 位置：`src/main/java/com/antiam/service/MfaVerificationService.java`
+  - 验收：WebAuthn 走标准注册与断言流程。
 
 - [~] **SAML2 协议完整性**
-  - 现状：元数据自称 `signing`，实际无签名。
-  - 缺口：无 XML 签名与证书管理、无 `AuthnRequest` 解析、无 SLO，绑定仅一种。
-  - 位置：`src/main/java/com/antiam/service/FederationService.java:47`、`src/main/java/com/antiam/service/FederationService.java:51`
-  - 验收：`saml2/sso` 可消费 SP 的 `AuthnRequest`，`Response`/`Assertion` 按配置证书签名。
+  - 现状：断言已按签名密钥做 RSA-SHA256 enveloped 签名，元数据携带签名证书。
+  - 缺口：不解析 SP 的 `AuthnRequest`，无 SLO，绑定仅一种。
+  - 位置：`src/main/java/com/antiam/service/FederationService.java`、`src/main/java/com/antiam/common/SamlSignatures.java`
+  - 验收：`saml2/sso` 可消费 SP 的 `AuthnRequest`，支持 SLO。
 
 - [ ] **LDAP / AD 原生连接器**
   - 现状：`IdentitySourceType` 已定义 `LDAP`、`ACTIVE_DIRECTORY`。
   - 缺口：仅由 JSON payload 执行器处理，无 LDAP bind/search、无增量同步。
-  - 位置：`src/main/java/com/antiam/service/identitysource/JsonIdentitySourceConnectorAdapter.java:21`
+  - 位置：`src/main/java/com/antiam/service/identitysource/JsonIdentitySourceConnectorAdapter.java`
   - 验收：可用连接配置直连目录服务拉取组织与用户，支持分页与变更同步。
 
-- [ ] **风险规则：地理速度与自适应动作**
-  - 现状：枚举仅 6 种，地理位置只做字符串相等比较。
-  - 缺口：无不可能旅行/速度类规则，决策输出未驱动真实 MFA 或拒绝动作。
-  - 位置：`src/main/java/com/antiam/domain/RiskRuleType.java`
-  - 验收：新增地理速度规则；`STEP_UP_MFA` 与 `DENY_OR_STEP_UP` 在登录链路真实生效。
+- [~] **风险规则：登录链路上下文与地理速度**
+  - 现状：登录时按规则实时评估，高风险拒绝、中风险要求 MFA（用户未绑定 MFA 时放行）；IP、User-Agent、失败次数规则在登录时生效。
+  - 缺口：登录调用 `evaluateLogin(..., null)`，不带设备指纹和地理位置，`DEVICE_FINGERPRINT_*`、`GEO_LOCATION_NOT_ALLOWED` 只在 `POST /api/v1/risk/assessments` 时生效；无不可能旅行/速度类规则。
+  - 位置：`src/main/java/com/antiam/service/AuthenticationService.java`、`src/main/java/com/antiam/domain/RiskRuleType.java`
+  - 验收：登录链路采集设备指纹与地理位置；新增地理速度规则。
 
-## P2 待补全协议
+- [ ] **失败次数规则可被滥用锁定他人**
+  - 现状：`FAILED_LOGIN_COUNT` 统计最近 1 小时的失败事件，攻击者故意输错即可让正确密码的用户在 1 小时内被拒绝（若规则为高风险）。
+  - 验收：按 IP + 账号维度统计，或命中后改为要求二次认证而非直接拒绝。
+
+## P2 待补全
 
 - [ ] **表单代填**
   - 现状：`ApplicationProtocol` 有 `FORM_FILL`，可保存 `formLoginTemplate`。
   - 缺口：无代填提交逻辑；`FORM_FILL` 仅作为本地登录会话的 protocol 标签。
-  - 位置：`src/main/java/com/antiam/service/AuthenticationService.java:88`、`src/main/java/com/antiam/service/AuthenticationService.java:127`
+  - 位置：`src/main/java/com/antiam/service/AuthenticationService.java`
   - 验收：模板可渲染并完成代填登录跳转。
 
-- [ ] **通用安全设置部分字段未生效**
-  - 现状：`security.password.*` 已被 `AuthenticationPolicyService` 消费，`security.general.login_failure_max_attempts` 也已生效；但同页面的 `user_concurrent_sessions`、`session_ttl_seconds`、`remember_me_ttl_seconds`、`captcha_ttl_minutes`、`login_failure_window_minutes`、`auto_unlock_minutes`、`content_security_policy` 落库后没有消费方。
-  - 位置：`src/main/java/com/antiam/service/SecuritySettingService.java`、`src/main/java/com/antiam/service/AuthenticationPolicyService.java:144`
-  - 验收：二选一——接入认证与响应头链路真实生效，或从前端移除这些字段。
+- [ ] **前端首页缓存**
+  - 现状：`deploy/rancher/nginx.conf` 未对 `index.html` 设置 `Cache-Control: no-cache`，发版后浏览器可能继续使用旧页面。
+  - 验收：`index.html` 不缓存，带 hash 的静态资源长期缓存。
 
 ## 已完成
 
-- [x] JWT 单点登录签发与验签
-  - 实现：`GET /jwt/sso?audience=` 按应用 SSO 配置的 `jwtAudience`（缺失时回退 `clientId`）签发 RS256 令牌，`aud` 取配置值、有效期取 `accessTokenTtlMinutes`；`POST /jwt/verify` 按头部 `kid` 匹配签名密钥校验签名与 `exp`/`nbf`，失败以 `failureCode` 说明原因，该端点无需登录即可调用。
-  - 位置：`src/main/java/com/antiam/service/FederationService.java`、`src/main/java/com/antiam/service/JwtService.java`、`src/main/java/com/antiam/web/FederationController.java`
-  - 控制台：SSO 配置新增「令牌 Audience」输入项（仅 JWT 协议显示），并展示签发、校验与 JWKS 端点；保存时不再清空 SAML/CAS/表单代填等协议字段。
-- [x] 短信验证码通道：由 sms4j 承载，本地默认 `fixed-code`，生产切换通道只需配置 `sms.blends` 并设置 `IAM_SMS_BLEND_ID`。控制台的阿里云/腾讯云/七牛字段仍未接入发送链路，作为渠道元数据保留。
-- [x] 对象存储云厂商原生 SDK：`aliyun`（阿里云 OSS）、`tencent`（腾讯云 COS，bucket 自动拼 `-{appId}`）、`qiniu`（七牛云 Kodo）各自原生上传；`s3` 与 `minio` 走 S3 兼容适配器
-- [x] OAuth2 / OIDC consent UI 页面
-- [x] 企业微信后台连接器（直连 `qyapi.weixin.qq.com` 拉取部门与成员）
-- [x] OIDC JWKS 与 RS256 ID Token 签名
-- [x] 身份源定时同步调度器
+- [x] 身份源实时同步回调：`POST /api/v1/synchronizer/event_receive/{sourceCode}`，HMAC-SHA256 验签后增量写入组织、用户和用户组。
+- [x] 邮件能力：SMTP 发信与 `${变量}` 模板渲染，接入邮箱 MFA；`POST /api/v1/settings/message/mail/test` 发送测试邮件。
+- [x] 短信能力：sms4j 承载，接入短信登录与短信 MFA；`POST /api/v1/settings/message/sms/test` 发送测试短信。
+- [x] 对象存储：阿里云 OSS、腾讯云 COS、七牛云 Kodo 原生适配，S3 / MinIO / RustFS 走 S3 兼容适配（path-style）；移除了本地存储选项；`POST /api/v1/settings/storage/validate` 校验连通性；用户头像上传 `POST /api/v1/users/me/avatar`。
+- [x] IP 地理库：MaxMind 解析国家与城市；注册码可保存，`POST /api/v1/settings/geo-ip/update` 在线下载 GeoLite2-City，`GET /api/v1/settings/geo-ip/lookup` 解析测试。
+- [x] 控制台细粒度授权：`iam:<模块>:<read|write>` 权限点、URL 按模块校验、写操作防提权；`GET /api/v1/users/me/console-access` 供前端裁剪菜单。
+- [x] 应用访问策略：授权范围 `MANUAL` / `ALL_ACCESS`，授权对象支持用户、用户组、组织（下级组织继承），批量授权与取消；OIDC、SAML、CAS、JWT 单点登录签发前校验授权。
+- [x] 应用访问申请与审批：门户自助申请，管理员审批后自动生成授权，可设到期时间。
+- [x] 客户端密钥重置：`POST /api/v1/access/applications/{id}/client-secret`，明文只返回一次。
+- [x] 通用安全设置全部生效：并发会话数（超出踢最早会话）、会话有效期、“记住我”时长、验证码有效期、失败统计窗口、自动解锁、内容安全策略（CSP 响应头）。
+- [x] 密码策略：长度、复杂度、连续重复字符、个人信息、弱密码字典、连续数字/字母、键盘序列、历史密码、过期与提醒；最小长度以安全设置为准，提示信息为中文。
+- [x] 账号锁定提示：锁定账号登录时提示“账号已被锁定，请稍后重试或联系管理员解锁”。
+- [x] SCIM 2.0：用户、用户组、组织支持 `PUT` / `DELETE`，用户与用户组支持 `PATCH`；过滤支持 `eq/ne/co/sw/ew/pr` 与 `and/or/not`。
+- [x] SAML 断言签名：RSA-SHA256 enveloped 签名，元数据携带证书。
+- [x] 审计记录客户端 IP 与 User-Agent；登录错误信息中文化。
+- [x] OAuth 访问令牌记录所属刷新令牌（`refresh_token_id`），刷新令牌轮换与撤销时联动处理。
+- [x] JWT 单点登录签发与验签：`GET /jwt/sso?audience=`、`POST /jwt/verify`。
+- [x] OAuth2 / OIDC consent 页面、JWKS 与 RS256 ID Token 签名。
+- [x] 企业微信、钉钉、飞书后台连接器与身份源定时同步调度器。

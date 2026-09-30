@@ -8,6 +8,8 @@ For a project overview covering purpose and capabilities, see [docs/project-over
 
 For a one-page project brief, see [docs/project-brief.md](docs/project-brief.md) (Chinese).
 
+For a product introduction aimed at business decision makers, see [docs/product-introduction.md](docs/product-introduction.md) (Chinese), with slides in `docs/Js-IAM-产品介绍.pptx`.
+
 ## Stack
 
 - Java 25
@@ -28,7 +30,10 @@ For a one-page project brief, see [docs/project-brief.md](docs/project-brief.md)
 - Role impact analysis: `/api/v1/access/roles/{roleId}/impact`
 - Groups, roles, permissions, access resource search/profiles/updates, application role bindings and application lifecycle: `/api/v1/access/**`; applications support optional `tenantId`, `enabled` and `keyword` filters
 - Application SSO config and assignment lifecycle, including optional assignment expiry: `/api/v1/access/applications/{applicationId}/**`
-- Application access decisions across direct, group and application-role sources: `/api/v1/access/applications/{applicationId}/access-decisions?userId=...`
+- Application authorization scope (`MANUAL` / `ALL_ACCESS`); users, groups and organizations (inherited by descendant organizations) as assignment subjects, with batch grant and revoke: `/api/v1/access/applications/{applicationId}/assignments/batch`, `/assignments/batch-delete`
+- Client secret reset, plaintext returned once: `/api/v1/access/applications/{applicationId}/client-secret`
+- OIDC, SAML, CAS and JWT SSO enforce application access before issuing, returning `403 application-access-denied` otherwise
+- Application access decisions across all-access, direct, group, organization and application-role sources: `/api/v1/access/applications/{applicationId}/access-decisions?userId=...`
 - User application portal list: `/api/v1/access/users/{userId}/applications`
 - Current user application portal list: `/api/v1/access/me/applications`
 - Current user requestable application list: `/api/v1/access/me/requestable-applications`
@@ -40,21 +45,23 @@ For a one-page project brief, see [docs/project-brief.md](docs/project-brief.md)
 - Identity source connectors with lifecycle controls, and sync jobs with job profiles, updates and lifecycle controls: `/api/v1/identity-sources/{identitySourceId}/connector`, `/api/v1/identity-sources/{identitySourceId}/sync-jobs`, `/api/v1/identity-sources/sync-jobs/{syncJobId}`
 - Manual identity sync runs with JSON payload import and run profiles: `/api/v1/identity-sources/sync-jobs/{syncJobId}/runs`, `/api/v1/identity-sources/sync-runs/{syncRunId}`
 - Identity source realtime event callback with HMAC-SHA256 signature verification: `/api/v1/synchronizer/event_receive/{sourceCode}`
-- Outbound email delivery with configurable SMTP service and template rendering, wired into EMAIL MFA challenges
-- File upload with native adapters for Aliyun OSS, Tencent COS, Qiniu Kodo and S3-compatible services: `/api/v1/files`
-- IP geo-location resolution backed by MaxMind databases, with system-default address classification
+- Outbound email delivery with configurable SMTP service and template rendering, wired into EMAIL MFA challenges; test mail and SMS: `/api/v1/settings/message/mail/test`, `/api/v1/settings/message/sms/test`
+- File upload with native adapters for Aliyun OSS, Tencent COS, Qiniu Kodo and S3-compatible services (MinIO, RustFS, path-style): `/api/v1/files`; storage validation: `/api/v1/settings/storage/validate`; user avatar upload: `/api/v1/users/me/avatar`
+- IP geo-location resolution backed by MaxMind databases, with system-default address classification; online database download with a License Key and lookup testing: `/api/v1/settings/geo-ip/update`, `/api/v1/settings/geo-ip/lookup`
 - Authentication policies with lifecycle controls, configurable MFA, enrollment, step-up, deny, password minimum-length, failed-login lockout, password expiry and password history enforcement: `/api/v1/authentication-policies`
 - Authentication policy evaluation: `/api/v1/authentication-policies/evaluations`
-- Login risk rules with search/profiles/updates/lifecycle controls and searchable assessment profiles with device fingerprint and geo-location context: `/api/v1/risk/rules`, `/api/v1/risk/rules/{ruleId}`, `/api/v1/risk/assessments`, `/api/v1/risk/assessments/{assessmentId}`
+- Login risk rules with search/profiles/updates/lifecycle controls (high risk denies sign-in, medium risk requires MFA) and searchable assessment profiles with device fingerprint and geo-location context: `/api/v1/risk/rules`, `/api/v1/risk/rules/{ruleId}`, `/api/v1/risk/assessments`, `/api/v1/risk/assessments/{assessmentId}`
 - Dashboard summary, metrics and range statistics (authentication trend, application ranking, authentication methods, login locations): `/api/v1/dashboard/summary`, `/api/v1/dashboard/metrics`, `/api/v1/dashboard/statistics`
 - System settings with search/filtering, profiles and deletion: `/api/v1/settings`, `/api/v1/settings/{settingKey}`
+- General security settings (concurrent sessions, session TTL, remember-me TTL, captcha TTL, lockout and auto-unlock, content security policy) and password policy (length, complexity, personal info, weak passwords, sequences, keyboard patterns, history, expiry reminders), effective immediately: `/api/v1/security-settings/general`, `/api/v1/security-settings/password-policy`
+- Fine-grained console permissions `iam:<module>:<read|write>` with anti-escalation checks; the frontend trims menus via `/api/v1/users/me/console-access`
 - Tenants and tenant settings with setting search/profiles/deletion: `/api/v1/tenants`, `/api/v1/tenants/{tenantId}/settings`, `/api/v1/tenants/{tenantId}/settings/{settingKey}`
 - Authentication sessions with active/history filtering, force logout and searchable events, including login risk and logout events: `/api/v1/authentication/**`
 - Password credentials, MFA factors with profiles/updates/lifecycle controls and TOTP verification: `/api/v1/users/**`
 - Password reset tickets with search, profiles and revocation: `/api/v1/users/password-reset-tickets`, `/api/v1/users/password-reset-tickets/{ticketId}`
 - Self-service password change: `/api/v1/users/me/password`
 - MFA challenges with search/profiles and recovery codes: `/api/v1/users/{userId}/mfa-challenges`, `/api/v1/users/mfa-challenges`, `/api/v1/users/{userId}/mfa-recovery-codes`, `/api/v1/users/mfa-challenge-verifications`
-- SCIM 2.0 users, groups and organizations with list/create/profile endpoints plus filter and pagination support: `/scim/v2/Users`, `/scim/v2/Groups`, `/scim/v2/Organizations`
+- SCIM 2.0 users, groups and organizations with list, profile, create, `PUT` replace, `PATCH` (users and groups) and delete, filters with `eq/ne/co/sw/ew/pr` combined by `and/or/not`, and pagination: `/scim/v2/Users`, `/scim/v2/Groups`, `/scim/v2/Organizations`
 - SCIM 2.0 discovery: `/scim/v2/ServiceProviderConfig`, `/scim/v2/ResourceTypes`, `/scim/v2/Schemas`
 - OIDC browser authorization entry: `/oidc/authorize`; Bearer-protected authorization API: `/oauth2/authorize`
 - OAuth2 token endpoint: `/oauth2/token`
@@ -67,10 +74,10 @@ For a one-page project brief, see [docs/project-brief.md](docs/project-brief.md)
 - OAuth2 token introspection and client-authenticated revocation: `/oauth2/introspect`, `/oauth2/revoke`
 - OAuth2 access/refresh token inventory, profiles and admin revocation: `/api/v1/oauth/tokens`, `/api/v1/oauth/tokens/{tokenType}/{tokenId}`
 - OAuth2 consent management with filtering, profiles and revocation: `/oauth2/consents`, `/oauth2/consents/{consentId}`
-- SAML2 metadata and SSO assertions with XML responses: `/saml2/metadata`, `/saml2/metadata.xml`, `/saml2/sso`, `/saml2/sso/xml`
+- SAML2 metadata and SSO assertions with XML responses, signed with RSA-SHA256 enveloped signatures: `/saml2/metadata`, `/saml2/metadata.xml`, `/saml2/sso`, `/saml2/sso/xml`
 - CAS login and service validation with XML response support: `/cas/login`, `/cas/serviceValidate`, `/cas/p3/serviceValidate`
 - JWT single sign-on with RS256 token issuance and verification: `/jwt/sso`, `/jwt/verify`
-- Audit event profile, search with keyword filtering and CSV export: `/api/v1/audit-events`, `/api/v1/audit-events/{auditEventId}`, `/api/v1/audit-events/export`
+- Audit event profile (with client IP and User-Agent), search with keyword filtering and CSV export: `/api/v1/audit-events`, `/api/v1/audit-events/{auditEventId}`, `/api/v1/audit-events/export`
 - Public catalog: `/api/v1/catalog`
 - OpenAPI JSON documentation, publicly readable for integration tooling: `/v3/api-docs`
 - Swagger UI interactive API documentation: `/swagger-ui/index.html`
@@ -244,9 +251,9 @@ WeChat, QQ, Feishu and DingTalk authentication providers use `appId`, `appSecret
 
 ## Roadmap
 
-- Harden SAML2/CAS adapters with XML signatures and richer protocol binding validation.
-- Add guided user-facing MFA enrollment and recovery screens.
-- Add background connectors for LDAP and AD.
-- Continue native LDAP/AD connector adapters on top of the JSON sync executor.
-- Replace SMS and WebAuthn MFA prototype challenge codes with production verifiers.
-- Expand risk rules with geo-velocity and richer adaptive MFA actions.
+- SAML2 `AuthnRequest` parsing, SLO and additional bindings.
+- Background connectors for LDAP and AD (currently JSON sync executor only).
+- Standard WebAuthn registration and assertion (still a prototype challenge code).
+- Apply device fingerprint and geo-location risk rules at sign-in, and add geo-velocity rules.
+- Tenant-isolated console data and button-level `write` permission trimming.
+- Form-fill (`FORM_FILL`) sign-in.

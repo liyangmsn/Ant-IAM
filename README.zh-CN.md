@@ -8,6 +8,8 @@
 
 一页式项目简报见 [docs/project-brief.md](docs/project-brief.md)。
 
+面向企业决策者的产品介绍见 [docs/product-introduction.md](docs/product-introduction.md)，配套演示文稿为 `docs/Js-IAM-产品介绍.pptx`。
+
 ## 技术栈
 
 - Java 25
@@ -28,7 +30,10 @@
 - 角色影响分析：`/api/v1/access/roles/{roleId}/impact`
 - 用户组、角色、权限、访问控制资源检索/详情/更新、应用角色绑定和应用生命周期：`/api/v1/access/**`；应用支持 `tenantId`、`enabled` 和 `keyword` 过滤
 - 应用 SSO 配置和授权生命周期，支持可选授权过期时间：`/api/v1/access/applications/{applicationId}/**`
-- 应用访问决策，支持直接授权、用户组授权和应用角色来源：`/api/v1/access/applications/{applicationId}/access-decisions?userId=...`
+- 应用授权范围（`MANUAL` 手动授权 / `ALL_ACCESS` 全员可访问），授权对象支持用户、用户组和组织（组织授权对下级组织成员生效），支持批量授权与批量取消：`/api/v1/access/applications/{applicationId}/assignments/batch`、`/assignments/batch-delete`
+- 客户端密钥重置，明文只返回一次：`/api/v1/access/applications/{applicationId}/client-secret`
+- OIDC、SAML、CAS、JWT 单点登录在签发前校验应用访问授权，未授权返回 `403 application-access-denied`
+- 应用访问决策，支持全员可访问、直接授权、用户组授权、组织授权和应用角色来源：`/api/v1/access/applications/{applicationId}/access-decisions?userId=...`
 - 用户应用门户列表：`/api/v1/access/users/{userId}/applications`
 - 当前用户应用门户列表：`/api/v1/access/me/applications`
 - 当前用户可申请应用列表：`/api/v1/access/me/requestable-applications`
@@ -40,21 +45,23 @@
 - 身份源连接器支持生命周期控制，同步任务支持任务详情、更新和生命周期控制：`/api/v1/identity-sources/{identitySourceId}/connector`、`/api/v1/identity-sources/{identitySourceId}/sync-jobs`、`/api/v1/identity-sources/sync-jobs/{syncJobId}`
 - 手动身份同步运行，支持 JSON 目录数据导入和运行详情：`/api/v1/identity-sources/sync-jobs/{syncJobId}/runs`、`/api/v1/identity-sources/sync-runs/{syncRunId}`
 - 身份源实时事件回调，支持 HMAC-SHA256 验签：`/api/v1/synchronizer/event_receive/{sourceCode}`
-- 邮件发信能力，支持配置 SMTP 服务和模板渲染，并接入邮箱 MFA 挑战
-- 文件上传，提供阿里云 OSS、腾讯云 COS、七牛云 Kodo 和 S3 兼容服务的原生适配：`/api/v1/files`
-- 基于 MaxMind 数据库的 IP 地理库解析，系统默认模式提供地址段分类
+- 邮件发信能力，支持配置 SMTP 服务和模板渲染，并接入邮箱 MFA 挑战；测试邮件与测试短信：`/api/v1/settings/message/mail/test`、`/api/v1/settings/message/sms/test`
+- 文件上传，提供阿里云 OSS、腾讯云 COS、七牛云 Kodo 和 S3 兼容服务（MinIO、RustFS 等，使用 path-style）的原生适配：`/api/v1/files`；存储连通性校验：`/api/v1/settings/storage/validate`；用户头像上传：`/api/v1/users/me/avatar`
+- 基于 MaxMind 数据库的 IP 地理库解析，系统默认模式提供地址段分类；支持用 License Key 在线下载更新数据库和解析测试：`/api/v1/settings/geo-ip/update`、`/api/v1/settings/geo-ip/lookup`
 - 认证策略，支持生命周期控制、MFA、注册要求、风险升阶、拒绝、密码最小长度、失败登录锁定、密码过期和密码历史校验：`/api/v1/authentication-policies`
 - 认证策略评估：`/api/v1/authentication-policies/evaluations`
-- 登录风险规则支持检索/详情/更新/生命周期控制，风险评估支持检索/详情、设备指纹和地理位置上下文：`/api/v1/risk/rules`、`/api/v1/risk/rules/{ruleId}`、`/api/v1/risk/assessments`、`/api/v1/risk/assessments/{assessmentId}`
+- 登录风险规则支持检索/详情/更新/生命周期控制，登录时高风险拒绝、中风险要求 MFA；风险评估支持检索/详情、设备指纹和地理位置上下文：`/api/v1/risk/rules`、`/api/v1/risk/rules/{ruleId}`、`/api/v1/risk/assessments`、`/api/v1/risk/assessments/{assessmentId}`
 - 仪表盘摘要、指标和时间范围统计（认证量趋势、应用访问排名、热门认证方式、登录位置分布）：`/api/v1/dashboard/summary`、`/api/v1/dashboard/metrics`、`/api/v1/dashboard/statistics`
 - 系统设置支持检索/过滤、详情和删除：`/api/v1/settings`、`/api/v1/settings/{settingKey}`
+- 通用安全设置（并发会话数、会话有效期、“记住我”时长、验证码有效期、失败锁定与自动解锁、内容安全策略）和密码策略（长度、复杂度、个人信息、弱密码、连续字符、键盘序列、历史密码、过期提醒），保存后即时生效：`/api/v1/security-settings/general`、`/api/v1/security-settings/password-policy`
+- 控制台细粒度权限 `iam:<模块>:<read|write>`，写操作做防提权校验；前端据 `/api/v1/users/me/console-access` 裁剪菜单
 - 租户和租户设置，租户设置支持检索/详情/删除：`/api/v1/tenants`、`/api/v1/tenants/{tenantId}/settings`、`/api/v1/tenants/{tenantId}/settings/{settingKey}`
 - 认证会话活跃/历史筛选、强制登出和可检索认证事件，包含登录风险与登出事件：`/api/v1/authentication/**`
 - 密码凭据、MFA 因子详情/更新/生命周期控制和 TOTP 校验：`/api/v1/users/**`
 - 密码重置票据支持检索、详情和作废：`/api/v1/users/password-reset-tickets`、`/api/v1/users/password-reset-tickets/{ticketId}`
 - 自助修改密码：`/api/v1/users/me/password`
 - MFA 挑战支持检索/详情，恢复码支持生成：`/api/v1/users/{userId}/mfa-challenges`、`/api/v1/users/mfa-challenges`、`/api/v1/users/{userId}/mfa-recovery-codes`、`/api/v1/users/mfa-challenge-verifications`
-- SCIM 2.0 用户、用户组和组织，支持列表、创建、详情、过滤和分页：`/scim/v2/Users`、`/scim/v2/Groups`、`/scim/v2/Organizations`
+- SCIM 2.0 用户、用户组和组织，支持列表、详情、创建、`PUT` 替换、`PATCH` 局部更新（用户、用户组）、删除，过滤支持 `eq/ne/co/sw/ew/pr` 与 `and/or/not` 组合，并支持分页：`/scim/v2/Users`、`/scim/v2/Groups`、`/scim/v2/Organizations`
 - SCIM 2.0 发现接口：`/scim/v2/ServiceProviderConfig`、`/scim/v2/ResourceTypes`、`/scim/v2/Schemas`
 - OIDC 浏览器授权入口：`/oidc/authorize`；Bearer 保护的授权 API：`/oauth2/authorize`
 - OAuth2 token 端点：`/oauth2/token`
@@ -67,10 +74,10 @@
 - OAuth2 token introspection 和客户端认证撤销：`/oauth2/introspect`、`/oauth2/revoke`
 - OAuth2 access/refresh token 清单、详情和管理员撤销：`/api/v1/oauth/tokens`、`/api/v1/oauth/tokens/{tokenType}/{tokenId}`
 - OAuth2 consent 管理，支持筛选、详情和撤销：`/oauth2/consents`、`/oauth2/consents/{consentId}`
-- SAML2 metadata 和 XML SSO assertion：`/saml2/metadata`、`/saml2/metadata.xml`、`/saml2/sso`、`/saml2/sso/xml`
+- SAML2 metadata 和 XML SSO assertion，断言按签名密钥做 RSA-SHA256 enveloped 签名：`/saml2/metadata`、`/saml2/metadata.xml`、`/saml2/sso`、`/saml2/sso/xml`
 - CAS 登录和服务票据校验，支持 XML 响应：`/cas/login`、`/cas/serviceValidate`、`/cas/p3/serviceValidate`
 - JWT 单点登录，RS256 令牌签发与验签：`/jwt/sso`、`/jwt/verify`
-- 审计事件详情、搜索，支持关键字过滤和 CSV 导出：`/api/v1/audit-events`、`/api/v1/audit-events/{auditEventId}`、`/api/v1/audit-events/export`
+- 审计事件详情、搜索，记录客户端 IP 与 User-Agent，支持关键字过滤和 CSV 导出：`/api/v1/audit-events`、`/api/v1/audit-events/{auditEventId}`、`/api/v1/audit-events/export`
 - 公共能力目录：`/api/v1/catalog`
 - OpenAPI JSON 文档，便于集成工具直接读取：`/v3/api-docs`
 - Swagger UI 交互式接口文档：`/swagger-ui/index.html`
@@ -243,9 +250,9 @@ curl -H 'Content-Type: application/json' \
 
 ## 路线图
 
-- 强化 SAML2/CAS 适配器，支持 XML 签名和更完整的协议绑定校验。
-- 增加面向用户的 MFA 注册和恢复引导页面。
-- 增加 LDAP 和 AD 后台连接器。
-- 在 JSON 同步执行器基础上继续补齐 LDAP/AD 连接器适配。
-- 将 SMS 和 WebAuthn MFA 原型挑战码替换为生产级校验器。
-- 扩展风险规则，支持地理速度和更丰富的自适应 MFA 动作。
+- SAML2 解析 SP 的 `AuthnRequest`、支持 SLO 和更多绑定方式。
+- 增加 LDAP 和 AD 后台连接器（当前仅能通过 JSON 同步执行器导入）。
+- WebAuthn 标准注册与断言流程（当前仍为原型挑战码）。
+- 登录链路接入设备指纹与地理位置风险规则，并支持地理速度（不可能旅行）规则。
+- 控制台按租户隔离数据，操作按钮按 `write` 权限点裁剪。
+- 表单代填（`FORM_FILL`）登录。

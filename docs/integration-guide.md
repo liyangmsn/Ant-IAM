@@ -404,6 +404,10 @@ Authorization: Bearer <访问令牌>
 
 断言的 `subject` 为用户名，`attributes` 中包含附加属性。
 
+- 断言使用 RSA-SHA256 做 enveloped 签名（exc-c14n），并包含 `AuthnStatement`；签名证书就是元数据 `KeyDescriptor use="signing"` 中的证书。
+- 签名密钥与 OIDC 共用 `/api/v1/jwt-signing-keys`，密钥轮换后请重新导入元数据。
+- 目前不解析 SP 发来的 `AuthnRequest`，也不支持 SLO（单点登出）。
+
 ---
 
 ## 7. 单点登录接入（CAS / JWT）
@@ -428,6 +432,8 @@ Authorization: Bearer <访问令牌>
 4. 校验结果中的 `success` 表示票据有效，`user` 为用户名，`attributes` 为附加属性。
 
 `service` 参数在校验时必须与登录时完全一致。
+
+> 所有单点登录协议（OIDC、SAML、CAS、JWT）在签发前都会校验应用访问授权：用户没有该应用的授权时返回 `403`，响应体 `type` 以 `application-access-denied` 结尾，`reason` 给出原因（取值见 9.4 访问决策）。
 
 ### 7.2 JWT 单点登录
 
@@ -498,11 +504,32 @@ curl -X POST '{Base URL}/jwt/verify' \
 
 | 资源 | 支持的操作 |
 | --- | --- |
-| 用户 | 查询列表、查询详情、创建 |
-| 用户组 | 查询列表、查询详情、创建 |
-| 组织 | 查询列表、查询详情、创建 |
+| 用户 | 列表、详情、创建（`POST`）、整体替换（`PUT`）、局部更新（`PATCH`）、删除（`DELETE`） |
+| 用户组 | 列表、详情、创建、整体替换、局部更新、删除 |
+| 组织 | 列表、详情、创建、整体替换、删除（不支持 `PATCH`） |
 
-目前 SCIM 支持查询与创建。若需要更新或删除，请改用第 9 章的管理 API。
+各操作的注意事项：
+
+- **用户 `PUT`**：整体替换显示名、邮箱、手机号和启用状态，`userName` 不可修改。
+- **用户 `PATCH`**：支持 `add` / `replace` / `remove` 操作 `active`、`displayName`、`name.formatted`、`emails`、`phoneNumbers`，未识别的属性会被忽略；`remove` 必须带 `path`。
+- **用户 `DELETE`**：删除账号及其凭据、令牌和授权。离职场景更推荐 `PATCH` 设置 `active=false` 以保留审计轨迹。
+- **用户组 `PATCH`**：支持替换 `displayName`，以及对 `members` 做 `add` / `remove` / `replace`，也可用 `members[value eq "<userId>"]` 移除单个成员。
+- **组织 `PUT`**：更新名称和父组织，`externalId` 不可修改。
+- **组织 `DELETE`**：只能删除空组织，存在子组织或成员时拒绝。
+
+局部更新示例：
+
+```http
+PATCH /scim/v2/Users/{id}
+Content-Type: application/scim+json
+
+{
+  "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+  "Operations": [
+    {"op": "replace", "path": "active", "value": false}
+  ]
+}
+```
 
 列表支持 `filter`、`startIndex`、`count` 三个参数，返回标准的 SCIM `ListResponse` 结构，包含 `totalResults`、`startIndex`、`itemsPerPage` 和 `Resources`。
 
@@ -513,8 +540,13 @@ curl -X POST '{Base URL}/jwt/verify' \
 | 操作符 | 含义 |
 | --- | --- |
 | `eq` | 等于 |
+| `ne` | 不等于 |
 | `co` | 包含 |
 | `sw` | 以……开头 |
+| `ew` | 以……结尾 |
+| `pr` | 有值（无需写值） |
+
+匹配不区分大小写。多个条件可用 `and`、`or` 组合，`not (...)` 取反，括号改变优先级（`or` 优先级最低）。
 
 各资源支持的过滤属性：
 
@@ -530,6 +562,8 @@ curl -X POST '{Base URL}/jwt/verify' \
 userName eq "zhangsan"
 emails.value co "example.com"
 displayName sw "研发"
+userName sw "zh" and active eq "true"
+not (emails.value ew "example.com")
 ```
 
 使用其它属性或不支持的写法会返回 `400`。
@@ -596,6 +630,8 @@ displayName sw "研发"
 | POST | `/api/v1/users/{id}/depart` | 离职 |
 | GET | `/api/v1/users/{id}/effective-access` | 用户的角色与权限 |
 | POST | `/api/v1/users/{id}/password` | 设置密码 |
+| POST | `/api/v1/users/me/password` | 当前用户修改密码 |
+| POST | `/api/v1/users/me/avatar` | 当前用户上传头像（需先配置对象存储） |
 | POST | `/api/v1/users/role-assignments` | 指派角色 |
 | DELETE | `/api/v1/users/role-assignments` | 撤销角色 |
 | POST | `/api/v1/users/group-memberships` | 加入用户组 |
@@ -632,12 +668,17 @@ displayName sw "研发"
 | POST | `/api/v1/access/applications/{id}/enable` | 启用应用 |
 | POST | `/api/v1/access/applications/{id}/disable` | 停用应用 |
 | DELETE | `/api/v1/access/applications/{id}` | 删除应用 |
+| POST | `/api/v1/access/applications/{id}/client-secret` | 重置客户端密钥，明文只返回一次 |
 | GET / POST | `/api/v1/access/applications/{id}/sso-config` | 查询 / 配置单点登录 |
 | GET | `/api/v1/access/applications/{id}/roles` | 应用已绑定角色 |
 | POST / DELETE | `/api/v1/access/application-roles` | 应用绑定 / 解绑角色 |
 | GET | `/api/v1/access/applications/{id}/assignments` | 应用授权清单 |
 | POST | `/api/v1/access/applications/{id}/assignments` | 新增授权 |
+| POST | `/api/v1/access/applications/{id}/assignments/batch` | 批量授权（已存在的授权会重新启用并更新过期时间） |
+| POST | `/api/v1/access/applications/{id}/assignments/batch-delete` | 批量取消授权 |
 | DELETE | `/api/v1/access/applications/{id}/assignments/{assignmentId}` | 删除授权 |
+| GET | `/api/v1/access/users/{id}/application-assignments` | 直接授予某用户的应用授权 |
+| GET | `/api/v1/access/organizations/{id}/application-assignments` | 授予某组织的应用授权 |
 | GET | `/api/v1/access/applications/{id}/access-decisions` | 访问决策 |
 | GET | `/api/v1/access/applications/{id}/access-review` | 访问审查 |
 
@@ -662,17 +703,22 @@ GET /api/v1/access/applications/{id}/access-decisions?userId=<用户 UUID>
 | `application_disabled` | 应用已停用 |
 | `user_not_active` | 用户状态异常，非正常在职状态 |
 | `tenant_mismatch` | 用户不属于应用所属租户 |
+| `all_access` | 应用授权范围为「全员可访问」 |
 | `direct_assignment` | 通过针对该用户的直接授权 |
 | `group_assignment` | 通过用户所属用户组的授权 |
+| `organization_assignment` | 通过用户所在组织（或其上级组织）的授权 |
 | `application_role` | 通过角色获得 |
 | `no_assignment` | 没有任何授权 |
 
-**授权对象**可以是用户，也可以是用户组，二者必填其一，并可选设置过期时间：
+**授权范围**：应用的 `authorizationType` 为 `MANUAL`（默认，仅被授权的主体可访问）或 `ALL_ACCESS`（同租户内所有在职用户可访问）。
+
+**授权对象**可以是用户、用户组或组织，`userId`、`groupId`、`organizationId` 必须且只能填写一个，并可选设置过期时间。授权给组织后，该组织及其所有下级组织的成员都可访问：
 
 ```json
 {
-  "userId": "8f14e45f-...",
+  "userId": null,
   "groupId": null,
+  "organizationId": "8f14e45f-...",
   "expiresAt": "2027-01-01T00:00:00Z"
 }
 ```
@@ -746,6 +792,8 @@ GET /api/v1/access/applications/{id}/access-decisions?userId=<用户 UUID>
 
 风险评估支持传入 IP、User-Agent、设备指纹和地理位置，返回风险等级、命中的规则以及处置建议。
 
+登录时会按启用的规则实时评估：高风险直接拒绝登录，中风险要求 MFA 二次认证（用户未绑定 MFA 时放行并记录）。目前登录链路只带 IP、User-Agent 和失败次数，设备指纹与地理位置类规则仅在调用 `/api/v1/risk/assessments` 时生效。
+
 ### 9.8 审计
 
 | 方法 | 路径 | 说明 |
@@ -756,7 +804,7 @@ GET /api/v1/access/applications/{id}/access-decisions?userId=<用户 UUID>
 
 支持按操作者、动作、目标资源、时间范围和关键字过滤。该接口支持分页，参数为 `page`（从 1 开始）和 `limit`（默认 100，导出默认 500）。
 
-所有管理操作都会自动记录审计事件，接入方无需自行上报。
+所有管理操作都会自动记录审计事件（含客户端 IP 与 User-Agent），接入方无需自行上报。
 
 ### 9.9 仪表盘
 
@@ -783,7 +831,17 @@ GET /api/v1/access/applications/{id}/access-decisions?userId=<用户 UUID>
 | GET / PUT | `/api/v1/security-settings/general` | 通用安全设置 |
 | GET / PUT | `/api/v1/security-settings/password-policy` | 密码策略 |
 
-通用安全设置包含并发会话数、会话有效期、登录失败锁定阈值、自动解锁时间等。密码策略包含长度、复杂度、有效期、历史密码校验等。
+通用安全设置包含并发会话数（超出时踢掉最早的会话）、会话有效期、“记住我”时长、验证码有效期、登录失败统计窗口与锁定阈值、自动解锁时间以及内容安全策略（CSP），保存后即时生效。密码策略包含长度、复杂度、连续重复字符、个人信息与弱密码检查、连续字符与键盘序列、历史密码、有效期与到期提醒；最小长度以此处配置为准，不符合时返回中文提示。
+
+外部服务的连通性检查与运维接口：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/v1/settings/message/mail/test` | 用已保存的邮件配置和指定模板发送测试邮件 |
+| POST | `/api/v1/settings/message/sms/test` | 用已保存的短信配置发送测试短信 |
+| GET | `/api/v1/settings/geo-ip/lookup` | 按当前地理库解析指定 IP |
+| POST | `/api/v1/settings/geo-ip/update` | 用 MaxMind License Key 下载 GeoLite2-City 数据库 |
+| POST | `/api/v1/settings/storage/validate` | 用已保存的对象存储配置写入探测文件 |
 
 ### 9.11 令牌与签名密钥运维
 
