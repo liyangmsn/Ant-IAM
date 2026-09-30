@@ -910,11 +910,11 @@ public class UserService {
     private void validatePasswordPolicy(UserAccount user, String password) {
         int minLength = authenticationPolicyService.currentPasswordMinLength();
         if (password.length() < minLength) {
-            throw new IllegalArgumentException("Password must be at least " + minLength + " characters");
+            throw new IllegalArgumentException("密码长度不能少于 " + minLength + " 位");
         }
         int maxLength = authenticationPolicyService.currentPasswordMaxLength();
         if (password.length() > maxLength) {
-            throw new IllegalArgumentException("Password must be at most " + maxLength + " characters");
+            throw new IllegalArgumentException("密码长度不能超过 " + maxLength + " 位");
         }
         validatePasswordComplexity(password, authenticationPolicyService.currentPasswordComplexity());
         validateRepeatedChars(password, authenticationPolicyService.currentPasswordMaxRepeatedChars());
@@ -1048,13 +1048,13 @@ public class UserService {
             return;
         }
         if (!credential.getSecretHash().isBlank() && passwordEncoder.matches(rawPassword, credential.getSecretHash())) {
-            throw new IllegalArgumentException("Password cannot match the current password");
+            throw new IllegalArgumentException("新密码不能与当前密码相同");
         }
         boolean reused = credentialHistories.findByUserIdAndTypeOrderByCreatedAtDesc(user.getId(), CredentialType.PASSWORD).stream()
             .limit(historyCount)
             .anyMatch(history -> passwordEncoder.matches(rawPassword, history.getSecretHash()));
         if (reused) {
-            throw new IllegalArgumentException("Password cannot reuse the last " + historyCount + " password(s)");
+            throw new IllegalArgumentException("新密码不能与最近 " + historyCount + " 次使用过的密码相同");
         }
     }
 
@@ -1176,11 +1176,11 @@ public class UserService {
         switch (complexity == null ? "three" : complexity) {
             case "any" -> {
             }
-            case "number-letter" -> require(hasDigit && hasLetter, "Password must contain both numbers and letters");
-            case "number-upper" -> require(hasDigit && hasUpper, "Password must contain both numbers and uppercase letters");
-            case "all" -> require(hasDigit && hasUpper && hasLower && hasSpecial, "Password must contain numbers, uppercase letters, lowercase letters and special characters");
-            case "two" -> require(categories >= 2, "Password must contain at least two character categories");
-            default -> require(categories >= 3, "Password must contain at least three character categories");
+            case "number-letter" -> require(hasDigit && hasLetter, "密码必须同时包含数字和字母");
+            case "number-upper" -> require(hasDigit && hasUpper, "密码必须同时包含数字和大写字母");
+            case "all" -> require(hasDigit && hasUpper && hasLower && hasSpecial, "密码必须同时包含数字、大写字母、小写字母和特殊字符");
+            case "two" -> require(categories >= 2, "密码至少需要包含数字、大写字母、小写字母、特殊字符中的两类");
+            default -> require(categories >= 3, "密码至少需要包含数字、大写字母、小写字母、特殊字符中的三类");
         }
     }
 
@@ -1195,7 +1195,7 @@ public class UserService {
             runLength = current == previous ? runLength + 1 : 1;
             previous = current;
             if (runLength > maxRepeatedChars) {
-                throw new IllegalArgumentException("Password contains too many repeated characters");
+                throw new IllegalArgumentException("密码中连续重复的字符过多");
             }
         }
     }
@@ -1209,7 +1209,7 @@ public class UserService {
             || containsSensitiveUserValue(normalizedPassword, user.getMobile())
             || containsSensitiveUserValue(normalizedPassword, user.getDisplayName())
             || containsSensitiveUserValue(normalizedPassword, emailPrefix(user.getEmail()))) {
-            throw new IllegalArgumentException("Password cannot contain user profile information");
+            throw new IllegalArgumentException("密码不能包含用户名、手机号、邮箱等个人信息");
         }
     }
 
@@ -1230,17 +1230,17 @@ public class UserService {
             "welcome"));
         weakPasswords.addAll(authenticationPolicyService.currentAdditionalWeakPasswords());
         if (weakPasswords.contains(normalizedPassword)) {
-            throw new IllegalArgumentException("Password is too weak");
+            throw new IllegalArgumentException("密码过于简单，属于常见弱密码");
         }
     }
 
     private void validatePasswordExtensionRules(String password) {
         java.util.Set<String> rules = authenticationPolicyService.currentPasswordExtensionRules();
         if (rules.contains("serial-number") && containsAscendingRun(password, '0', '9')) {
-            throw new IllegalArgumentException("Password cannot contain serial numbers");
+            throw new IllegalArgumentException("密码不能包含连续的数字");
         }
         if (rules.contains("serial-letter") && (containsAscendingRun(password.toLowerCase(), 'a', 'z'))) {
-            throw new IllegalArgumentException("Password cannot contain serial letters");
+            throw new IllegalArgumentException("密码不能包含连续的字母");
         }
     }
 
@@ -1266,7 +1266,7 @@ public class UserService {
             String reversed = new StringBuilder(window).reverse().toString();
             for (String source : ILLEGAL_SEQUENCE_SOURCES) {
                 if (source.contains(window) || source.contains(reversed)) {
-                    throw new IllegalArgumentException("Password cannot contain keyboard or alphabetical sequences such as \"" + window + "\"");
+                    throw new IllegalArgumentException("密码不能包含键盘或字母顺序序列，例如 \"" + window + "\"");
                 }
             }
         }

@@ -68,7 +68,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> service.create(request("abcdefgh"), "admin"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("numbers and letters");
+            .hasMessageContaining("数字和字母");
     }
 
     @Test
@@ -77,7 +77,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> service.create(request("alice123X"), "admin"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("user profile");
+            .hasMessageContaining("个人信息");
     }
 
     @Test
@@ -87,7 +87,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> service.create(request("company2026"), "admin"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("too weak");
+            .hasMessageContaining("弱密码");
     }
 
     @Test
@@ -96,7 +96,7 @@ class UserServiceTest {
 
         assertThatThrownBy(() -> service.create(request("safe123X"), "admin"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("serial numbers");
+            .hasMessageContaining("连续的数字");
     }
 
     @Test

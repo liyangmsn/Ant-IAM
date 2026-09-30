@@ -203,8 +203,9 @@ public class AuthenticationPolicyService {
     @Transactional(readOnly = true)
     // 获取当前生效密码最小长度，供密码设置和修改流程校验。
     public int currentPasswordMinLength() {
+        // 安全设置页配置的最小长度为准（页面与接口均限制至少 1 位），不再强制抬高到默认 8 位。
         return intSetting("security.password.min_length")
-            .map(this::normalizePasswordMinLength)
+            .map(value -> Math.max(value, 1))
             .orElseGet(() -> policies.findByEnabledTrueOrderByPriorityAsc().stream()
             .findFirst()
             .map(AuthenticationPolicy::getPasswordMinLength)

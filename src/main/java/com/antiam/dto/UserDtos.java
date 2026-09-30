@@ -8,7 +8,6 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -33,14 +32,14 @@ public final class UserDtos {
         UUID tenantId,
         @Schema(description = "所属组织 UUID")
         UUID organizationId,
-        @Schema(description = "初始密码，至少 8 位；为空时不设置初始密码", example = "ChangeMe123")
-        @Size(min = 8) String initialPassword
+        @Schema(description = "初始密码，需符合密码策略；为空时不设置初始密码", example = "ChangeMe123")
+        String initialPassword
     ) {
     }
 
     public record SetPasswordRequest(
-        @Schema(description = "新密码，至少 8 位", example = "ChangeMe123")
-        @NotBlank @Size(min = 8) String password,
+        @Schema(description = "新密码，需符合密码策略", example = "ChangeMe123")
+        @NotBlank String password,
         @Schema(description = "是否为临时密码；临时密码要求用户下次登录后修改")
         Boolean temporary
     ) {
@@ -49,8 +48,8 @@ public final class UserDtos {
     public record ChangeOwnPasswordRequest(
         @Schema(description = "当前密码", example = "OldPass123")
         @NotBlank String currentPassword,
-        @Schema(description = "新密码，至少 8 位", example = "NewPass123")
-        @NotBlank @Size(min = 8) String newPassword
+        @Schema(description = "新密码，需符合密码策略", example = "NewPass123")
+        @NotBlank String newPassword
     ) {
     }
 
@@ -101,8 +100,8 @@ public final class UserDtos {
     public record ConsumePasswordResetTicketRequest(
         @Schema(description = "密码重置 token，只在创建票据时返回一次")
         @NotBlank String resetToken,
-        @Schema(description = "新密码，至少 8 位", example = "NewPass123")
-        @NotBlank @Size(min = 8) String newPassword,
+        @Schema(description = "新密码，需符合密码策略", example = "NewPass123")
+        @NotBlank String newPassword,
         @Schema(description = "是否设置为临时密码")
         Boolean temporary
     ) {

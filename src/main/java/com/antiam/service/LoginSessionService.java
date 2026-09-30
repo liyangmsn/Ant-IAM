@@ -57,7 +57,9 @@ public class LoginSessionService {
         String reason = signInBlockReason(user);
         if (reason != null) {
             events.save(new AuthenticationEvent(null, user, null, AuthenticationEventType.LOGIN_FAILURE, method, ipAddress, userAgent, method + "_login_blocked;" + reason));
-            throw new AuthenticationFailedException("账号未启用或已被停用，请联系管理员");
+            throw new AuthenticationFailedException(user.getStatus() == AccountStatus.LOCKED
+                ? "账号已被锁定，请稍后重试或联系管理员解锁"
+                : "账号未启用或已被停用，请联系管理员");
         }
     }
 
