@@ -2,6 +2,7 @@
 
 独立的用户文档站点，包含：
 
+- `product.html`：面向企业决策者与 IT 负责人的产品介绍。
 - `usage.html`：面向普通用户和管理员的使用说明。
 - `integration.html`：面向开发者的 OIDC、OAuth2、SAML、CAS、JWT、SCIM 和管理 API 对接说明。
 

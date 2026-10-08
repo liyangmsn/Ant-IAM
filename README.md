@@ -8,7 +8,7 @@ For a project overview covering purpose and capabilities, see [docs/project-over
 
 For a one-page project brief, see [docs/project-brief.md](docs/project-brief.md) (Chinese).
 
-For a product introduction aimed at business decision makers, see [docs/product-introduction.md](docs/product-introduction.md) (Chinese), with slides in `docs/Js-IAM-产品介绍.pptx`.
+For a product introduction aimed at business decision makers, see the "产品介绍" page of the docs site (`/docs/product.html`, source `ant-iam-docs/product.html`, Chinese).
 
 ## Stack
 
