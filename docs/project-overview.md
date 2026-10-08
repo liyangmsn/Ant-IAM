@@ -82,6 +82,15 @@
 - 影响面分析：`/api/v1/access/permissions/{permissionId}/impact`、`/api/v1/access/roles/{roleId}/impact` 回答"改动这个权限或角色会影响谁"。
 - 用户门户视图：`/api/v1/access/users/{userId}/applications`、`/api/v1/access/me/applications`、`/api/v1/access/me/requestable-applications`。
 
+#### 应用内权限（应用侧细粒度鉴权）
+
+应用访问授权解决"能否进入应用"，应用内权限解决"进入后能做什么"。两者彼此独立：用户先通过应用访问决策，其应用内权限才会生效。
+
+- 权限点：由应用声明，编码在应用内唯一。可在控制台创建应用时填写，或在应用详情页维护，也可由应用以客户端凭据调用 `PUT /oauth2/permissions` 全量同步（清单外的权限点会被删除并解除与角色的关联）；`GET /oauth2/permissions` 查询已注册权限点。
+- 授权模型：权限点 → 应用内角色 → 用户 / 用户组 / 组织，组织授权对下级组织成员生效。管理接口位于 `/api/v1/access/applications/{id}/permissions`、`/permission-roles`、`/permission-roles/{roleId}/members`；`/permission-decisions?userId=` 输出某用户在该应用内的有效权限，用于排查授权。
+- 鉴权：应用执行受保护操作前调用 `POST /oauth2/permissions/check`，以客户端凭据提交用户 access_token 与待校验权限编码，实时返回逐项结果；只有全部满足时 `allowed` 为 `true`。`POST /oauth2/introspect` 与 `GET /oauth2/userinfo` 的响应同时包含 `permissions` 数组，便于登录后一次性获取权限用于前端显隐控制。
+- 数据隔离：应用内权限使用独立的权限点、角色与授予关系表，不复用全局的角色权限体系。
+
 ### 3.6 应用访问申请与审批
 
 - 申请：用户对可申请的应用发起访问申请，管理员也可代用户发起；单据状态包含待审、通过、驳回、取消。

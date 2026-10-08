@@ -72,6 +72,7 @@
 - OAuth2 PKCE 和 refresh token 支持
 - OAuth2 refresh token 轮换和撤销：`/oauth2/revocations`
 - OAuth2 token introspection 和客户端认证撤销：`/oauth2/introspect`、`/oauth2/revoke`
+- 应用内权限：应用注册时声明权限点，或以客户端凭据同步（`PUT /oauth2/permissions`）；控制台将权限点组合为应用内角色并授予用户、用户组或组织；应用通过 `POST /oauth2/permissions/check` 实时鉴权，introspection 与 userinfo 同时返回 `permissions`
 - OAuth2 access/refresh token 清单、详情和管理员撤销：`/api/v1/oauth/tokens`、`/api/v1/oauth/tokens/{tokenType}/{tokenId}`
 - OAuth2 consent 管理，支持筛选、详情和撤销：`/oauth2/consents`、`/oauth2/consents/{consentId}`
 - SAML2 metadata 和 XML SSO assertion，断言按签名密钥做 RSA-SHA256 enveloped 签名：`/saml2/metadata`、`/saml2/metadata.xml`、`/saml2/sso`、`/saml2/sso/xml`

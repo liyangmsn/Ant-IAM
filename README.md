@@ -72,6 +72,7 @@ For a product introduction aimed at business decision makers, see the "产品介
 - OAuth2 PKCE and refresh token support
 - OAuth2 refresh token rotation and revocation: `/oauth2/revocations`
 - OAuth2 token introspection and client-authenticated revocation: `/oauth2/introspect`, `/oauth2/revoke`
+- In-app permissions: applications declare permissions at registration or sync them with client credentials (`PUT /oauth2/permissions`); the console groups them into application roles granted to users, groups or organizations; applications authorize operations in real time via `POST /oauth2/permissions/check`, and introspection/userinfo also return `permissions`
 - OAuth2 access/refresh token inventory, profiles and admin revocation: `/api/v1/oauth/tokens`, `/api/v1/oauth/tokens/{tokenType}/{tokenId}`
 - OAuth2 consent management with filtering, profiles and revocation: `/oauth2/consents`, `/oauth2/consents/{consentId}`
 - SAML2 metadata and SSO assertions with XML responses, signed with RSA-SHA256 enveloped signatures: `/saml2/metadata`, `/saml2/metadata.xml`, `/saml2/sso`, `/saml2/sso/xml`

@@ -142,6 +142,7 @@ Content-Type: application/json
 | `/.well-known/openid-configuration` | OIDC 发现文档 |
 | `/oauth2/jwks` | OIDC 公钥 |
 | `/oauth2/token`、`/oauth2/introspect`、`/oauth2/revoke` | 令牌相关 |
+| `/oauth2/permissions`、`/oauth2/permissions/check` | 应用内权限注册与校验（需客户端凭据） |
 | `/oauth2/userinfo` | 用户信息（需携带 access_token） |
 | `/saml2/metadata`、`/saml2/metadata.xml` | SAML 元数据 |
 | `/cas/serviceValidate`、`/cas/p3/serviceValidate` | CAS 票据校验 |
@@ -341,7 +342,7 @@ Authorization: Bearer <accessToken>
 | 校验令牌是否有效 | `POST /oauth2/introspect`，参数 `token`、`client_id`、`client_secret` |
 | 撤销令牌 | `POST /oauth2/revoke`，参数 `token`、`token_type_hint`、`client_id`、`client_secret` |
 
-校验结果中的 `active` 表示令牌是否仍然有效。
+校验结果中的 `active` 表示令牌是否仍然有效；access_token 的校验结果还会通过 `permissions` 返回用户在本应用内的有效权限编码（见 5.10）。
 
 ### 5.8 校验身份令牌签名
 
@@ -383,6 +384,58 @@ Authorization: Bearer <访问令牌>
 该接口对调用者身份有要求，仅适用于能够自行完成用户登录的受信任应用。
 
 ---
+
+### 5.10 应用内权限
+
+应用可以把自身需要鉴权的操作（例如“审批订单”“导出报表”）注册为**应用内权限点**，由 IAM 统一授权；应用在执行这些操作前先向 IAM 校验，不再自行维护权限数据。
+
+**授权模型**：权限点 → 应用内角色 → 用户 / 用户组 / 组织（授予组织即覆盖其下级组织成员）。用户必须先通过应用访问决策（应用已启用、用户状态正常、拥有应用访问授权），应用内权限才会生效；失去应用访问授权的用户不具备任何应用内权限。
+
+**1. 注册权限点**，任选其一：
+
+- 管理员在控制台创建应用时填写权限清单，或在应用详情的【应用权限】页维护；管理 API 为 `POST /api/v1/access/applications` 请求体中的 `permissions` 字段。
+- 应用使用客户端凭据声明式地全量同步，适合在启动或发布时调用。清单外已注册的权限点会被删除并从应用内角色中移除：
+
+```http
+PUT /oauth2/permissions
+Authorization: Basic base64(client_id:client_secret)
+Content-Type: application/json
+
+{
+  "permissions": [
+    { "code": "order:read", "name": "查看订单" },
+    { "code": "order:approve", "name": "审批订单", "description": "审批待处理订单" }
+  ]
+}
+```
+
+权限编码在应用内唯一，可包含字母、数字以及 `:` `.` `_` `-`。`GET /oauth2/permissions` 返回当前已注册的权限点。
+
+**2. 授权**：管理员在【应用权限】页创建应用内角色、勾选权限点，再将角色授予用户、用户组或组织。
+
+**3. 鉴权**：应用在执行受保护操作前，以客户端凭据提交用户的 access_token（必须由本应用签发）和待校验的权限编码，IAM 实时返回结果：
+
+```http
+POST /oauth2/permissions/check
+Authorization: Basic base64(client_id:client_secret)
+Content-Type: application/json
+
+{ "token": "<用户 access_token>", "permissions": ["order:approve"] }
+```
+
+```json
+{
+  "active": true,
+  "allowed": true,
+  "sub": "<用户 UUID>",
+  "username": "zhangsan",
+  "results": { "order:approve": true }
+}
+```
+
+只有全部权限都满足时 `allowed` 才为 `true`，应在 `allowed` 为 `false` 时拒绝操作。`reason` 的取值：`token_inactive`（令牌无效、过期、已撤销或不属于本应用）、`permission_denied`（缺少权限），以及应用访问决策的拒绝原因如 `no_assignment`、`application_disabled`。
+
+除实时校验外，`POST /oauth2/introspect` 和 `GET /oauth2/userinfo` 的响应也包含 `permissions` 数组，适合登录后一次性获取权限、在前端控制菜单与按钮显隐。缓存权限时请设置较短的有效期，权限变更以 `/oauth2/permissions/check` 的实时结果为准。
 
 ## 6. 单点登录接入（SAML 2.0）
 
@@ -681,6 +734,13 @@ not (emails.value ew "example.com")
 | GET | `/api/v1/access/organizations/{id}/application-assignments` | 授予某组织的应用授权 |
 | GET | `/api/v1/access/applications/{id}/access-decisions` | 访问决策 |
 | GET | `/api/v1/access/applications/{id}/access-review` | 访问审查 |
+| GET / POST | `/api/v1/access/applications/{id}/permissions` | 应用内权限点列表 / 新增 |
+| PUT / DELETE | `/api/v1/access/applications/{id}/permissions/{permissionId}` | 更新 / 删除应用内权限点 |
+| GET / POST | `/api/v1/access/applications/{id}/permission-roles` | 应用内角色列表 / 新增 |
+| PUT / DELETE | `/api/v1/access/applications/{id}/permission-roles/{roleId}` | 更新 / 删除应用内角色 |
+| GET / POST | `/api/v1/access/applications/{id}/permission-roles/{roleId}/members` | 应用内角色的授予对象 / 批量授予 |
+| DELETE | `/api/v1/access/applications/{id}/permission-roles/{roleId}/members/{memberId}` | 撤销应用内角色 |
+| GET | `/api/v1/access/applications/{id}/permission-decisions?userId=` | 查询用户在应用内的有效权限 |
 
 **访问决策**用于判断某用户能否访问某应用：
 

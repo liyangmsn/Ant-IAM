@@ -1,13 +1,18 @@
 # 系统待办清单
 
-本清单由「前端入口 / 配置项」与「后端实现」逐项对照得出，每条都标注了证据位置。最近一次对照：2026-09-30。
+本清单由「前端入口 / 配置项」与「后端实现」逐项对照得出，每条都标注了证据位置。最近一次对照：2026-10-08。
 
 图例：`[ ]` 未开始 · `[~]` 仅原型或部分实现 · `[x]` 已完成
+
+## 构建注意
+
+- `pom.xml` 曾存在重复依赖声明（`spring-boot-starter-mail`、`s3`、`geoip2`），会导致 Maven 4 内核的工具（如 mvnd 2.0）直接拒绝构建，已于 2026-10-08 清理。
+- `FixedCodeSmsSpringBootTest` 是 `@SpringBootTest`，需要本地 PostgreSQL（`localhost:5432`，库 `ant_iam`）可用，否则测试失败。
 
 ## P1 待生产化
 
 - [~] **控制台多租户隔离与按钮级权限**
-  - 现状：后端已按 `iam:<模块>:<read|write>` 校验接口；前端仅通用列表页（`CrudListPage`，如风险规则、认证策略）按 `write` 权限点隐藏操作按钮，其余页面没有写权限时仍显示按钮，点击后返回 403。模块管理员仍能看到全部租户的数据。
+  - 现状：后端已按 `iam:<模块>:<read|write>` 校验接口；前端仅通用列表页（`CrudListPage`，如风险规则、认证策略）按 `write` 权限点隐藏操作按钮，其余页面（含应用详情的【应用权限】页）没有写权限时仍显示按钮，点击后返回 403。模块管理员仍能看到全部租户的数据。
   - 位置：`ant-iam-frontend/src/apps/console/components/CrudListPage.tsx`、`src/main/java/com/antiam/config/IamAuthorizationService.java`
   - 验收：管理员只能访问所属租户的数据；所有控制台页面按 `write` 权限点隐藏或禁用操作按钮。
 
@@ -46,10 +51,6 @@
   - 位置：`src/main/java/com/antiam/service/AuthenticationService.java`
   - 验收：模板可渲染并完成代填登录跳转。
 
-- [ ] **前端首页缓存**
-  - 现状：`deploy/rancher/nginx.conf` 未对 `index.html` 设置 `Cache-Control: no-cache`，发版后浏览器可能继续使用旧页面。
-  - 验收：`index.html` 不缓存，带 hash 的静态资源长期缓存。
-
 ## 已完成
 
 - [x] 身份源实时同步回调：`POST /api/v1/synchronizer/event_receive/{sourceCode}`，HMAC-SHA256 验签后增量写入组织、用户和用户组。
@@ -58,6 +59,8 @@
 - [x] 对象存储：阿里云 OSS、腾讯云 COS、七牛云 Kodo 原生适配，S3 / MinIO / RustFS 走 S3 兼容适配（path-style）；移除了本地存储选项；`POST /api/v1/settings/storage/validate` 校验连通性；用户头像上传 `POST /api/v1/users/me/avatar`。
 - [x] IP 地理库：MaxMind 解析国家与城市；注册码可保存，`POST /api/v1/settings/geo-ip/update` 在线下载 GeoLite2-City，`GET /api/v1/settings/geo-ip/lookup` 解析测试。
 - [x] 控制台细粒度授权：`iam:<模块>:<read|write>` 权限点、URL 按模块校验、写操作防提权；`GET /api/v1/users/me/console-access` 供前端裁剪菜单。
+- [x] 应用内权限：应用注册时声明权限点（控制台创建应用时填写，或以客户端凭据 `PUT /oauth2/permissions` 全量同步），权限点组合为应用内角色后授予用户、用户组或组织；应用通过 `POST /oauth2/permissions/check` 实时鉴权，`/oauth2/introspect` 与 `/oauth2/userinfo` 返回 `permissions`；控制台在应用详情【应用权限】维护，`/permission-decisions?userId=` 排查有效权限。数据使用独立的权限点与角色表，与全局角色权限体系隔离。
+- [x] 前端页面不缓存：`deploy/rancher/nginx.conf` 的 `location /` 与 `/docs/` 均已设置 `Cache-Control: no-cache`，带 hash 的静态资源走 `/assets/`。
 - [x] 应用访问策略：授权范围 `MANUAL` / `ALL_ACCESS`，授权对象支持用户、用户组、组织（下级组织继承），批量授权与取消；OIDC、SAML、CAS、JWT 单点登录签发前校验授权。
 - [x] 应用访问申请与审批：门户自助申请，管理员审批后自动生成授权，可设到期时间。
 - [x] 客户端密钥重置：`POST /api/v1/access/applications/{id}/client-secret`，明文只返回一次。

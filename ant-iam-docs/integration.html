@@ -26,6 +26,7 @@
         <a href="#choose">选择接入方式</a>
         <a href="#conventions">调用约定</a>
         <a href="#oidc">OIDC / OAuth2</a>
+        <a href="#app-permissions">应用内权限</a>
         <a href="#saml">SAML 2.0</a>
         <a href="#cas">CAS</a>
         <a href="#jwt">JWT</a>
@@ -104,6 +105,24 @@ Content-Type: application/json
           </ul>
           <p>刷新令牌默认每次使用后轮换，旧的 access_token 与 refresh_token 会同时失效。错误响应遵循 RFC 6749，包含 <code>error</code> 与 <code>error_description</code>。</p>
           <p>完整参数以发现文档和管理员分配的应用配置为准，不要在前端代码中保存 client_secret。</p>
+        </section>
+
+        <section id="app-permissions" class="article-section">
+          <h2>应用内权限</h2>
+          <p>应用把需要鉴权的操作注册为权限点，由平台统一授权；执行这些操作前先向平台校验。授权链路为：权限点 → 应用内角色 → 用户 / 用户组 / 组织。用户必须先拥有应用访问授权，应用内权限才会生效。</p>
+          <ul>
+            <li>注册：控制台创建应用时填写权限清单，或应用以客户端凭据调用 <code>PUT /oauth2/permissions</code> 全量同步（清单外的权限点会被删除）。</li>
+            <li>授权：在应用详情的【应用权限】页创建应用内角色并授予用户、用户组或组织。</li>
+            <li>鉴权：<code>POST /oauth2/permissions/check</code> 实时校验；<code>/oauth2/introspect</code> 与 <code>/oauth2/userinfo</code> 也会返回 <code>permissions</code> 数组。</li>
+          </ul>
+          <pre><code>POST {Base URL}/oauth2/permissions/check
+Authorization: Basic base64(client_id:client_secret)
+Content-Type: application/json
+
+{ "token": "&lt;用户 access_token&gt;", "permissions": ["order:approve"] }
+
+→ { "active": true, "allowed": true, "sub": "…", "results": { "order:approve": true } }</code></pre>
+          <p>只有全部权限满足时 <code>allowed</code> 才为 <code>true</code>；<code>reason</code> 为 <code>token_inactive</code>、<code>permission_denied</code> 或应用访问决策的拒绝原因。</p>
         </section>
 
         <section id="saml" class="article-section">
