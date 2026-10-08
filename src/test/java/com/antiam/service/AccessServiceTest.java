@@ -63,6 +63,7 @@ class AccessServiceTest {
         mock(OrganizationRepository.class),
         mock(TenantService.class),
         mock(AuditService.class),
+        mock(ApplicationPermissionService.class),
         passwordEncoder);
 
     @Test

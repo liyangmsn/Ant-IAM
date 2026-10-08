@@ -82,6 +82,7 @@ import com.antiam.repository.RoleRepository;
 import com.antiam.repository.SamlAssertionRepository;
 import com.antiam.repository.UserAccountRepository;
 import com.antiam.repository.UserGroupRepository;
+import com.antiam.dto.ApplicationPermissionDtos.ApplicationPermissionDecisionResponse;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -118,6 +119,7 @@ public class AccessService {
     private final OrganizationRepository organizations;
     private final TenantService tenantService;
     private final AuditService auditService;
+    private final ApplicationPermissionService applicationPermissions;
     private static final java.security.SecureRandom CLIENT_SECRET_RANDOM = new java.security.SecureRandom();
     private static final Set<String> SUPPORTED_GRANT_TYPES = Set.of("authorization_code", "refresh_token");
 
@@ -167,6 +169,9 @@ public class AccessService {
             tenant,
             group));
         auditService.record(actor, "application.create", "application", saved.getId().toString(), saved.getCode());
+        if (request.permissions() != null && !request.permissions().isEmpty()) {
+            applicationPermissions.syncPermissions(saved, request.permissions(), actor);
+        }
         return toResponse(saved);
     }
 
@@ -482,6 +487,19 @@ public class AccessService {
             .orElseGet(() -> userHasApplicationRole(application, user)
                 ? new ApplicationAccessDecisionResponse(applicationId, userId, true, "application_role", null)
                 : new ApplicationAccessDecisionResponse(applicationId, userId, false, "no_assignment", null));
+    }
+
+    @Transactional(readOnly = true)
+    // 应用内权限决策：先完成应用访问决策，通过后再汇总用户经应用内角色获得的权限点。
+    public ApplicationPermissionDecisionResponse decideApplicationPermissions(UUID applicationId, UUID userId) {
+        ApplicationAccessDecisionResponse decision = decideApplicationAccess(applicationId, userId);
+        if (!decision.allowed()) {
+            return new ApplicationPermissionDecisionResponse(applicationId, userId, false, decision.reason(), List.of());
+        }
+        UserAccount user = users.findById(userId)
+            .orElseThrow(() -> new NotFoundException("User not found: " + userId));
+        Set<String> codes = applicationPermissions.effectivePermissionCodes(applicationId, userId, userGroupIds(user), userOrganizationIds(user));
+        return new ApplicationPermissionDecisionResponse(applicationId, userId, true, decision.reason(), List.copyOf(codes));
     }
 
     /**

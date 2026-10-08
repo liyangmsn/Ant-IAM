@@ -12,6 +12,10 @@ import static com.antiam.dto.OAuthDtos.TokenResponse;
 import static com.antiam.dto.OAuthDtos.UserInfoResponse;
 
 import com.antiam.common.OAuthException;
+import com.antiam.dto.ApplicationPermissionDtos.ApplicationPermissionResponse;
+import com.antiam.dto.ApplicationPermissionDtos.PermissionCheckRequest;
+import com.antiam.dto.ApplicationPermissionDtos.PermissionCheckResponse;
+import com.antiam.dto.ApplicationPermissionDtos.SyncApplicationPermissionsRequest;
 import com.antiam.config.IssuerResolver;
 import com.antiam.service.OAuthService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,6 +35,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -176,6 +181,50 @@ public class OAuthController {
     ) {
         ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
         return oauth.introspect(token, client.id(), client.secret());
+    }
+
+    /**
+     * 应用查询自身已注册的应用内权限点。
+     */
+    @Operation(summary = "查询应用内权限", description = "应用使用客户端凭据（推荐 HTTP Basic）查询自己已注册的应用内权限点。")
+    @GetMapping("/oauth2/permissions")
+    List<ApplicationPermissionResponse> clientPermissions(
+        @Parameter(description = "OAuth 客户端 ID") @RequestParam(value = "client_id", required = false) String clientId,
+        @Parameter(description = "OAuth 客户端密钥") @RequestParam(value = "client_secret", required = false) String clientSecret,
+        @Parameter(description = "HTTP Basic 客户端认证") @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
+        return oauth.listClientPermissions(client.id(), client.secret());
+    }
+
+    /**
+     * 应用注册（全量同步）自身的应用内权限点。
+     */
+    @Operation(summary = "同步应用内权限", description = "应用使用客户端凭据声明式地全量同步权限点清单：新增缺失项、更新名称描述、删除清单外的权限点。适合在应用启动或发布时调用。")
+    @PutMapping("/oauth2/permissions")
+    List<ApplicationPermissionResponse> syncClientPermissions(
+        @Parameter(description = "应用权限点清单") @Valid @RequestBody SyncApplicationPermissionsRequest request,
+        @Parameter(description = "OAuth 客户端 ID") @RequestParam(value = "client_id", required = false) String clientId,
+        @Parameter(description = "OAuth 客户端密钥") @RequestParam(value = "client_secret", required = false) String clientSecret,
+        @Parameter(description = "HTTP Basic 客户端认证") @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
+        return oauth.syncClientPermissions(client.id(), client.secret(), request);
+    }
+
+    /**
+     * 应用内鉴权：判断 access_token 对应的用户是否拥有指定权限。
+     */
+    @Operation(summary = "应用内权限校验", description = "应用在执行受保护操作前，以客户端凭据提交用户 access_token 和权限编码，由 IAM 实时判断是否允许。")
+    @PostMapping("/oauth2/permissions/check")
+    PermissionCheckResponse checkPermissions(
+        @Parameter(description = "权限校验请求") @Valid @RequestBody PermissionCheckRequest request,
+        @Parameter(description = "OAuth 客户端 ID") @RequestParam(value = "client_id", required = false) String clientId,
+        @Parameter(description = "OAuth 客户端密钥") @RequestParam(value = "client_secret", required = false) String clientSecret,
+        @Parameter(description = "HTTP Basic 客户端认证") @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
+        return oauth.checkPermissions(client.id(), client.secret(), request);
     }
 
     /**

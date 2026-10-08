@@ -12,6 +12,11 @@ import static com.antiam.dto.OAuthDtos.TokenResponse;
 import static com.antiam.dto.OAuthDtos.UserInfoResponse;
 
 import com.antiam.common.NotFoundException;
+import com.antiam.dto.ApplicationPermissionDtos.ApplicationPermissionDecisionResponse;
+import com.antiam.dto.ApplicationPermissionDtos.ApplicationPermissionResponse;
+import com.antiam.dto.ApplicationPermissionDtos.PermissionCheckRequest;
+import com.antiam.dto.ApplicationPermissionDtos.PermissionCheckResponse;
+import com.antiam.dto.ApplicationPermissionDtos.SyncApplicationPermissionsRequest;
 import com.antiam.common.OAuthException;
 import com.antiam.common.TokenSupport;
 import com.antiam.domain.ApplicationProtocol;
@@ -38,6 +43,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -72,6 +78,7 @@ public class OAuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuditService auditService;
     private final AccessService access;
+    private final ApplicationPermissionService applicationPermissions;
 
     @Transactional
     // 处理 OAuth2 授权请求，校验客户端、回调地址、scope 和 PKCE，必要时要求用户同意。
@@ -388,6 +395,46 @@ public class OAuthService {
             .orElseGet(TokenIntrospectionResponse::inactive);
     }
 
+    @Transactional(readOnly = true)
+    // 应用以客户端凭据查询自己已注册的应用内权限点。
+    public List<ApplicationPermissionResponse> listClientPermissions(String clientId, String clientSecret) {
+        ApplicationSsoConfig config = authenticatedClient(clientId, clientSecret);
+        return applicationPermissions.listPermissions(config.getApplication().getId());
+    }
+
+    @Transactional
+    // 应用以客户端凭据整体同步自己的应用内权限点清单，清单外的权限点会被删除。
+    public List<ApplicationPermissionResponse> syncClientPermissions(String clientId, String clientSecret, SyncApplicationPermissionsRequest request) {
+        ApplicationSsoConfig config = authenticatedClient(clientId, clientSecret);
+        return applicationPermissions.syncPermissions(config.getApplication(), request.permissions(), "client:" + clientId);
+    }
+
+    @Transactional(readOnly = true)
+    // 应用内鉴权：校验 token 属于该客户端且仍有效，再按应用访问决策和应用内角色判断每个权限点。
+    public PermissionCheckResponse checkPermissions(String clientId, String clientSecret, PermissionCheckRequest request) {
+        authenticatedClient(clientId, clientSecret);
+        Instant now = Instant.now();
+        Map<String, Boolean> denied = new LinkedHashMap<>();
+        request.permissions().forEach(code -> denied.put(code, false));
+        OAuthAccessToken accessToken = accessTokens.findByTokenHash(tokens.sha256(requiredToken(request.token())))
+            .filter(token -> token.getClientId().equals(clientId))
+            .filter(token -> token.isActive(now) && isGrantHolderActive(token.getApplication(), token.getUser()))
+            .orElse(null);
+        if (accessToken == null) {
+            return new PermissionCheckResponse(false, false, null, null, "token_inactive", denied);
+        }
+        UserAccount user = accessToken.getUser();
+        ApplicationPermissionDecisionResponse decision = access.decideApplicationPermissions(accessToken.getApplication().getId(), user.getId());
+        if (!decision.accessAllowed()) {
+            return new PermissionCheckResponse(true, false, user.getId().toString(), user.getUsername(), decision.reason(), denied);
+        }
+        Set<String> granted = Set.copyOf(decision.permissions());
+        Map<String, Boolean> results = new LinkedHashMap<>();
+        request.permissions().forEach(code -> results.put(code, granted.contains(code)));
+        boolean allowed = results.values().stream().allMatch(Boolean::booleanValue);
+        return new PermissionCheckResponse(true, allowed, user.getId().toString(), user.getUsername(), allowed ? null : "permission_denied", results);
+    }
+
     @Transactional
     // 按 RFC 7009 撤销 access token 或 refresh token；token_type_hint 只影响查找顺序，撤销 refresh token 时级联撤销其 access token。
     public RevokeTokenResponse revokeToken(String token, String tokenTypeHint, String clientId, String clientSecret) {
@@ -575,7 +622,8 @@ public class OAuthService {
             profile ? user.getUsername() : null,
             profile ? user.getDisplayName() : null,
             scopes.contains("email") ? user.getEmail() : null,
-            scopes.contains("phone") ? user.getMobile() : null);
+            scopes.contains("phone") ? user.getMobile() : null,
+            access.decideApplicationPermissions(config.getApplication().getId(), user.getId()).permissions());
     }
 
     // 生成 OIDC Provider Discovery 元数据。
@@ -945,7 +993,8 @@ public class OAuthService {
             "Bearer",
             accessToken.getScopes(),
             accessToken.getExpiresAt().getEpochSecond(),
-            accessToken.getCreatedAt() == null ? null : accessToken.getCreatedAt().getEpochSecond());
+            accessToken.getCreatedAt() == null ? null : accessToken.getCreatedAt().getEpochSecond(),
+            access.decideApplicationPermissions(accessToken.getApplication().getId(), accessToken.getUser().getId()).permissions());
     }
 
     private TokenIntrospectionResponse toIntrospectionResponse(OAuthRefreshToken refreshToken, Instant now) {

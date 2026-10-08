@@ -4,7 +4,9 @@ import com.antiam.domain.ApplicationAuthorizationType;
 import com.antiam.domain.ApplicationProtocol;
 import com.antiam.domain.ApplicationAccessRequestStatus;
 import com.antiam.domain.AccountStatus;
+import com.antiam.dto.ApplicationPermissionDtos.ApplicationPermissionDefinition;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -91,8 +93,21 @@ public final class AccessDtos {
         @Schema(description = "所属租户 UUID；为空表示系统级应用")
         UUID tenantId,
         @Schema(description = "应用分组 UUID；为空表示未分组")
-        UUID groupId
+        UUID groupId,
+        @Schema(description = "应用内权限点清单，注册应用时一并声明；为空表示暂不声明")
+        List<@Valid ApplicationPermissionDefinition> permissions
     ) {
+        public CreateApplicationRequest(
+            String code,
+            String name,
+            ApplicationProtocol protocol,
+            String loginUrl,
+            String description,
+            UUID tenantId,
+            UUID groupId
+        ) {
+            this(code, name, protocol, loginUrl, description, tenantId, groupId, null);
+        }
     }
 
     public record UpdateApplicationRequest(

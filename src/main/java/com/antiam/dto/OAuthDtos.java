@@ -82,10 +82,16 @@ public final class OAuthDtos {
         @JsonProperty("token_type") String tokenType,
         String scope,
         Long exp,
-        Long iat
+        Long iat,
+        @Schema(description = "用户在该应用内的有效权限编码，仅 access_token 返回")
+        List<String> permissions
     ) {
+        public TokenIntrospectionResponse(boolean active, String clientId, String username, String sub, String tokenType, String scope, Long exp, Long iat) {
+            this(active, clientId, username, sub, tokenType, scope, exp, iat, null);
+        }
+
         public static TokenIntrospectionResponse inactive() {
-            return new TokenIntrospectionResponse(false, null, null, null, null, null, null, null);
+            return new TokenIntrospectionResponse(false, null, null, null, null, null, null, null, null);
         }
     }
 
@@ -95,8 +101,13 @@ public final class OAuthDtos {
         @JsonProperty("preferred_username") String preferredUsername,
         String name,
         String email,
-        @JsonProperty("phone_number") String phoneNumber
+        @JsonProperty("phone_number") String phoneNumber,
+        @Schema(description = "用户在该应用内的有效权限编码")
+        List<String> permissions
     ) {
+        public UserInfoResponse(String sub, String preferredUsername, String name, String email, String phoneNumber) {
+            this(sub, preferredUsername, name, email, phoneNumber, null);
+        }
     }
 
     public record OidcDiscoveryResponse(
