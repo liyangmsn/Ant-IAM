@@ -8,7 +8,7 @@
 
 一页式项目简报见 [docs/project-brief.md](docs/project-brief.md)。
 
-面向企业决策者的产品介绍见文档站点的“产品介绍”页面（`/docs/product.html`，源码 `ant-iam-docs/product.html`）。
+面向企业决策者的产品介绍见文档站点的“产品介绍”页面（`/docs/product.html`，源码 `ant-iam-docs/product.md`）。
 
 ## 技术栈
 

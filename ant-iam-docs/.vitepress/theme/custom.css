@@ -1,0 +1,102 @@
+/* 品牌色与控制台保持一致（antd 主色 #1677ff） */
+:root {
+  --vp-c-brand-1: #1677ff;
+  --vp-c-brand-2: #4096ff;
+  --vp-c-brand-3: #1677ff;
+  --vp-c-brand-soft: rgba(22, 119, 255, 0.12);
+
+  /* 流程图配色：浅色模式 */
+  --diagram-box-fill: #ffffff;
+  --diagram-box-stroke: #d5deec;
+  --diagram-accent-fill: #e9f1ff;
+  --diagram-accent-stroke: #9bbbf4;
+  --diagram-ok-fill: #e8f7ef;
+  --diagram-ok-stroke: #9fd8b9;
+  --diagram-warn-fill: #fff7e8;
+  --diagram-warn-stroke: #efc98a;
+  --diagram-danger-fill: #fdeeee;
+  --diagram-danger-stroke: #eba8a8;
+  --diagram-text: #172033;
+  --diagram-subtext: #8290a8;
+  --diagram-label: #526078;
+  --diagram-heading: #567bd5;
+  --diagram-line: #9fb0cc;
+}
+
+.dark {
+  --vp-c-brand-1: #4096ff;
+  --vp-c-brand-2: #69b1ff;
+  --vp-c-brand-3: #1677ff;
+  --vp-c-brand-soft: rgba(64, 150, 255, 0.16);
+
+  --diagram-box-fill: #1e2330;
+  --diagram-box-stroke: #3a4459;
+  --diagram-accent-fill: #1c2a45;
+  --diagram-accent-stroke: #3f68b3;
+  --diagram-ok-fill: #17322a;
+  --diagram-ok-stroke: #2f7a57;
+  --diagram-warn-fill: #352a17;
+  --diagram-warn-stroke: #8a6a2c;
+  --diagram-danger-fill: #3a1f22;
+  --diagram-danger-stroke: #8f4247;
+  --diagram-text: #e6eaf2;
+  --diagram-subtext: #98a3b8;
+  --diagram-label: #b4bdcf;
+  --diagram-heading: #82a8f0;
+  --diagram-line: #6b7a96;
+}
+
+/* 页面开头的英文小标题与导语 */
+.vp-doc .eyebrow {
+  color: var(--diagram-heading);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  margin: 0 0 4px;
+}
+
+.vp-doc .lead {
+  color: var(--vp-c-text-2);
+  font-size: 17px;
+  line-height: 1.8;
+}
+
+/* 内嵌 SVG 流程图 */
+.vp-doc .figure {
+  margin: 26px 0;
+  overflow-x: auto;
+}
+
+.vp-doc .figure svg {
+  display: block;
+  height: auto;
+  min-width: 560px;
+  width: 100%;
+}
+
+.vp-doc .figure figcaption {
+  color: var(--vp-c-text-3);
+  font-size: 12px;
+  margin-top: 10px;
+  text-align: center;
+}
+
+.vp-doc .figure .box { fill: var(--diagram-box-fill); stroke: var(--diagram-box-stroke); }
+.vp-doc .figure .hub { fill: var(--diagram-accent-fill); stroke: var(--diagram-accent-stroke); stroke-dasharray: 5 4; }
+.vp-doc .figure .accent { fill: var(--diagram-accent-fill); stroke: var(--diagram-accent-stroke); }
+.vp-doc .figure .ok { fill: var(--diagram-ok-fill); stroke: var(--diagram-ok-stroke); }
+.vp-doc .figure .warn { fill: var(--diagram-warn-fill); stroke: var(--diagram-warn-stroke); }
+.vp-doc .figure .danger { fill: var(--diagram-danger-fill); stroke: var(--diagram-danger-stroke); }
+.vp-doc .figure .t { fill: var(--diagram-text); font-size: 13px; font-weight: 700; text-anchor: middle; }
+.vp-doc .figure .s { fill: var(--diagram-subtext); font-size: 11px; text-anchor: middle; }
+.vp-doc .figure .h { fill: var(--diagram-heading); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-anchor: middle; }
+.vp-doc .figure .lbl { fill: var(--diagram-label); font-size: 11.5px; text-anchor: middle; }
+.vp-doc .figure .line { fill: none; stroke: var(--diagram-line); stroke-width: 1.5; }
+.vp-doc .figure .lifeline { stroke: var(--diagram-box-stroke); stroke-dasharray: 4 4; }
+.vp-doc .figure .arrowhead { fill: var(--diagram-line); }
+
+/* 首页卡片里的序号 */
+.VPFeature .icon {
+  font-size: 14px;
+  font-weight: 700;
+}
