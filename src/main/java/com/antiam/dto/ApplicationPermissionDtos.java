@@ -45,6 +45,8 @@ public final class ApplicationPermissionDtos {
         String code,
         String name,
         String description,
+        @Schema(description = "是否为系统保留的委派管理权限点，保留权限点不可修改、不参与同步")
+        boolean reserved,
         Instant createdAt,
         Instant updatedAt
     ) {
@@ -84,6 +86,8 @@ public final class ApplicationPermissionDtos {
         String code,
         String name,
         String description,
+        @Schema(description = "是否为系统内置的委派管理角色，内置角色不可修改或删除")
+        boolean builtIn,
         @Schema(description = "角色包含的权限点")
         List<ApplicationPermissionResponse> permissions,
         @Schema(description = "授予对象数量")
@@ -144,6 +148,71 @@ public final class ApplicationPermissionDtos {
         String reason,
         @Schema(description = "逐个权限的校验结果")
         Map<String, Boolean> results
+    ) {
+    }
+
+    @Schema(description = "当前操作人对某个应用权限的管理级别")
+    public enum ApplicationAdminLevel {
+        /** IAM 管理员：可管理全部应用。 */
+        GLOBAL,
+        /** IAM 只读管理员：可查看全部应用。 */
+        GLOBAL_READ,
+        /** 应用权限负责人。 */
+        OWNER,
+        /** 授权管理员。 */
+        GRANT_MANAGER,
+        NONE;
+
+        public boolean canRead() {
+            return this != NONE;
+        }
+
+        public boolean canManageDefinitions() {
+            return this == GLOBAL || this == OWNER;
+        }
+
+        public boolean canGrantRoles() {
+            return this == GLOBAL || this == OWNER || this == GRANT_MANAGER;
+        }
+
+        public boolean canGrantDelegationRoles() {
+            return this == GLOBAL || this == OWNER;
+        }
+    }
+
+    public record ApplicationAdminAccessResponse(
+        UUID applicationId,
+        @Schema(description = "管理级别")
+        ApplicationAdminLevel level,
+        @Schema(description = "能否维护权限点与角色")
+        boolean canManageDefinitions,
+        @Schema(description = "能否授予普通角色")
+        boolean canGrantRoles,
+        @Schema(description = "能否授予内置管理角色")
+        boolean canGrantDelegationRoles
+    ) {
+        public static ApplicationAdminAccessResponse of(UUID applicationId, ApplicationAdminLevel level) {
+            return new ApplicationAdminAccessResponse(applicationId, level, level.canManageDefinitions(), level.canGrantRoles(), level.canGrantDelegationRoles());
+        }
+    }
+
+    public record ManagedApplicationResponse(
+        UUID applicationId,
+        String code,
+        String name,
+        String description,
+        @Schema(description = "当前用户对该应用的管理级别：OWNER 或 GRANT_MANAGER")
+        ApplicationAdminLevel level
+    ) {
+    }
+
+    public record GrantableSubjectResponse(
+        ApplicationAssignmentSubjectType subjectType,
+        UUID id,
+        @Schema(description = "展示名称")
+        String name,
+        @Schema(description = "补充信息：用户为用户名与所属组织，用户组与组织为编码")
+        String detail
     ) {
     }
 }

@@ -10,7 +10,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 应用内权限点，由应用在注册或同步时声明，编码在应用内唯一。
+ * 应用内权限点，由应用在注册或同步时声明，编码在应用内唯一；reserved 表示系统为委派管理保留的权限点。
  */
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -25,12 +25,18 @@ public class ApplicationPermission extends BaseEntity {
     private String code;
     private String name;
     private String description;
+    private boolean reserved;
 
     public ApplicationPermission(Application application, String code, String name, String description) {
+        this(application, code, name, description, false);
+    }
+
+    public ApplicationPermission(Application application, String code, String name, String description, boolean reserved) {
         this.application = application;
         this.code = code;
         this.name = name;
         this.description = description;
+        this.reserved = reserved;
     }
 
     public void update(String name, String description) {

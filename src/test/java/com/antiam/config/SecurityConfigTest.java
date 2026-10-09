@@ -89,6 +89,19 @@ class SecurityConfigTest {
     }
 
     @Test
+    void applicationPermissionEndpointsDeferToMethodSecurity() throws Exception {
+        String base = "/api/v1/access/applications/7b0e7c3e-4b36-4a4b-9a55-2f4e4f7d8a11";
+
+        // 委派管理员没有控制台权限，URL 层只要求登录，具体由 @PreAuthorize 判定
+        mvc.perform(get(base + "/permission-roles").with(as())).andExpect(status().isOk());
+        mvc.perform(post(base + "/permission-roles/x/members").with(as())).andExpect(status().isOk());
+        mvc.perform(get(base + "/permission-roles")).andExpect(status().isUnauthorized());
+        // 应用的其他配置仍按控制台模块授权
+        mvc.perform(get(base + "/sso-config").with(as())).andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/access/me/managed-applications").with(as())).andExpect(status().isOk());
+    }
+
+    @Test
     void readOnlyModulesRejectMutations() throws Exception {
         RequestPostProcessor auditor = as("iam:audit:read");
 

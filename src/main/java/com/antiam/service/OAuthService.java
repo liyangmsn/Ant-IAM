@@ -435,6 +435,27 @@ public class OAuthService {
         return new PermissionCheckResponse(true, allowed, user.getId().toString(), user.getUsername(), allowed ? null : "permission_denied", results);
     }
 
+    /**
+     * 业务应用代表用户调用管理接口时，确认客户端身份并解析操作人：用户令牌必须由该客户端签发且仍然有效。
+     */
+    @Transactional(readOnly = true)
+    public ActingUser resolveActingUser(String clientId, String clientSecret, String userToken) {
+        ApplicationSsoConfig config = authenticatedClient(clientId, clientSecret);
+        if (userToken == null || userToken.isBlank()) {
+            throw OAuthException.invalidRequest("X-Acting-User-Token is required");
+        }
+        Instant now = Instant.now();
+        OAuthAccessToken accessToken = accessTokens.findByTokenHash(tokens.sha256(userToken))
+            .filter(token -> token.getClientId().equals(clientId))
+            .filter(token -> token.isActive(now) && isGrantHolderActive(token.getApplication(), token.getUser()))
+            .orElseThrow(() -> OAuthException.invalidToken("Acting user token is invalid, expired or not issued to this client"));
+        return new ActingUser(config.getApplication().getId(), accessToken.getUser().getId(), accessToken.getUser().getUsername());
+    }
+
+    /** 代表用户调用时解析出的应用与操作人。 */
+    public record ActingUser(UUID applicationId, UUID userId, String username) {
+    }
+
     @Transactional
     // 按 RFC 7009 撤销 access token 或 refresh token；token_type_hint 只影响查找顺序，撤销 refresh token 时级联撤销其 access token。
     public RevokeTokenResponse revokeToken(String token, String tokenTypeHint, String clientId, String clientSecret) {

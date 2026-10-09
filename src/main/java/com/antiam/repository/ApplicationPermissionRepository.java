@@ -12,4 +12,6 @@ public interface ApplicationPermissionRepository extends JpaRepository<Applicati
     Optional<ApplicationPermission> findByIdAndApplicationId(UUID id, UUID applicationId);
 
     boolean existsByApplicationIdAndCode(UUID applicationId, String code);
+
+    Optional<ApplicationPermission> findByApplicationIdAndCode(UUID applicationId, String code);
 }

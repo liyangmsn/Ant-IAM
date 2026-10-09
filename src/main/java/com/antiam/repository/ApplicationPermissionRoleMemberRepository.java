@@ -28,4 +28,12 @@ public interface ApplicationPermissionRoleMemberRepository extends JpaRepository
         where r.application.id = :applicationId
         """)
     List<ApplicationPermissionRoleMember> findByApplicationIdWithPermissions(@Param("applicationId") UUID applicationId);
+
+    @Query("""
+        select m from ApplicationPermissionRoleMember m
+        join fetch m.role r
+        join fetch r.application
+        where r.builtIn = true
+        """)
+    List<ApplicationPermissionRoleMember> findBuiltInRoleMembers();
 }

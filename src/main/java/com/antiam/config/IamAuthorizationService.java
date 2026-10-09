@@ -6,6 +6,7 @@ import com.antiam.repository.PermissionRepository;
 import com.antiam.repository.RoleRepository;
 import com.antiam.repository.UserAccountRepository;
 import com.antiam.repository.UserGroupRepository;
+import com.antiam.service.ApplicationDelegationService;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.Authentication;
@@ -30,6 +31,7 @@ public class IamAuthorizationService {
     private final PermissionRepository permissions;
     private final AuthenticationSessionRepository sessions;
     private final OAuthConsentRepository consents;
+    private final ApplicationDelegationService applicationDelegation;
 
     public boolean isSelf(UUID userId, Authentication authentication) {
         return userId != null
@@ -159,6 +161,27 @@ public class IamAuthorizationService {
 
     public boolean canRevokeConsent(UUID consentId, Authentication authentication) {
         return isConsentOwner(consentId, authentication) || hasPermission(authentication, ConsolePermission.APPLICATION_WRITE.code());
+    }
+
+    /**
+     * 查看应用内权限：IAM 应用模块管理员，或该应用的应用权限负责人、授权管理员。
+     */
+    public boolean canReadApplicationPermissions(UUID applicationId, Authentication authentication) {
+        return applicationDelegation.levelFor(applicationId, authentication).canRead();
+    }
+
+    /**
+     * 维护应用内权限点与角色：IAM 应用模块写权限，或该应用的应用权限负责人。
+     */
+    public boolean canManageApplicationPermissions(UUID applicationId, Authentication authentication) {
+        return applicationDelegation.levelFor(applicationId, authentication).canManageDefinitions();
+    }
+
+    /**
+     * 授予或撤销应用内角色：授权管理员只能操作普通角色，内置管理角色只有负责人和 IAM 管理员能操作。
+     */
+    public boolean canGrantApplicationRole(UUID applicationId, UUID roleId, Authentication authentication) {
+        return applicationDelegation.canGrantRole(applicationDelegation.levelFor(applicationId, authentication), applicationId, roleId);
     }
 
     private static boolean hasAuthority(Authentication authentication, String authority) {

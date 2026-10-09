@@ -45,6 +45,12 @@
 
 ## P2 待补全
 
+- [ ] **应用权限委派：存量导入与范围限制**
+  - 现状：委派管理 P1–P3 已完成。
+  - 缺口：P4 存量"人员—角色"数据导入（API + CSV + 试运行）；P5 授权管理员只能授予本部门人员。
+  - 位置：`docs/application-permission-delegation-design.md` 第 4、6 节。
+
+
 - [ ] **表单代填**
   - 现状：`ApplicationProtocol` 有 `FORM_FILL`，可保存 `formLoginTemplate`。
   - 缺口：无代填提交逻辑；`FORM_FILL` 仅作为本地登录会话的 protocol 标签。
@@ -60,6 +66,7 @@
 - [x] IP 地理库：MaxMind 解析国家与城市；注册码可保存，`POST /api/v1/settings/geo-ip/update` 在线下载 GeoLite2-City，`GET /api/v1/settings/geo-ip/lookup` 解析测试。
 - [x] 控制台细粒度授权：`iam:<模块>:<read|write>` 权限点、URL 按模块校验、写操作防提权；`GET /api/v1/users/me/console-access` 供前端裁剪菜单。
 - [x] 应用内权限：应用注册时声明权限点（控制台创建应用时填写，或以客户端凭据 `PUT /oauth2/permissions` 全量同步），权限点组合为应用内角色后授予用户、用户组或组织；应用通过 `POST /oauth2/permissions/check` 实时鉴权，`/oauth2/introspect` 与 `/oauth2/userinfo` 返回 `permissions`；控制台在应用详情【应用权限】维护，`/permission-decisions?userId=` 排查有效权限。数据使用独立的权限点与角色表，与全局角色权限体系隔离。
+- [x] 应用权限委派管理：每个应用内置「应用权限负责人」「授权管理员」两个角色（基于 `iam:` 保留权限点），委派管理员可在门户「我管理的应用」或业务应用自己的页面（`/oauth2/permission-admin/**`，客户端凭据 + 操作人令牌）管理本应用权限，无需控制台权限；含防提权、保留编码保护、最后一名负责人保护。设计见 `docs/application-permission-delegation-design.md`。
 - [x] 前端页面不缓存：`deploy/rancher/nginx.conf` 的 `location /` 与 `/docs/` 均已设置 `Cache-Control: no-cache`，带 hash 的静态资源走 `/assets/`。
 - [x] 应用访问策略：授权范围 `MANUAL` / `ALL_ACCESS`，授权对象支持用户、用户组、组织（下级组织继承），批量授权与取消；OIDC、SAML、CAS、JWT 单点登录签发前校验授权。
 - [x] 应用访问申请与审批：门户自助申请，管理员审批后自动生成授权，可设到期时间。

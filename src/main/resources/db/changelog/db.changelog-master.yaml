@@ -81,3 +81,5 @@ databaseChangeLog:
       file: db/changelog/040-audit-client-schema.sql
   - include:
       file: db/changelog/041-application-permission-schema.sql
+  - include:
+      file: db/changelog/042-application-permission-delegation-schema.sql

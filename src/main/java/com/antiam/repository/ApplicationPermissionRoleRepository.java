@@ -13,5 +13,7 @@ public interface ApplicationPermissionRoleRepository extends JpaRepository<Appli
 
     boolean existsByApplicationIdAndCode(UUID applicationId, String code);
 
+    Optional<ApplicationPermissionRole> findByApplicationIdAndCode(UUID applicationId, String code);
+
     List<ApplicationPermissionRole> findByPermissionsId(UUID permissionId);
 }

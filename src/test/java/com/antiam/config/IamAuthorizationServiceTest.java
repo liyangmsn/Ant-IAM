@@ -36,7 +36,8 @@ class IamAuthorizationServiceTest {
         groups,
         permissions,
         mock(AuthenticationSessionRepository.class),
-        mock(OAuthConsentRepository.class));
+        mock(OAuthConsentRepository.class),
+        mock(com.antiam.service.ApplicationDelegationService.class));
 
     private final Authentication admin = authentication("admin", SecurityAuthorities.IAM_ADMIN_AUTHORITY);
     private final Authentication userManager = authentication("manager", "iam:user:read", "iam:user:write");
