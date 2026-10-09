@@ -216,6 +216,6 @@ pnpm run build               # 生产构建
 - `README.zh-CN.md`：端点清单与示例调用。
 - `docs/integration-guide.md`：第三方应用接入指南，覆盖接入方式选择、单点登录与通讯录同步流程、管理 API 能力清单与常见问题。
 - `docs/todo.md`：待办清单，逐项标注证据位置与验收标准。
-- `ant-iam-docs/product.html`：面向企业决策者的产品介绍页面（随文档站点发布于 `/docs/product.html`）。
-- `/docs`：随前端部署的用户文档站点（源码位于 `ant-iam-docs`）。
+- `ant-iam-docs/product.md`：面向企业决策者的产品介绍页面（随文档站点发布于 `/docs/product.html`）。
+- `/docs`：随前端部署的用户文档站点，基于 VitePress（源码位于 `ant-iam-docs`）。
 - 运行时文档：`/swagger-ui/index.html`、`/v3/api-docs`。

@@ -1,0 +1,15 @@
+{
+  "name": "ant-iam-docs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Js IAM 文档中心，基于 VitePress 构建，部署在 /docs/ 路径下",
+  "scripts": {
+    "dev": "vitepress dev --port 5175",
+    "build": "vitepress build",
+    "preview": "vitepress preview --port 5175"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4"
+  }
+}
