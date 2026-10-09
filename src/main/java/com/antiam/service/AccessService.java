@@ -169,6 +169,7 @@ public class AccessService {
             tenant,
             group));
         auditService.record(actor, "application.create", "application", saved.getId().toString(), saved.getCode());
+        applicationPermissions.provisionDelegation(saved);
         if (request.permissions() != null && !request.permissions().isEmpty()) {
             applicationPermissions.syncPermissions(saved, request.permissions(), actor);
         }

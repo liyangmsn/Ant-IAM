@@ -142,7 +142,7 @@ Content-Type: application/json
 | `/.well-known/openid-configuration` | OIDC 发现文档 |
 | `/oauth2/jwks` | OIDC 公钥 |
 | `/oauth2/token`、`/oauth2/introspect`、`/oauth2/revoke` | 令牌相关 |
-| `/oauth2/permissions`、`/oauth2/permissions/check` | 应用内权限注册与校验（需客户端凭据） |
+| `/oauth2/permissions`、`/oauth2/permissions/check`、`/oauth2/permission-admin/**` | 应用内权限注册、校验与委派管理（需客户端凭据） |
 | `/oauth2/userinfo` | 用户信息（需携带 access_token） |
 | `/saml2/metadata`、`/saml2/metadata.xml` | SAML 元数据 |
 | `/cas/serviceValidate`、`/cas/p3/serviceValidate` | CAS 票据校验 |
@@ -436,6 +436,42 @@ Content-Type: application/json
 只有全部权限都满足时 `allowed` 才为 `true`，应在 `allowed` 为 `false` 时拒绝操作。`reason` 的取值：`token_inactive`（令牌无效、过期、已撤销或不属于本应用）、`permission_denied`（缺少权限），以及应用访问决策的拒绝原因如 `no_assignment`、`application_disabled`。
 
 除实时校验外，`POST /oauth2/introspect` 和 `GET /oauth2/userinfo` 的响应也包含 `permissions` 数组，适合登录后一次性获取权限、在前端控制菜单与按钮显隐。缓存权限时请设置较短的有效期，权限变更以 `/oauth2/permissions/check` 的实时结果为准。
+
+### 5.11 委派应用权限管理
+
+每个应用自动内置两个角色，用来把本应用的权限管理交给业务方，而不需要给他们 IAM 控制台权限：
+
+| 内置角色编码 | 名称 | 包含的保留权限点 | 能做什么 |
+| --- | --- | --- | --- |
+| `iam:app-owner` | 应用权限负责人 | `iam:app:permission:manage` | 维护本应用的权限点与角色，授予任意角色，任命授权管理员 |
+| `iam:app-grant-manager` | 授权管理员 | `iam:app:grant:manage` | 把普通角色授予或撤销给人员 |
+
+- `iam:` 前缀为系统保留，应用声明或同步权限点、创建角色时都不能使用；`PUT /oauth2/permissions` 同步时不会删除保留权限点。
+- 内置角色不可修改或删除；普通角色不能包含保留权限点；授权管理员不能授予内置角色；不能撤销最后一名应用权限负责人。
+- 委派身份依赖应用访问授权：失去应用访问授权的人，管理能力同时失效。
+- 被委派的人可以在 IAM 门户的「我管理的应用」中管理，也可以在业务应用自己的权限管理页中管理。
+
+业务应用代表当前登录用户调用管理接口时，同时携带客户端凭据和该用户的 access_token（必须由本应用签发），IAM 按该用户的委派身份判定：
+
+```http
+POST /oauth2/permission-admin/roles/order-auditor/members
+Authorization: Basic base64(client_id:client_secret)
+X-Acting-User-Token: <操作人的 access_token>
+Content-Type: application/json
+
+{ "subjectType": "USER", "subjectIds": ["<用户 UUID>"] }
+```
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/oauth2/permission-admin/me` | 操作人的管理级别（`OWNER`、`GRANT_MANAGER` 或 `NONE`），用于决定是否展示权限管理入口 |
+| GET | `/oauth2/permission-admin/roles` | 本应用的角色及其权限点 |
+| GET / POST | `/oauth2/permission-admin/roles/{roleCode}/members` | 角色的授予对象 / 授予 |
+| DELETE | `/oauth2/permission-admin/roles/{roleCode}/members/{memberId}` | 撤销 |
+| GET | `/oauth2/permission-admin/subjects?type=USER&keyword=` | 搜索可授予的在职用户、用户组或组织 |
+| GET | `/oauth2/permission-admin/users/{userId}/permissions` | 某人在本应用内的有效权限 |
+
+缺少 `X-Acting-User-Token` 返回 `400`；令牌无效或不属于本应用返回 `401`；操作人没有对应的委派身份返回 `403`。审计日志记录操作人与来源客户端（`via=client:<client_id>`）。
 
 ## 6. 单点登录接入（SAML 2.0）
 
@@ -741,6 +777,9 @@ not (emails.value ew "example.com")
 | GET / POST | `/api/v1/access/applications/{id}/permission-roles/{roleId}/members` | 应用内角色的授予对象 / 批量授予 |
 | DELETE | `/api/v1/access/applications/{id}/permission-roles/{roleId}/members/{memberId}` | 撤销应用内角色 |
 | GET | `/api/v1/access/applications/{id}/permission-decisions?userId=` | 查询用户在应用内的有效权限 |
+| GET | `/api/v1/access/applications/{id}/admin-access` | 当前用户对该应用权限的管理级别 |
+| GET | `/api/v1/access/applications/{id}/grantable-subjects?type=&keyword=` | 搜索可授予对象 |
+| GET | `/api/v1/access/me/managed-applications` | 当前用户被委派管理的应用 |
 
 **访问决策**用于判断某用户能否访问某应用：
 

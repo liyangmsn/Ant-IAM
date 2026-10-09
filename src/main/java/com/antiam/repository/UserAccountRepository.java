@@ -12,6 +12,30 @@ import org.springframework.data.repository.query.Param;
 public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> {
     Optional<UserAccount> findByUsername(String username);
 
+    /** 委派管理员搜索可授予对象：只返回在职用户，pattern 为小写的 like 模式。 */
+    @Query("""
+        select u from UserAccount u
+        where u.status = com.antiam.domain.AccountStatus.ACTIVE
+          and (lower(u.username) like :pattern or lower(u.displayName) like :pattern
+               or lower(coalesce(u.email, '')) like :pattern or coalesce(u.mobile, '') like :pattern)
+        order by u.username
+        """)
+    java.util.List<UserAccount> searchActive(@Param("pattern") String pattern, org.springframework.data.domain.Pageable pageable);
+
+    /** 同上，限定在应用所属租户内。 */
+    @Query("""
+        select u from UserAccount u
+        where u.status = com.antiam.domain.AccountStatus.ACTIVE
+          and u.tenant.id = :tenantId
+          and (lower(u.username) like :pattern or lower(u.displayName) like :pattern
+               or lower(coalesce(u.email, '')) like :pattern or coalesce(u.mobile, '') like :pattern)
+        order by u.username
+        """)
+    java.util.List<UserAccount> searchActiveInTenant(
+        @Param("tenantId") UUID tenantId,
+        @Param("pattern") String pattern,
+        org.springframework.data.domain.Pageable pageable);
+
     Optional<UserAccount> findByMobile(String mobile);
 
     boolean existsByUsername(String username);

@@ -15,7 +15,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
- * 应用内角色：聚合同一应用的权限点，再授予用户、用户组或组织。
+ * 应用内角色：聚合同一应用的权限点，再授予用户、用户组或组织；builtIn 表示系统内置、不可修改的委派管理角色。
  */
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -30,6 +30,7 @@ public class ApplicationPermissionRole extends BaseEntity {
     private String code;
     private String name;
     private String description;
+    private boolean builtIn;
 
     @ManyToMany
     @JoinTable(
@@ -39,10 +40,20 @@ public class ApplicationPermissionRole extends BaseEntity {
     private Set<ApplicationPermission> permissions = new LinkedHashSet<>();
 
     public ApplicationPermissionRole(Application application, String code, String name, String description) {
+        this(application, code, name, description, false);
+    }
+
+    public ApplicationPermissionRole(Application application, String code, String name, String description, boolean builtIn) {
         this.application = application;
         this.code = code;
         this.name = name;
         this.description = description;
+        this.builtIn = builtIn;
+    }
+
+    /** 是否包含委派管理用的保留权限点；包含时只有应用权限负责人或 IAM 管理员能授予。 */
+    public boolean grantsDelegation() {
+        return permissions.stream().anyMatch(ApplicationPermission::isReserved);
     }
 
     public void update(String name, String description) {

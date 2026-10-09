@@ -83,6 +83,7 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, "/oauth2/permissions").permitAll()
                     .requestMatchers(HttpMethod.PUT, "/oauth2/permissions").permitAll()
                     .requestMatchers(HttpMethod.POST, "/oauth2/permissions/check").permitAll()
+                    .requestMatchers("/oauth2/permission-admin", "/oauth2/permission-admin/**").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/v1/users/password-reset-tickets/consumptions").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/v1/authentication/sms-codes").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/v1/authentication/mobile-login").permitAll()
@@ -106,6 +107,16 @@ public class SecurityConfig {
                         "/api/v1/users/*/third-party-bindings",
                         "/api/v1/users/*/third-party-bindings/**",
                         "/api/v1/access/me/**"
+                    ).authenticated()
+                    // 应用内权限可委派给应用自己的管理员，不按控制台模块授权，改由方法级 @PreAuthorize 判定。
+                    .requestMatchers(
+                        "/api/v1/access/applications/*/permissions",
+                        "/api/v1/access/applications/*/permissions/**",
+                        "/api/v1/access/applications/*/permission-roles",
+                        "/api/v1/access/applications/*/permission-roles/**",
+                        "/api/v1/access/applications/*/permission-decisions",
+                        "/api/v1/access/applications/*/admin-access",
+                        "/api/v1/access/applications/*/grantable-subjects"
                     ).authenticated()
                     .requestMatchers(HttpMethod.GET, "/api/v1/authentication/sessions", "/api/v1/authentication/events").authenticated()
                     .requestMatchers(HttpMethod.POST, "/api/v1/authentication/sessions/*/end").authenticated()

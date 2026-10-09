@@ -8,6 +8,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
+    java.util.List<UserGroup> findTop20ByCodeContainingIgnoreCaseOrNameContainingIgnoreCaseOrderByCodeAsc(String code, String name);
+
     Optional<UserGroup> findByCode(String code);
 
     java.util.List<UserGroup> findByRolesId(UUID roleId);

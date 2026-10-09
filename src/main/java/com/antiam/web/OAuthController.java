@@ -23,10 +23,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
 import java.security.Principal;
-import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -94,7 +91,7 @@ public class OAuthController {
         @Parameter(description = "HTTP Basic 客户端认证（client_secret_basic）") @RequestHeader(value = "Authorization", required = false) String authorization,
         HttpServletRequest request
     ) {
-        ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
+        ClientCredentials client = ClientCredentials.parse(authorization, clientId, clientSecret);
         return oauth.token(grantType, code, redirectUri, client.id(), client.secret(), codeVerifier, refreshToken, issuerResolver.resolve(request));
     }
 
@@ -179,7 +176,7 @@ public class OAuthController {
         @Parameter(description = "OAuth 客户端密钥（client_secret_post）") @RequestParam(value = "client_secret", required = false) String clientSecret,
         @Parameter(description = "HTTP Basic 客户端认证（client_secret_basic）") @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
-        ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
+        ClientCredentials client = ClientCredentials.parse(authorization, clientId, clientSecret);
         return oauth.introspect(token, client.id(), client.secret());
     }
 
@@ -193,7 +190,7 @@ public class OAuthController {
         @Parameter(description = "OAuth 客户端密钥") @RequestParam(value = "client_secret", required = false) String clientSecret,
         @Parameter(description = "HTTP Basic 客户端认证") @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
-        ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
+        ClientCredentials client = ClientCredentials.parse(authorization, clientId, clientSecret);
         return oauth.listClientPermissions(client.id(), client.secret());
     }
 
@@ -208,7 +205,7 @@ public class OAuthController {
         @Parameter(description = "OAuth 客户端密钥") @RequestParam(value = "client_secret", required = false) String clientSecret,
         @Parameter(description = "HTTP Basic 客户端认证") @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
-        ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
+        ClientCredentials client = ClientCredentials.parse(authorization, clientId, clientSecret);
         return oauth.syncClientPermissions(client.id(), client.secret(), request);
     }
 
@@ -223,7 +220,7 @@ public class OAuthController {
         @Parameter(description = "OAuth 客户端密钥") @RequestParam(value = "client_secret", required = false) String clientSecret,
         @Parameter(description = "HTTP Basic 客户端认证") @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
-        ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
+        ClientCredentials client = ClientCredentials.parse(authorization, clientId, clientSecret);
         return oauth.checkPermissions(client.id(), client.secret(), request);
     }
 
@@ -239,7 +236,7 @@ public class OAuthController {
         @Parameter(description = "OAuth 客户端密钥（client_secret_post）") @RequestParam(value = "client_secret", required = false) String clientSecret,
         @Parameter(description = "HTTP Basic 客户端认证（client_secret_basic）") @RequestHeader(value = "Authorization", required = false) String authorization
     ) {
-        ClientCredentials client = clientCredentials(authorization, clientId, clientSecret);
+        ClientCredentials client = ClientCredentials.parse(authorization, clientId, clientSecret);
         return oauth.revokeToken(token, tokenTypeHint, client.id(), client.secret());
     }
 
@@ -282,36 +279,5 @@ public class OAuthController {
         Principal principal
     ) {
         return oauth.revokeStoredToken(tokenType, tokenId, principal.getName());
-    }
-
-    /**
-     * 解析客户端凭据：Basic 头（RFC 6749 §2.3.1，id/secret 先做 form 编码）与表单参数二选一，不允许同时携带密钥。
-     */
-    private ClientCredentials clientCredentials(String authorization, String clientId, String clientSecret) {
-        if (authorization == null || !authorization.regionMatches(true, 0, "Basic ", 0, "Basic ".length())) {
-            return new ClientCredentials(clientId, clientSecret);
-        }
-        if (clientSecret != null && !clientSecret.isBlank()) {
-            throw OAuthException.invalidRequest("Client authentication must use only one method");
-        }
-        String decoded;
-        try {
-            decoded = new String(Base64.getDecoder().decode(authorization.substring("Basic ".length()).trim()), StandardCharsets.UTF_8);
-        } catch (IllegalArgumentException ex) {
-            throw OAuthException.invalidClient("Malformed Basic client credentials");
-        }
-        int separator = decoded.indexOf(':');
-        if (separator < 0) {
-            throw OAuthException.invalidClient("Malformed Basic client credentials");
-        }
-        String basicId = URLDecoder.decode(decoded.substring(0, separator), StandardCharsets.UTF_8);
-        String basicSecret = URLDecoder.decode(decoded.substring(separator + 1), StandardCharsets.UTF_8);
-        if (clientId != null && !clientId.isBlank() && !clientId.equals(basicId)) {
-            throw OAuthException.invalidRequest("client_id does not match Basic client credentials");
-        }
-        return new ClientCredentials(basicId, basicSecret);
-    }
-
-    private record ClientCredentials(String id, String secret) {
     }
 }

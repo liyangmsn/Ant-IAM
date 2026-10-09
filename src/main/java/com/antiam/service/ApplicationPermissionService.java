@@ -1,8 +1,10 @@
 package com.antiam.service;
 
 import com.antiam.common.ConflictException;
+import com.antiam.common.ForbiddenException;
 import com.antiam.common.NotFoundException;
 import com.antiam.domain.Application;
+import com.antiam.domain.ApplicationDelegation;
 import com.antiam.domain.ApplicationPermission;
 import com.antiam.domain.ApplicationPermissionRole;
 import com.antiam.domain.ApplicationPermissionRoleMember;
@@ -65,6 +67,7 @@ public class ApplicationPermissionService {
     // 在控制台为应用新增单个权限点。
     public ApplicationPermissionResponse createPermission(UUID applicationId, ApplicationPermissionDefinition request, String actor) {
         Application application = getApplication(applicationId);
+        rejectReservedCode(request.code());
         if (permissions.existsByApplicationIdAndCode(applicationId, request.code())) {
             throw new ConflictException("Permission code already exists in application: " + request.code());
         }
@@ -76,6 +79,7 @@ public class ApplicationPermissionService {
     @Transactional
     public ApplicationPermissionResponse updatePermission(UUID applicationId, UUID permissionId, UpdateApplicationPermissionRequest request, String actor) {
         ApplicationPermission permission = getPermission(applicationId, permissionId);
+        requireNotReserved(permission);
         permission.update(request.name(), request.description());
         auditService.record(actor, "application.permission.update", "application", applicationId.toString(), permission.getCode());
         return toResponse(permission);
@@ -85,18 +89,21 @@ public class ApplicationPermissionService {
     // 删除权限点，并从引用它的应用内角色中移除。
     public void deletePermission(UUID applicationId, UUID permissionId, String actor) {
         ApplicationPermission permission = getPermission(applicationId, permissionId);
+        requireNotReserved(permission);
         removePermission(permission);
         auditService.record(actor, "application.permission.delete", "application", applicationId.toString(), permission.getCode());
     }
 
     /**
      * 按应用声明的清单整体同步权限点：新增缺失的、更新名称和描述、删除清单外的。
-     * 供创建应用和应用以客户端凭据自助注册使用。
+     * 供创建应用和应用以客户端凭据自助注册使用；系统保留权限点不参与同步，清单中也不能出现保留编码。
      */
     @Transactional
     public List<ApplicationPermissionResponse> syncPermissions(Application application, Collection<ApplicationPermissionDefinition> definitions, String actor) {
         Map<String, ApplicationPermissionDefinition> declared = indexByCode(definitions);
+        declared.keySet().forEach(ApplicationPermissionService::rejectReservedCode);
         Map<String, ApplicationPermission> existing = permissions.findByApplicationIdOrderByCodeAsc(application.getId()).stream()
+            .filter(permission -> !permission.isReserved())
             .collect(Collectors.toMap(ApplicationPermission::getCode, Function.identity()));
         int created = 0;
         int updated = 0;
@@ -131,6 +138,7 @@ public class ApplicationPermissionService {
     @Transactional
     public ApplicationPermissionRoleResponse createRole(UUID applicationId, CreateApplicationPermissionRoleRequest request, String actor) {
         Application application = getApplication(applicationId);
+        rejectReservedCode(request.code());
         if (roles.existsByApplicationIdAndCode(applicationId, request.code())) {
             throw new ConflictException("Role code already exists in application: " + request.code());
         }
@@ -144,6 +152,7 @@ public class ApplicationPermissionService {
     @Transactional
     public ApplicationPermissionRoleResponse updateRole(UUID applicationId, UUID roleId, UpdateApplicationPermissionRoleRequest request, String actor) {
         ApplicationPermissionRole role = getRole(applicationId, roleId);
+        requireNotBuiltIn(role);
         role.update(request.name(), request.description());
         if (request.permissionIds() != null) {
             role.replacePermissions(resolvePermissions(applicationId, request.permissionIds()));
@@ -155,6 +164,7 @@ public class ApplicationPermissionService {
     @Transactional
     public void deleteRole(UUID applicationId, UUID roleId, String actor) {
         ApplicationPermissionRole role = getRole(applicationId, roleId);
+        requireNotBuiltIn(role);
         members.deleteAll(members.findByRoleIdOrderByCreatedAtAsc(roleId));
         role.replacePermissions(List.of());
         roles.delete(role);
@@ -175,6 +185,20 @@ public class ApplicationPermissionService {
         AddApplicationPermissionRoleMembersRequest request,
         String actor
     ) {
+        return addRoleMembers(applicationId, roleId, request, actor, null);
+    }
+
+    /**
+     * @param via 操作来源，例如 {@code client:order-admin-client}；为空表示控制台或门户直接操作。
+     */
+    @Transactional
+    public List<ApplicationPermissionRoleMemberResponse> addRoleMembers(
+        UUID applicationId,
+        UUID roleId,
+        AddApplicationPermissionRoleMembersRequest request,
+        String actor,
+        String via
+    ) {
         ApplicationPermissionRole role = getRole(applicationId, roleId);
         for (UUID subjectId : new java.util.LinkedHashSet<>(request.subjectIds())) {
             ApplicationPermissionRoleMember member = switch (request.subjectType()) {
@@ -191,7 +215,7 @@ public class ApplicationPermissionService {
             if (member != null) {
                 members.save(member);
                 auditService.record(actor, "application.permission_role.grant", "application", applicationId.toString(),
-                    role.getCode() + ";" + request.subjectType() + "=" + subjectId);
+                    withVia(role.getCode() + ";" + request.subjectType() + "=" + subjectId, via));
             }
         }
         return listRoleMembers(applicationId, roleId);
@@ -199,12 +223,68 @@ public class ApplicationPermissionService {
 
     @Transactional
     public void removeRoleMember(UUID applicationId, UUID roleId, UUID memberId, String actor) {
+        removeRoleMember(applicationId, roleId, memberId, actor, false, null);
+    }
+
+    /**
+     * 撤销角色授予。protectLastOwner 为 true 时禁止撤销应用权限负责人角色的最后一条授予，
+     * 防止委派管理员把应用变成只有 IAM 管理员能管理。
+     */
+    @Transactional
+    public void removeRoleMember(UUID applicationId, UUID roleId, UUID memberId, String actor, boolean protectLastOwner, String via) {
         ApplicationPermissionRole role = getRole(applicationId, roleId);
         ApplicationPermissionRoleMember member = members.findByIdAndRoleId(memberId, roleId)
             .orElseThrow(() -> new NotFoundException("Role member not found: " + memberId));
+        if (protectLastOwner && ApplicationDelegation.OWNER_ROLE.equals(role.getCode()) && members.countByRoleId(roleId) <= 1) {
+            throw new ConflictException("应用至少需要保留一名应用权限负责人");
+        }
         members.delete(member);
         auditService.record(actor, "application.permission_role.revoke", "application", applicationId.toString(),
-            role.getCode() + ";" + subjectType(member) + "=" + subjectId(member));
+            withVia(role.getCode() + ";" + subjectType(member) + "=" + subjectId(member), via));
+    }
+
+    /**
+     * 为应用创建委派管理用的保留权限点和两个内置角色，已存在时跳过。创建应用时调用。
+     */
+    @Transactional
+    public void provisionDelegation(Application application) {
+        ApplicationPermission manage = reservedPermission(application, ApplicationDelegation.PERMISSION_MANAGE,
+            "管理应用权限", "维护本应用的权限点与角色，授予任意角色并任命授权管理员");
+        ApplicationPermission grant = reservedPermission(application, ApplicationDelegation.GRANT_MANAGE,
+            "分配应用角色", "把本应用的普通角色授予或撤销给人员");
+        builtInRole(application, ApplicationDelegation.OWNER_ROLE, "应用权限负责人",
+            "系统内置：维护本应用的权限点与角色，授予任意角色并任命授权管理员", manage);
+        builtInRole(application, ApplicationDelegation.GRANT_MANAGER_ROLE, "授权管理员",
+            "系统内置：把本应用的普通角色授予或撤销给人员", grant);
+    }
+
+    /** 角色是否包含委派管理用的保留权限点（即只有负责人或 IAM 管理员能授予）。 */
+    @Transactional(readOnly = true)
+    public boolean roleGrantsDelegation(UUID applicationId, UUID roleId) {
+        return getRole(applicationId, roleId).grantsDelegation();
+    }
+
+    /** 按编码定位应用内角色，供业务应用以角色编码调用管理接口。 */
+    @Transactional(readOnly = true)
+    public UUID roleIdByCode(UUID applicationId, String roleCode) {
+        return roles.findByApplicationIdAndCode(applicationId, roleCode)
+            .map(ApplicationPermissionRole::getId)
+            .orElseThrow(() -> new NotFoundException("Application role not found: " + roleCode));
+    }
+
+    /** 被直接或间接授予过内置管理角色的应用 ID，用于计算"我管理的应用"的候选集合。 */
+    @Transactional(readOnly = true)
+    public Set<UUID> delegatedApplicationIds(UUID userId, Set<UUID> groupIds, Set<UUID> organizationIds) {
+        Set<UUID> ids = new java.util.LinkedHashSet<>();
+        for (ApplicationPermissionRoleMember member : members.findBuiltInRoleMembers()) {
+            boolean matched = (member.getUser() != null && member.getUser().getId().equals(userId))
+                || (member.getGroup() != null && groupIds.contains(member.getGroup().getId()))
+                || (member.getOrganization() != null && organizationIds.contains(member.getOrganization().getId()));
+            if (matched) {
+                ids.add(member.getRole().getApplication().getId());
+            }
+        }
+        return ids;
     }
 
     /**
@@ -223,6 +303,42 @@ public class ApplicationPermissionService {
             }
         }
         return codes;
+    }
+
+    private ApplicationPermission reservedPermission(Application application, String code, String name, String description) {
+        return permissions.findByApplicationIdAndCode(application.getId(), code)
+            .orElseGet(() -> permissions.save(new ApplicationPermission(application, code, name, description, true)));
+    }
+
+    private void builtInRole(Application application, String code, String name, String description, ApplicationPermission permission) {
+        if (roles.existsByApplicationIdAndCode(application.getId(), code)) {
+            return;
+        }
+        ApplicationPermissionRole role = new ApplicationPermissionRole(application, code, name, description, true);
+        role.replacePermissions(List.of(permission));
+        roles.save(role);
+    }
+
+    private static void rejectReservedCode(String code) {
+        if (ApplicationDelegation.isReservedCode(code)) {
+            throw new IllegalArgumentException("编码前缀 " + ApplicationDelegation.RESERVED_PREFIX + " 为系统保留：" + code);
+        }
+    }
+
+    private static void requireNotReserved(ApplicationPermission permission) {
+        if (permission.isReserved()) {
+            throw new ForbiddenException("系统保留的权限点不能修改或删除：" + permission.getCode());
+        }
+    }
+
+    private static void requireNotBuiltIn(ApplicationPermissionRole role) {
+        if (role.isBuiltIn()) {
+            throw new ForbiddenException("系统内置角色不能修改或删除：" + role.getCode());
+        }
+    }
+
+    private static String withVia(String detail, String via) {
+        return via == null ? detail : detail + ";via=" + via;
     }
 
     private void removePermission(ApplicationPermission permission) {
@@ -254,6 +370,9 @@ public class ApplicationPermissionService {
         if (resolved.size() != ids.size()) {
             throw new IllegalArgumentException("Permission does not belong to application: " + applicationId);
         }
+        resolved.stream().filter(ApplicationPermission::isReserved).findFirst().ifPresent(permission -> {
+            throw new IllegalArgumentException("系统保留的权限点只能通过内置角色授予：" + permission.getCode());
+        });
         return resolved;
     }
 
@@ -279,6 +398,7 @@ public class ApplicationPermissionService {
             permission.getCode(),
             permission.getName(),
             permission.getDescription(),
+            permission.isReserved(),
             permission.getCreatedAt(),
             permission.getUpdatedAt());
     }
@@ -290,6 +410,7 @@ public class ApplicationPermissionService {
             role.getCode(),
             role.getName(),
             role.getDescription(),
+            role.isBuiltIn(),
             role.getPermissions().stream()
                 .sorted(java.util.Comparator.comparing(ApplicationPermission::getCode))
                 .map(this::toResponse)
