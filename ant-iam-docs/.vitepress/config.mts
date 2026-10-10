@@ -76,6 +76,7 @@ export default defineConfig({
             { text: '用户组', link: '/directory-sync#groups' },
             { text: '同步策略', link: '/directory-sync#strategy' },
             { text: '错误处理', link: '/directory-sync#errors' },
+            { text: '能力发现', link: '/directory-sync#discovery' },
             { text: '接入自查', link: '/directory-sync#checklist' },
           ],
         },

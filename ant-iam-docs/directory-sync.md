@@ -60,7 +60,7 @@ Authorization: Bearer <令牌>
 2. **人员**：引用已存在的组织。
 3. **用户组**：成员引用已存在的人员。
 
-删除时顺序相反：先移走或停用人员，再从下级到上级删除组织。
+删除时顺序相反：先调走或停用（`DELETE`）人员，再从下级到上级删除组织。
 
 ## 组织 {#organizations}
 
@@ -92,7 +92,7 @@ Content-Type: application/scim+json
 :::
 
 - 修改：`PUT {Base}/Organizations/{id}`，请求体同创建，可改名称和上级；`externalId` 必须与原值一致。
-- 删除：`DELETE {Base}/Organizations/{id}`。组织下还有子组织或人员时返回 `409`。
+- 删除：`DELETE {Base}/Organizations/{id}`。组织下还有子组织或在职人员时返回 `409`；只剩已停用（离职）人员时，这些人员的所属组织会被清空，组织随之删除。
 
 ## 人员 {#users}
 
@@ -207,7 +207,7 @@ Content-Type: application/scim+json
 | 403 | — | 身份源已停用 |
 | 404 | — | 资源不存在，或不属于本身份源 |
 | 409 | `uniqueness` | `userName`、手机号或 `externalId` 已存在 |
-| 409 | — | 组织下还有子组织或人员，不能删除 |
+| 409 | — | 组织下还有子组织或在职人员，不能删除 |
 
 ## 能力发现 {#discovery}
 
