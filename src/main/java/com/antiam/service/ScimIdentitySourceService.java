@@ -295,9 +295,12 @@ public class ScimIdentitySourceService {
         if (organizations.existsByParentId(organizationId)) {
             throw new ScimException(409, null, "Organization still has child organizations");
         }
-        if (users.existsByOrganizationId(organizationId)) {
-            throw new ScimException(409, null, "Organization still has users");
+        // 已停用（离职）的人员不阻止撤销部门：解除其组织归属后删除；仍有在职人员时拒绝。
+        List<UserAccount> members = users.findByOrganizationId(organizationId);
+        if (members.stream().anyMatch(user -> user.getStatus() == AccountStatus.ACTIVE)) {
+            throw new ScimException(409, null, "Organization still has active users");
         }
+        members.forEach(user -> user.updateProfile(user.getDisplayName(), user.getEmail(), user.getMobile(), null));
         String externalId = organization.getExternalId();
         organizations.delete(organization);
         auditService.record(actor(source), "scim.organization.delete", "identity_source", sourceId.toString(), externalId);
