@@ -8,6 +8,16 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface UserGroupRepository extends JpaRepository<UserGroup, UUID> {
+    long countByIdentitySourceId(UUID identitySourceId);
+
+    java.util.List<UserGroup> findByIdentitySourceIdOrderByCreatedAtAsc(UUID identitySourceId);
+
+    Optional<UserGroup> findByIdAndIdentitySourceId(UUID id, UUID identitySourceId);
+
+    boolean existsByIdentitySourceIdAndExternalId(UUID identitySourceId, String externalId);
+
+    boolean existsByCode(String code);
+
     java.util.List<UserGroup> findTop20ByCodeContainingIgnoreCaseOrNameContainingIgnoreCaseOrderByCodeAsc(String code, String name);
 
     Optional<UserGroup> findByCode(String code);

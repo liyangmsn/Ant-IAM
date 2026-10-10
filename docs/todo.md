@@ -66,6 +66,7 @@
 - [x] IP 地理库：MaxMind 解析国家与城市；注册码可保存，`POST /api/v1/settings/geo-ip/update` 在线下载 GeoLite2-City，`GET /api/v1/settings/geo-ip/lookup` 解析测试。
 - [x] 控制台细粒度授权：`iam:<模块>:<read|write>` 权限点、URL 按模块校验、写操作防提权；`GET /api/v1/users/me/console-access` 供前端裁剪菜单。
 - [x] 应用内权限：应用注册时声明权限点（控制台创建应用时填写，或以客户端凭据 `PUT /oauth2/permissions` 全量同步），权限点组合为应用内角色后授予用户、用户组或组织；应用通过 `POST /oauth2/permissions/check` 实时鉴权，`/oauth2/introspect` 与 `/oauth2/userinfo` 返回 `permissions`；控制台在应用详情【应用权限】维护，`/permission-decisions?userId=` 排查有效权限。数据使用独立的权限点与角色表，与全局角色权限体系隔离。
+- [x] 通用 SCIM 身份源：第三方系统作为身份源，用同步令牌经 `/scim/v2/sources/{code}/**` 推送组织、人员和用户组，按身份源隔离数据，以 `externalId` 引用组织；控制台可生成、吊销令牌；对外文档见文档站「身份源同步」。设计见 `docs/scim-identity-source-design.md`。
 - [x] 应用权限委派管理：每个应用内置「应用权限负责人」「授权管理员」两个角色（基于 `iam:` 保留权限点），委派管理员可在门户「我管理的应用」或业务应用自己的页面（`/oauth2/permission-admin/**`，客户端凭据 + 操作人令牌）管理本应用权限，无需控制台权限；含防提权、保留编码保护、最后一名负责人保护。设计见 `docs/application-permission-delegation-design.md`。
 - [x] 前端页面不缓存：`deploy/rancher/nginx.conf` 的 `location /` 与 `/docs/` 均已设置 `Cache-Control: no-cache`，带 hash 的静态资源走 `/assets/`。
 - [x] 应用访问策略：授权范围 `MANUAL` / `ALL_ACCESS`，授权对象支持用户、用户组、组织（下级组织继承），批量授权与取消；OIDC、SAML、CAS、JWT 单点登录签发前校验授权。

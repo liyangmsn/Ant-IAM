@@ -10,11 +10,16 @@ import static com.antiam.dto.IdentitySourceDtos.SyncRunResponse;
 import static com.antiam.dto.IdentitySourceDtos.UpdateIdentitySourceRequest;
 import static com.antiam.dto.IdentitySourceDtos.UpdateSyncJobRequest;
 
+import com.antiam.config.IssuerResolver;
 import com.antiam.domain.IdentitySourceType;
+import com.antiam.dto.ScimSourceDtos.SyncTokenResponse;
+import com.antiam.dto.ScimSourceDtos.SyncTokenStatusResponse;
 import com.antiam.service.IdentitySourceService;
+import com.antiam.service.ScimIdentitySourceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import java.util.List;
@@ -39,6 +44,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class IdentitySourceController {
 
     private final IdentitySourceService identitySources;
+    private final ScimIdentitySourceService scimSources;
+    private final IssuerResolver issuerResolver;
 
     /**
      * 查询身份源列表。
@@ -155,6 +162,34 @@ public class IdentitySourceController {
     @PostMapping("/{identitySourceId}/connector/disable")
     ConnectorResponse disableConnector(@Parameter(description = "身份源 UUID") @PathVariable UUID identitySourceId, Principal principal) {
         return identitySources.disableConnector(identitySourceId, principal.getName());
+    }
+
+    /**
+     * 查询通用 SCIM 身份源的同步令牌状态与推送概况。
+     */
+    @Operation(summary = "查询 SCIM 同步令牌状态", description = "返回是否已生成同步令牌、SCIM 基础地址、最近推送时间以及本源的组织、用户、用户组数量。")
+    @GetMapping("/{identitySourceId}/scim-token")
+    SyncTokenStatusResponse scimTokenStatus(@Parameter(description = "身份源 UUID") @PathVariable UUID identitySourceId, HttpServletRequest request) {
+        return scimSources.tokenStatus(identitySourceId, issuerResolver.resolve(request));
+    }
+
+    /**
+     * 生成或重新生成通用 SCIM 身份源的同步令牌。
+     */
+    @Operation(summary = "生成 SCIM 同步令牌", description = "生成新的同步令牌，旧令牌立即失效；明文只在本次响应中返回。")
+    @PostMapping("/{identitySourceId}/scim-token")
+    SyncTokenResponse issueScimToken(@Parameter(description = "身份源 UUID") @PathVariable UUID identitySourceId, HttpServletRequest request, Principal principal) {
+        return scimSources.issueToken(identitySourceId, issuerResolver.resolve(request), principal.getName());
+    }
+
+    /**
+     * 吊销通用 SCIM 身份源的同步令牌。
+     */
+    @Operation(summary = "吊销 SCIM 同步令牌", description = "吊销后第三方系统无法继续推送，需重新生成令牌。")
+    @DeleteMapping("/{identitySourceId}/scim-token")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    void revokeScimToken(@Parameter(description = "身份源 UUID") @PathVariable UUID identitySourceId, Principal principal) {
+        scimSources.revokeToken(identitySourceId, principal.getName());
     }
 
     /**

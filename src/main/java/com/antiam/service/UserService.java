@@ -34,6 +34,7 @@ import com.antiam.domain.AuthenticationEvent;
 import com.antiam.domain.AuthenticationEventType;
 import com.antiam.domain.AuthenticationSession;
 import com.antiam.domain.CredentialType;
+import com.antiam.domain.IdentitySource;
 import com.antiam.domain.MfaChallenge;
 import com.antiam.domain.MfaChallengeStatus;
 import com.antiam.domain.MfaFactor;
@@ -156,6 +157,35 @@ public class UserService {
             requireUniqueUsername(username), displayName, email, uniqueMobile(mobile, null), null, null));
         auditService.record(actor, "scim.user.create", "user", saved.getId().toString(), saved.getUsername());
         return toResponse(saved);
+    }
+
+    /**
+     * 身份源通过 SCIM 推送创建用户：账号归属该身份源，并记录身份源内的人员 ID。
+     */
+    UserAccount createSourceUser(
+        IdentitySource source,
+        String externalId,
+        String username,
+        String displayName,
+        String email,
+        String mobile,
+        Organization organization,
+        String actor
+    ) {
+        UserAccount saved = users.save(new UserAccount(
+            requireUniqueUsername(username), displayName, email, uniqueMobile(mobile, null), source.getTenant(), organization, source));
+        saved.assignExternalId(externalId);
+        auditService.record(actor, "scim.user.create", "user", saved.getId().toString(), saved.getUsername());
+        return saved;
+    }
+
+    /**
+     * 身份源通过 SCIM 推送更新用户资料与所属组织；启用状态由调用方通过 activate / suspend 处理。
+     */
+    void updateSourceUser(UserAccount user, String externalId, String displayName, String email, String mobile, Organization organization, String actor) {
+        user.updateProfile(displayName, email, uniqueMobile(mobile, user.getId()), organization);
+        user.assignExternalId(externalId);
+        auditService.record(actor, "scim.user.update", "user", user.getId().toString(), user.getUsername());
     }
 
     /**

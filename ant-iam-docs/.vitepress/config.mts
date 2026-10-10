@@ -17,6 +17,7 @@ export default defineConfig({
       { text: '产品介绍', link: '/product', activeMatch: '/product' },
       { text: '使用说明', link: '/usage', activeMatch: '/usage' },
       { text: '对接文档', link: '/integration', activeMatch: '/integration' },
+      { text: '身份源同步', link: '/directory-sync', activeMatch: '/directory-sync' },
     ],
     sidebar: {
       '/product': [
@@ -59,6 +60,23 @@ export default defineConfig({
             { text: 'JWT', link: '/integration#jwt' },
             { text: 'SCIM / 管理 API', link: '/integration#directory' },
             { text: '接入自查', link: '/integration#checklist' },
+          ],
+        },
+      ],
+      '/directory-sync': [
+        {
+          text: '身份源同步',
+          items: [
+            { text: '工作方式', link: '/directory-sync#overview' },
+            { text: '接入前准备', link: '/directory-sync#prepare' },
+            { text: '调用约定', link: '/directory-sync#conventions' },
+            { text: '同步顺序', link: '/directory-sync#order' },
+            { text: '组织', link: '/directory-sync#organizations' },
+            { text: '人员', link: '/directory-sync#users' },
+            { text: '用户组', link: '/directory-sync#groups' },
+            { text: '同步策略', link: '/directory-sync#strategy' },
+            { text: '错误处理', link: '/directory-sync#errors' },
+            { text: '接入自查', link: '/directory-sync#checklist' },
           ],
         },
       ],

@@ -33,6 +33,11 @@ features:
     details: 介绍 OIDC、OAuth2、SAML、CAS、JWT、SCIM 和管理 API 的接入方式与自查清单。
     link: /integration
     linkText: 阅读对接文档
+  - icon: '04'
+    title: 身份源同步
+    details: 第三方系统（HR、OA、ERP 等）通过 SCIM 2.0 把组织架构、人员和用户组同步到平台。
+    link: /directory-sync
+    linkText: 阅读同步文档
 ---
 
 ## 常用入口

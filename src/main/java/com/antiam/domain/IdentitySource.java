@@ -7,6 +7,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import java.time.Instant;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -30,6 +31,9 @@ public class IdentitySource extends BaseEntity {
 
     private boolean enabled;
 
+    /** 最近一次收到推送或完成同步的时间。 */
+    private Instant lastSyncedAt;
+
     public IdentitySource(String code, String name, String description, IdentitySourceType type, Tenant tenant) {
         this.code = code;
         this.name = name;
@@ -50,5 +54,9 @@ public class IdentitySource extends BaseEntity {
 
     public void disable() {
         this.enabled = false;
+    }
+
+    public void markSynced() {
+        this.lastSyncedAt = Instant.now();
     }
 }

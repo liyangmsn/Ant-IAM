@@ -102,6 +102,15 @@ class SecurityConfigTest {
     }
 
     @Test
+    void sourceScopedScimEndpointsSkipConsoleAuthorization() throws Exception {
+        // 同步令牌在业务层校验；URL 层不能要求控制台会话，否则第三方无法调用
+        mvc.perform(get("/scim/v2/sources/hr/Users")).andExpect(status().isOk());
+        mvc.perform(post("/scim/v2/sources/hr/Users")).andExpect(status().isOk());
+        // 全局 SCIM 仍要求用户模块权限
+        mvc.perform(get("/scim/v2/Users")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void readOnlyModulesRejectMutations() throws Exception {
         RequestPostProcessor auditor = as("iam:audit:read");
 

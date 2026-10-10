@@ -10,6 +10,16 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface UserAccountRepository extends JpaRepository<UserAccount, UUID> {
+    long countByIdentitySourceId(UUID identitySourceId);
+
+    java.util.List<UserAccount> findByIdentitySourceIdOrderByCreatedAtAsc(UUID identitySourceId);
+
+    Optional<UserAccount> findByIdAndIdentitySourceId(UUID id, UUID identitySourceId);
+
+    boolean existsByIdentitySourceIdAndExternalId(UUID identitySourceId, String externalId);
+
+    boolean existsByIdentitySourceIdAndExternalIdAndIdNot(UUID identitySourceId, String externalId, UUID id);
+
     Optional<UserAccount> findByUsername(String username);
 
     /** 委派管理员搜索可授予对象：只返回在职用户，pattern 为小写的 like 模式。 */

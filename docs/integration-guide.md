@@ -142,6 +142,7 @@ Content-Type: application/json
 | `/.well-known/openid-configuration` | OIDC 发现文档 |
 | `/oauth2/jwks` | OIDC 公钥 |
 | `/oauth2/token`、`/oauth2/introspect`、`/oauth2/revoke` | 令牌相关 |
+| `/scim/v2/sources/{code}/**` | 身份源 SCIM 推送（需同步令牌，在业务层校验） |
 | `/oauth2/permissions`、`/oauth2/permissions/check`、`/oauth2/permission-admin/**` | 应用内权限注册、校验与委派管理（需客户端凭据） |
 | `/oauth2/userinfo` | 用户信息（需携带 access_token） |
 | `/saml2/metadata`、`/saml2/metadata.xml` | SAML 元数据 |
@@ -657,7 +658,31 @@ not (emails.value ew "example.com")
 
 使用其它属性或不支持的写法会返回 `400`。
 
-### 8.4 另一种同步方式
+### 8.4 第三方系统作为身份源推送（推荐）
+
+8.1–8.3 的全局 SCIM 端点使用管理员会话令牌，能读写全部目录数据，适合平台自身的管理工具。**第三方系统要把自己的组织架构同步进来时，请使用身份源专属端点**：
+
+| 项目 | 说明 |
+| --- | --- |
+| 基础地址 | `{Base URL}/scim/v2/sources/{身份源编码}`，资源路径 `/Organizations`、`/Users`、`/Groups` 与全局端点相同 |
+| 认证 | `Authorization: Bearer <同步令牌>`，令牌在控制台身份源详情「同步配置」页生成，长期有效，可重新生成或吊销 |
+| 数据范围 | 只能读写本身份源推送的数据；访问其他数据返回 `404` |
+| 引用方式 | 组织、上级组织、人员所属组织用第三方自己的 `externalId` 引用；挂到平台已有组织下时用 `{"value": "<UUID>", "type": "id"}` |
+| 人员所属组织 | 扩展 schema `urn:antiam:params:scim:schemas:extension:2.0:User` 的 `organization` 属性 |
+| 删除语义 | 人员 `DELETE` 为停用（可通过 `active: true` 恢复）；组织有子组织或人员时 `409`；用户组解除成员后删除 |
+| 错误格式 | SCIM Error（`schemas`、`status`、`scimType`、`detail`），`Content-Type: application/scim+json` |
+
+接入步骤：管理员在控制台「身份源管理」添加类型为 **通用 SCIM** 的身份源 → 生成同步令牌 → 第三方按「组织 → 人员 → 用户组」顺序推送。完整的字段说明、示例和错误码见对外文档站的「身份源同步」页（`/docs/directory-sync.html`），设计见 `docs/scim-identity-source-design.md`。
+
+管理端接口：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/v1/identity-sources/{id}/scim-token` | 令牌状态、SCIM 基础地址、最近推送时间、本源数据量 |
+| POST | `/api/v1/identity-sources/{id}/scim-token` | 生成或重新生成令牌，明文只返回一次 |
+| DELETE | `/api/v1/identity-sources/{id}/scim-token` | 吊销令牌 |
+
+### 8.5 由 IAM 主动拉取
 
 如果你要同步的是钉钉、飞书、企业微信这类外部通讯录，也可以由 IAM 侧配置身份源连接器主动拉取，无需你在上游改造。该方式由管理员在控制台完成配置，你只需提供外部系统的应用凭据。
 
