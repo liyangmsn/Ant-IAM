@@ -84,6 +84,23 @@ Content-Type: application/json
 - 授权：在应用详情的【应用权限】页创建应用内角色并授予用户、用户组或组织。
 - 鉴权：`POST /oauth2/permissions/check` 实时校验；`/oauth2/introspect` 与 `/oauth2/userinfo` 也会返回 `permissions` 数组。
 
+权限编码以字母或数字开头，可包含字母、数字和 `: . _ -`，建议用 `资源:动作` 的形式；`iam:` 前缀为平台保留。`GET /oauth2/permissions` 可查询应用当前已注册的权限点。
+
+```http
+PUT {Base URL}/oauth2/permissions
+Authorization: Basic base64(client_id:client_secret)
+Content-Type: application/json
+
+{
+  "permissions": [
+    { "code": "order:read", "name": "查看订单" },
+    { "code": "order:approve", "name": "审批订单", "description": "审批金额不限" }
+  ]
+}
+```
+
+已授予角色的权限点被同步删除后，会同时从这些角色中移除；之后再注册同名编码，需要重新加入角色。
+
 ```http
 POST {Base URL}/oauth2/permissions/check
 Authorization: Basic base64(client_id:client_secret)
@@ -94,7 +111,9 @@ Content-Type: application/json
 → { "active": true, "allowed": true, "sub": "…", "results": { "order:approve": true } }
 ```
 
-只有全部权限满足时 `allowed` 才为 `true`；`reason` 为 `token_inactive`、`permission_denied` 或应用访问决策的拒绝原因。
+只有全部权限满足时 `allowed` 才为 `true`；`reason` 为 `token_inactive`、`permission_denied` 或应用访问决策的拒绝原因（如 `no_assignment`、`user_not_active`）。令牌只能由签发它的应用校验，拿其他应用的令牌来校验一律返回 `token_inactive`。
+
+权限变更实时生效，不需要用户重新登录。`introspect` / `userinfo` 返回的 `permissions` 适合登录后渲染菜单；执行受保护操作前请调用 `check`，不要长期缓存权限结果。
 
 ## SAML 2.0 {#saml}
 
@@ -146,4 +165,5 @@ Service Ticket 一次有效：无论校验成功与否，提交校验后即被�
 - 已区分前端公开配置与后端密钥。
 - 已处理 401、令牌过期和密码改密要求。
 - 已在测试环境完成登录、退出、刷新令牌和异常回调验证。
+- 使用应用内权限时，受保护操作在服务端调用 `check`，没有只依赖前端隐藏按钮。
 - 已限制 SCIM / 管理 Token 的权限、来源和保存位置。

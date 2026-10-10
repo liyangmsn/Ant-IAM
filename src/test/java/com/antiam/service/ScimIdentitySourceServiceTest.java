@@ -158,11 +158,29 @@ class ScimIdentitySourceServiceTest {
         when(identitySources.findById(sourceId)).thenReturn(Optional.of(source));
         when(organizations.findByIdAndIdentitySourceId(orgId, sourceId)).thenReturn(Optional.of(organization));
         when(organizations.existsByParentId(orgId)).thenReturn(false);
-        when(users.existsByOrganizationId(orgId)).thenReturn(true);
+        UserAccount active = new UserAccount("on.duty", "在职", null, null, null, organization);
+        when(users.findByOrganizationId(orgId)).thenReturn(List.of(active));
 
         assertThatThrownBy(() -> service.deleteOrganization(sourceId, orgId)).isInstanceOf(ScimException.class)
             .extracting(ex -> ((ScimException) ex).status()).isEqualTo(409);
         verify(organizations, never()).delete(any());
+    }
+
+    @Test
+    void organizationWithOnlyDepartedUsersIsDeletedAndUsersDetached() {
+        UUID orgId = UUID.randomUUID();
+        Organization organization = new Organization("hr:D1", "部门", null);
+        organization.assignSource(source, "D1");
+        UserAccount departed = new UserAccount("left", "已离职", null, null, null, organization);
+        departed.suspend();
+        when(identitySources.findById(sourceId)).thenReturn(Optional.of(source));
+        when(organizations.findByIdAndIdentitySourceId(orgId, sourceId)).thenReturn(Optional.of(organization));
+        when(users.findByOrganizationId(orgId)).thenReturn(List.of(departed));
+
+        service.deleteOrganization(sourceId, orgId);
+
+        assertThat(departed.getOrganization()).isNull();
+        verify(organizations).delete(organization);
     }
 
     private static SourceUserRequest userRequest(String userName, String externalId) {
