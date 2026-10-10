@@ -39,9 +39,3 @@ features:
     link: /directory-sync
     linkText: 阅读同步文档
 ---
-
-## 常用入口
-
-<!-- 指向 IAM 本身的页面，不经过 VitePress 路由，用原生链接 -->
-- <a href="/login" target="_self">登录门户</a>
-- <a href="/actuator/health" target="_self">服务健康检查</a>
