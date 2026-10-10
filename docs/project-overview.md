@@ -42,6 +42,7 @@
 
 - 身份源：`/api/v1/identity-sources` 管理身份源定义，支持 `LOCAL`、`LDAP`、`ACTIVE_DIRECTORY`、`DINGTALK`、`WECHAT_WORK`、`FEISHU`、`SCIM` 类型，列表支持 `tenantId`、`type`、`enabled`、`keyword` 筛选。
 - 连接器：每个身份源可配置一个连接器，承载上游凭据与拉取参数。
+- 通用 SCIM 身份源：第三方系统（HR、OA、ERP 等）用控制台生成的同步令牌，经 `/scim/v2/sources/{code}/Organizations|Users|Groups` 推送组织架构；每个身份源只能读写自己推送的数据，用自己的 `externalId` 引用组织；删除人员为停用，组织与用户组为空时才删除。
 - 同步任务与执行记录：`/api/v1/identity-sources/{id}/sync-jobs` 定义任务，`/api/v1/identity-sources/sync-jobs/{id}/runs` 手工触发并记录每次运行结果。
 - 数据导入：运行同步任务时可提交 JSON 目录数据（组织、用户、用户组），钉钉、飞书、企业微信连接器则会调用各自开放平台接口拉取部门和成员。
 - 定时同步：同步任务配置 `cronExpression` 后由后台调度器执行，默认每 60 秒扫描一次到期任务。

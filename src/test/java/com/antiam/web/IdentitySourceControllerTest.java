@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 class IdentitySourceControllerTest {
 
     private final IdentitySourceService identitySources = mock(IdentitySourceService.class);
-    private final IdentitySourceController controller = new IdentitySourceController(identitySources);
+    private final IdentitySourceController controller = new IdentitySourceController(identitySources, mock(com.antiam.service.ScimIdentitySourceService.class), new com.antiam.config.IssuerResolver(""));
     private final Principal principal = () -> "admin";
 
     @Test

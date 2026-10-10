@@ -90,6 +90,8 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.POST, "/api/v1/authentication/password-login").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/v1/authentication/mfa-login", "/api/v1/authentication/mfa-login/switch").permitAll()
                     .requestMatchers(HttpMethod.POST, "/api/v1/synchronizer/event_receive/*").permitAll()
+                    // 身份源 SCIM 端点使用同步令牌，在业务层按身份源校验，不走控制台会话。
+                    .requestMatchers("/scim/v2/sources/**").permitAll()
                     .requestMatchers(HttpMethod.GET, "/oauth2/userinfo").permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/v1/catalog").permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/v1/security-headers").permitAll()

@@ -83,3 +83,5 @@ databaseChangeLog:
       file: db/changelog/041-application-permission-schema.sql
   - include:
       file: db/changelog/042-application-permission-delegation-schema.sql
+  - include:
+      file: db/changelog/043-scim-identity-source-schema.sql

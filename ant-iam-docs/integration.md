@@ -34,7 +34,7 @@ GET {Base URL}/actuator/health
 | 已有 SAML 2.0 能力的 SaaS | SAML 2.0 |
 | 传统系统只支持 Service Ticket | CAS |
 | 只需要校验签名令牌 | JWT |
-| 同步上游用户、组织和用户组 | SCIM 2.0 或身份源连接器 |
+| 同步上游用户、组织和用户组 | SCIM 2.0（见[身份源同步](./directory-sync)）或钉钉、飞书、企业微信连接器 |
 | 管理用户、角色和权限 | 管理 API |
 
 ## 通用调用约定 {#conventions}
@@ -124,7 +124,11 @@ Service Ticket 一次有效：无论校验成功与否，提交校验后即被�
 
 ## SCIM 与管理 API {#directory}
 
-目录同步使用 SCIM 2.0：
+::: tip 把第三方系统的组织架构同步进来
+第三方系统作为身份源推送组织、人员和用户组时，请使用身份源专属的 SCIM 端点和同步令牌，详见[身份源同步](./directory-sync)。下面的全局 SCIM 端点使用管理员令牌，面向平台自身的管理和导出。
+:::
+
+全局 SCIM 2.0 端点：
 
 - `/scim/v2/Users`：用户列表、详情、创建、替换（PUT）、局部更新（PATCH）和删除
 - `/scim/v2/Groups`：用户组列表、详情、创建、替换、局部更新（含成员增删）和删除

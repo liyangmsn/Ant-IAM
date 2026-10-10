@@ -42,6 +42,9 @@ public class UserAccount extends BaseEntity {
     @JoinColumn(name = "identity_source_id")
     private IdentitySource identitySource;
 
+    /** 身份源内的人员 ID，本源内唯一。 */
+    private String externalId;
+
     @ManyToMany
     @JoinTable(
         name = "user_group_members",
@@ -96,6 +99,10 @@ public class UserAccount extends BaseEntity {
 
     public void assignIdentitySource(IdentitySource identitySource) {
         this.identitySource = identitySource;
+    }
+
+    public void assignExternalId(String externalId) {
+        this.externalId = externalId;
     }
 
     public void grant(Role role) {
